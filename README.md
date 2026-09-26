@@ -1,295 +1,454 @@
-# ESP32-S3-4848S040
+# ERP Mantto ESP32 — ESP32-S3-4848S040
 
-Firmware for the Guition ESP32-S3-4848S040 480×480 panel.
+Firmware para el panel **Guition ESP32-S3-4848S040**, con pantalla **480 × 480**, controlador **ST7701S**, táctil **GT911** y comunicación con el sistema Asistente 3C.
 
-## Included
+El repositorio conserva dos objetivos funcionales separados:
 
-- ESPHome + LVGL UI.
-- ST7701S display, 480×480.
-- GT911 touch.
-- 3C interface with editable command field.
-- Virtual keyboard: `ABC/123`, numbers, symbols, space, backspace, enter.
-- Command buffer with cursor, insertion, deletion and horizontal viewport.
-- Device API: health, command creation, polling and human confirmation/rejection.
-- Python/C++ regression tests.
-- GitHub Actions CI/CD.
-- Optional physical validation with a self-hosted runner.
+- **ESPHome + LVGL** para la interfaz gráfica del panel.
+- **PlatformIO** para el firmware 3C con editor de órdenes, teclado virtual, command buffer y cliente HTTP del dispositivo.
 
-The ESPHome UI and the PlatformIO 3C firmware are kept as separate build targets so neither UI stack replaces the other.
+La separación de objetivos es deliberada: la configuración LVGL pertenece al objetivo ESPHome y la interfaz 3C documentada en este README pertenece al objetivo PlatformIO. No se introduce una dependencia independiente <code>lvgl/lvgl</code> en PlatformIO.
 
-## Repository layout
+## Alcance y arquitectura
 
-```text
-src/                         ESPHome + LVGL + ST7701S + GT911
-platformio/src/panel_4848s040/  3C firmware + editable keyboard + API client
-include/                     command buffer, viewport and keyboard
-backend/                     local device API test service
-contract/                    API contract
-test/ tests/                 native and integration tests
-scripts/                     six WSL/Ubuntu execution blocks
-.github/workflows/            CI, firmware CD and physical validation
-```
+La condición de entrada es una orden escrita o editada desde el panel. El diseño trata esa orden como una propuesta controlada y no como una escritura directa sobre una fuente maestra.
 
-## Six blocks
+~~~text
+ESP32-S3-4848S040
+├─ ESPHome + LVGL
+│  ├─ ST7701S / 480×480
+│  └─ GT911
+└─ PlatformIO / panel_4848s040
+   ├─ editor 3C
+   ├─ teclado virtual
+   ├─ commandBuffer
+   ├─ viewport horizontal
+   └─ cliente Device API
+             │
+             ▼
+      Asistente 3C / Device API
+             │
+             ▼
+      pending_confirmation
+          ├── applied
+          └── rejected
 
-Run from WSL/Ubuntu:
+fallo de transporte/protocolo → ERROR
+polling del estado → 2.5 s
+~~~
 
-```bash
-cd ~/project/ESP32-S3-4848S040
+La arquitectura separa la interacción, el transporte HTTP, la interpretación, la validación determinista, la revisión humana, la persistencia y el reporte del resultado. Una respuesta HTTP aceptada no significa por sí sola que el cambio ya haya sido aplicado.
 
-bash scripts/01_clone_guition.sh
-bash scripts/02_tools_guition.sh
-bash scripts/03_verify_guition.sh
-BUILD_MODE=validate bash scripts/04_esphome_guition.sh
-bash scripts/05_platformio_guition.sh
-PORT=/dev/ttyACM0 bash scripts/06_flash_monitor_guition.sh
-```
+El componente de IA del sistema más amplio del Asistente 3C se limita a la interpretación semántica. La persistencia queda fuera de la autoridad del modelo y requiere las validaciones y controles definidos por la aplicación. La implementación productiva de Node.js/React/GenAI no forma parte de este árbol de firmware; el repositorio documenta y prueba su frontera de integración mediante el contrato del dispositivo y los E2E.
+
+## Hardware y configuración
+
+La implementación existente del panel se conserva sin cambiar GPIO, controladores, temporización ni arquitectura.
+
+| Elemento | Configuración documentada |
+|---|---|
+| Panel | Guition ESP32-S3-4848S040 |
+| Resolución | 480 × 480 |
+| Display | ST7701S |
+| Touch | GT911 por I²C |
+| Dirección GT911 | 0x5D |
+| I²C | SDA GPIO19 / SCL GPIO45 |
+| Backlight | GPIO38 |
+| RGB DE / HSYNC / VSYNC / PCLK | GPIO18 / GPIO16 / GPIO17 / GPIO21 |
+| SPI de comandos | CLK GPIO48 / MOSI GPIO47 / CS GPIO39 |
+| Flash | 16 MB |
+| PSRAM | OPI; ESPHome configura 80 MHz |
+| Audio, cuando el montaje lo habilita | I²S BCLK GPIO1 / LRCLK GPIO2 / DATA GPIO40 |
+
+La configuración ESPHome utiliza <code>esp32-s3-devkitc-1</code> con **ESP-IDF**. El entorno PlatformIO <code>panel_4848s040</code> utiliza <code>esp32-s3-devkitm-1</code> con **Arduino**. Son dos definiciones de construcción independientes que se conservan para el mismo hardware.
+
+La inicialización del firmware PlatformIO usa <code>st7701_type9_init_operations</code> y el panel RGB de 480 × 480. El mismo marcador es comprobado por <code>scripts/03_verify_guition.sh</code>.
+
+### Advertencia de puertos
+
+ESPHome usa GPIO19 para I²C del GT911 y GPIO20 como parte del bus RGB. El proyecto advierte que ESPHome puede reportar una posible superposición con USB-Serial-JTAG. Esa advertencia es una consideración de uso de puertos durante la validación física; no constituye evidencia de funcionamiento ni de fallo del panel.
+
+## Interfaz ESPHome + LVGL
+
+El archivo [src/main.yaml](src/main.yaml) configura el objetivo ESPHome con LVGL, traducciones, fuentes, widgets, OTA, Wi-Fi, GT911 y ST7701S.
+
+La configuración fija el componente externo de <code>i18n</code> al commit:
+
+<code>alaltitov/esphome@1b487af0ef26ff8e7908d34e415d99cc13fc1f98</code>
+
+La referencia está fijada para reproducibilidad. El proyecto no debe sustituirla por <code>@dev</code> de manera arbitraria.
+
+Las siguientes capturas son activos documentales existentes en <code>doc/images/</code>. Sirven para describir la interfaz; no constituyen evidencia de una prueba física.
+
+### Pantalla principal
+
+![Pantalla principal de la interfaz ESPHome/LVGL](doc/images/home.png)
+
+### Configuración
+
+![Pantalla de configuración](doc/images/settings.png)
+
+### Carga e inicio
+
+![Pantalla de carga](doc/images/loading.png)
+
+## Editor 3C y teclado virtual
+
+El entorno PlatformIO <code>panel_4848s040</code> contiene el editor editable de órdenes.
+
+La fuente de texto en tiempo de ejecución es <code>commandBuffer</code>, con capacidad de **240 caracteres**. La implementación conserva:
+
+- cursor y navegación;
+- inserción de caracteres;
+- borrado hacia atrás y hacia delante;
+- viewport horizontal para texto largo;
+- modo <code>ABC/123</code>;
+- letras, números y símbolos;
+- espacio, backspace y enter;
+- cancelación;
+- cambio de modo del teclado.
+
+El toque sobre el campo permite aproximar el cursor al carácter seleccionado. Al confirmar con Enter, el texto actual del <code>commandBuffer</code> es el que consume <code>send3CCommand()</code>. El comando por defecto únicamente inicializa el buffer y no reemplaza el contenido editado durante la ejecución.
+
+La interfaz del panel mantiene las zonas de interacción **PROBAR WSL** y **ENVIAR 3C**. La primera comprueba el endpoint; la segunda abre la edición de la orden.
+
+## API del dispositivo
+
+El contrato versionado se encuentra en [contract/device-command-v1.json](contract/device-command-v1.json).
+
+| Operación | Endpoint | Función |
+|---|---|---|
+| Health | <code>GET /api/device/v1/health</code> | comprobar disponibilidad |
+| Crear orden | <code>POST /api/device/v1/commands</code> | enviar una propuesta |
+| Estado | <code>GET /api/device/v1/commands/{command_id}</code> | consultar el estado |
+
+El firmware genera una petición con la estructura:
+
+~~~json
+{
+  "device_id": "panel-4848s040-3c-01",
+  "request_id": "panel-4848s040-3c-01-XXXXXXXX-...",
+  "text": "Cambia la tarea J10 a mensual"
+}
+~~~
+
+Cuando hay token configurado, el cliente añade el encabezado <code>X-3C-Device-Token</code>.
+
+El contrato define el protocolo <code>1.0</code>, el transporte HTTP sobre LAN confiable, longitudes máximas para <code>device_id</code>, <code>request_id</code> y <code>text</code>, códigos aceptados de creación/estado, <code>pending_confirmation</code>, autenticación del estado, polling y confirmación humana obligatoria. La escritura directa en una hoja queda explícitamente fuera de este contrato.
+
+### Flujo de estados
+
+~~~text
+POST /api/device/v1/commands
+          │
+          ▼
+pending_confirmation
+          │
+          ├──────────────► applied
+          │
+          └──────────────► rejected
+
+GET /api/device/v1/commands/{command_id}
+          ▲
+          │
+       polling
+       cada 2500 ms
+
+fallo de transporte/protocolo ─────► ERROR
+~~~
+
+El firmware consulta el estado cada **2500 ms**. Los estados terminales <code>applied</code> y <code>rejected</code> cierran el ciclo de la orden. Los estados <code>error</code>, <code>failed</code> y <code>fallido</code>, o un estado desconocido, se tratan como error de protocolo.
+
+El ESP32 no ejecuta por sí mismo la confirmación o el rechazo. La aprobación humana pertenece al Monitor web.
+
+### Contrato frente al servicio local de prueba
+
+[backend/device_api.py](backend/device_api.py) es un servicio local de prueba y conserva una implementación simplificada del API. El contrato normativo del dispositivo y la prueba E2E contra el Monitor real utilizan <code>device_id</code>, <code>request_id</code> y <code>text</code>.
+
+Por esa razón, <code>backend/device_api.py</code> se documenta como **harness de prueba**, no como el backend productivo.
+
+La prueba [tests/test_device_api_e2e.py](tests/test_device_api_e2e.py) verifica contra el Monitor real la autenticación, el alta de la orden, la idempotencia por <code>request_id</code>, el estado <code>pending_confirmation</code>, el polling autenticado y el resultado terminal.
+
+## Versiones y dependencias
+
+| Componente | Versión o referencia |
+|---|---|
+| ESPHome | 2026.8.2 |
+| PlatformIO CLI | 6.2.0 |
+| plataforma PlatformIO ESP32 | espressif32 6.8.1 |
+| GFX Library for Arduino | 1.5.9 |
+| Framework PlatformIO | Arduino |
+| Framework ESPHome | ESP-IDF |
+| i18n externo | commit <code>1b487af0ef26ff8e7908d34e415d99cc13fc1f98</code> |
+
+Las versiones se aseguran desde [scripts/02_tools_guition.sh](scripts/02_tools_guition.sh). La configuración PlatformIO también fija la plataforma y la dependencia GFX.
+
+Las credenciales personales deben permanecer fuera del control de versiones. El patrón disponible es [include/local_config.example.h](include/local_config.example.h); el archivo real <code>include/local_config.h</code> debe mantenerse ignorado por Git.
+
+## Seis bloques de ejecución
+
+El fuente original define seis bloques para WSL/Ubuntu. Como este repositorio se ejecuta sobre el **destino** <code>erp-mantto-esp32</code>, se debe establecer <code>REPO_DIR</code> y utilizar la URL del destino en el Bloque 1.
 
 ### Block 1 — clone/update
 
-Only updates the repository. No Python installation and no build.
+Para un checkout existente del destino:
+
+~~~bash
+export REPO_DIR="$PWD"
+REPO_URL=https://github.com/wpv10barza/erp-mantto-esp32.git   bash scripts/01_clone_guition.sh
+~~~
+
+Este bloque no instala Python ni compila. El script valida que el remoto sea el esperado.
 
 ### Block 2 — tools
 
-Creates `.venv` and ensures exactly:
+Crea o utiliza <code>.venv</code> y asegura:
 
-- ESPHome `2026.8.2`
-- PlatformIO `6.2.0`
+- ESPHome <code>2026.8.2</code>;
+- PlatformIO <code>6.2.0</code>.
 
-This block is **safe to re-run**.
+~~~bash
+export REPO_DIR="$PWD"
+bash scripts/02_tools_guition.sh
+~~~
 
 ### Block 3 — verify
 
-Checks:
+Comprueba archivos y contratos críticos: LVGL, 480 × 480, ST7701S, GT911, componente ESPHome fijado, <code>commandBuffer</code>, teclado virtual, ruta API y polling de 2.5 s.
 
-- LVGL
-- 480×480
-- ST7701S
-- GT911
-- pinned ESPHome component
-- command buffer
-- virtual keyboard
-- 3C API path
-- 2.5 s polling
+~~~bash
+export REPO_DIR="$PWD"
+bash scripts/03_verify_guition.sh
+~~~
 
 ### Block 4 — ESPHome
 
-Validates and compiles `src/main.yaml`.
+Valida y compila [src/main.yaml](src/main.yaml).
 
-Use:
+Para validación con secretos ficticios:
 
-```bash
+~~~bash
 BUILD_MODE=validate bash scripts/04_esphome_guition.sh
-```
+~~~
 
-for CI-style dummy secrets, or:
+Para un entorno local con secretos reales:
 
-```bash
+~~~bash
 BUILD_MODE=real bash scripts/04_esphome_guition.sh
-```
-
-for local real secrets.
+~~~
 
 ### Block 5 — PlatformIO
 
-Runs native regression tests and builds:
+Ejecuta las pruebas Python y nativas, y construye:
 
-```text
+~~~text
 panel_4848s040
-```
+~~~
 
-### Block 6 — physical device
-
-Uploads the firmware and opens the serial monitor.
-
-```bash
-# Auto-detecta /dev/ttyACM* o /dev/ttyUSB*
-bash scripts/06_flash_monitor_guition.sh
-
-# O indicar explícitamente el puerto real
-PORT=/dev/ttyACM0 bash scripts/06_flash_monitor_guition.sh
-```
-
-`/dev/ttyS0` y otros `/dev/ttyS*` se rechazan porque son puertos serie heredados, no el USB serial del ESP32. Si no aparece `/dev/ttyACM*` o `/dev/ttyUSB*` en WSL, conecta el dispositivo USB a WSL antes de ejecutar el flash.
-
-## Resume after the interruption you reported
-
-Your installation stopped after:
-
-```text
-Uninstalling platformio-6.1.19:
-Successfully uninstalled platformio-6.1.19
-```
-
-That means the correct resume point is **Block 2**. Do not repeat Block 1.
-
-```bash
-cd ~/project/ESP32-S3-4848S040
-
-bash scripts/02_tools_guition.sh
-bash scripts/03_verify_guition.sh
-BUILD_MODE=validate bash scripts/04_esphome_guition.sh
+~~~bash
 bash scripts/05_platformio_guition.sh
+~~~
+
+El resultado esperado incluye <code>.pio/build/panel_4848s040/firmware.bin</code>.
+
+### Block 6 — dispositivo físico
+
+Carga el firmware y abre el monitor serie:
+
+~~~bash
 PORT=/dev/ttyACM0 bash scripts/06_flash_monitor_guition.sh
-```
+~~~
 
-Block 2 first checks whether the requested versions are already installed. If PlatformIO 6.2.0 was not completed, it installs it; if it is already present, it skips the reinstall.
+El script acepta o autodetecta <code>/dev/ttyACM*</code> y <code>/dev/ttyUSB*</code>. Rechaza <code>/dev/ttyS*</code>; un nodo como <code>/dev/ttyS0</code> no debe utilizarse como sustituto del USB serial del ESP32.
 
-## API flow
+Si WSL no muestra el dispositivo, comprobar:
 
-```text
-POST /api/device/v1/commands
-        |
-        v
-pending_confirmation
-        |
-        | human confirmation in backend
-        +------> applied
-        |
-        +------> rejected
+~~~bash
+ls -l /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || true
+pio device list
+lsusb
+~~~
 
-device polls every 2.5 s
-transport/protocol failure -> ERROR
-```
+La nota de recuperación histórica del fuente indica que una interrupción durante la sustitución de PlatformIO 6.1.19 se reanuda en el **Block 2**.
 
-The device does not call the confirm/reject endpoints.
+## Pruebas y evidencia
 
-## Physical validation
+El repositorio conserva pruebas Python, C++ y E2E:
 
-Cloud CI proves source, tests and firmware compilation. It does not prove that a physical ESP32-S3, ST7701S or GT911 is electrically connected and operating.
+- [test/command_buffer_regression.py](test/command_buffer_regression.py)
+- [test/test_backend_command_buffer/test_main.cpp](test/test_backend_command_buffer/test_main.cpp)
+- [test/test_command_text_viewport/test_main.cpp](test/test_command_text_viewport/test_main.cpp)
+- [test/test_virtual_keyboard/test_main.cpp](test/test_virtual_keyboard/test_main.cpp)
+- [tests/test_command_editor_integration.py](tests/test_command_editor_integration.py)
+- [tests/test_device_api_e2e.py](tests/test_device_api_e2e.py)
+- [tests/test_panel_state_contract.py](tests/test_panel_state_contract.py)
+- [tests/test_wifi_source.py](tests/test_wifi_source.py)
+- [e2e/monitor_ui.spec.mjs](e2e/monitor_ui.spec.mjs)
 
-Use:
+### Qué demuestra cada nivel
 
-```text
-.github/workflows/physical-validation.yml
-```
+| Nivel de evidencia | Demuestra | No demuestra |
+|---|---|---|
+| Documentación | diseño declarado, contratos y procedimiento | funcionamiento físico |
+| Implementación | presencia de código, configuración y dependencias | ejecución exitosa sin compilar/probar |
+| Prueba automatizada | resultados de los tests ejecutados | presencia de hardware físico |
+| GitHub Actions | validación automática, compilación y E2E software | USB, pantalla, touch o alimentación reales |
+| Validación física | comportamiento del ESP32 conectado al hardware | no sustituye las pruebas de software |
 
-with a self-hosted runner connected to the board.
+## GitHub Actions
 
-## Important ESPHome warning
+### CI
 
-The current panel configuration uses GPIO19 for GT911 I²C and GPIO20 as part of the RGB display bus. ESPHome can therefore warn about overlap with the USB-Serial-JTAG interface. Treat those warnings as a hardware/port-usage consideration during physical validation; do not treat them as proof that the panel is working.
+[.github/workflows/ci.yml](.github/workflows/ci.yml) ejecuta sobre <code>ubuntu-latest</code>, usa Python 3.12 y comprueba:
 
-**3.2. Diseño del sistema**
-La arquitectura del sistema se divide en una capa de interacción embebida y una capa de coordinación de aplicación y *backend*. Mediante el panel ESP32-S3-4848S040 se proporciona la interfaz de usuario local, la interacción de pantalla, la entrada táctil, la comunicación de red y la presentación del estado de los comandos. Posteriormente, en la capa del Asistente 3C se coordina la recepción, interpretación, validación y control de revisión de comandos, así como la interacción controlada con la fuente de información de mantenimiento.
-Para el diseño, se tiene en cuenta que el principio arquitectónico central es la separación de responsabilidades. Se separa la interpretación probabilística de la validación determinista y de la autoridad de persistencia. Por consiguiente, un comando recibido desde el panel se trata como una entrada a un proceso controlado en lugar de una instrucción de escritura sin restricciones.
-En la documentación del repositorio se distinguen las siguientes etapas lógicas:
+1. sintaxis de los seis scripts;
+2. verificación del proyecto;
+3. pruebas nativas PlatformIO;
+4. contratos Python.
 
-- Interacción del usuario
+### Firmware CD
 
-- Transporte de comandos
+[.github/workflows/firmware-cd.yml](.github/workflows/firmware-cd.yml) amplía la validación con:
 
-- Interpretación de solicitudes
+- ESPHome validate/compile;
+- pruebas del Monitor real de <code>wpv10barza/asistente-3c</code>;
+- lint y pruebas Node;
+- health del Monitor;
+- Device API E2E;
+- Browser UI E2E con Playwright;
+- pruebas nativas;
+- compilación de <code>panel_4848s040</code>;
+- empaquetado de firmware y manifiesto SHA-256.
 
-- Comprobación determinista
+El manifiesto distingue explícitamente la evidencia de compilación de la validación física.
 
-- Revisión o confirmación
+### Validación física
 
-- Persistencia
+[.github/workflows/physical-validation.yml](.github/workflows/physical-validation.yml) es manual y requiere un runner:
 
-- Reporte de resultados
+~~~text
+self-hosted, linux, x64, esp32
+~~~
 
-Esta separación se mantiene en la documentación incluso cuando los componentes individuales de implementación evolucionan.
-**3.2.1. Diseño electrónico**
-En la documentación electrónica se aborda el panel ESP32-S3-4848S040 y su subsistema táctil y de visualización. En la descripción del hardware controlado se identifica una arquitectura de pantalla RGB de 480 × 480, un controlador de pantalla clase ST7701 y un controlador táctil GT911. Asimismo, en la configuración del repositorio se documenta un objetivo PlatformIO `panel_4848s040` en el que se emplea una definición de placa ESP32-S3, una configuración de memoria flash de 16 MB, una configuración OPI PSRAM y la dependencia *GFX Library para Arduino*.
-**A. Evidencia web de Espressif**
-En la documentación de Espressif se describe el funcionamiento de la pantalla LCD RGB en el ESP32-S3 y se identifica que la configuración del panel RGB depende del ancho de datos, el formato de píxeles y la sincronización del panel (*timing*). De igual manera, se documentan las consideraciones de la pantalla RGB que involucran el ancho de banda de la PSRAM y los requisitos del *frame-buffer* en los sistemas ESP32-S3. Estas referencias externas se utilizan como respaldo técnico para la arquitectura de visualización y no se interpretan como evidencia de una prueba de hardware físico en este repositorio.
-**B. Evidencia del controlador ST7701**
-En la documentación del ST7701S, proveniente del material de pantallas de Espressif, se describe la configuración de la interfaz RGB, incluyendo los modos DE y SYNC, así como los formatos de color soportados. Se tiene en cuenta que la configuración eléctrica exacta se mantiene como una propiedad a nivel de placa y debe conservarse de manera coherente con la configuración de hardware verificada.
-Como referencia de evidencia de implementación controlada se tiene:
+El workflow compila, carga el firmware en el puerto indicado, captura el arranque serie y publica <code>physical-boot.log</code>.
 
-- `st7701_type8_init_operations`
+Las verificaciones físicas previstas incluyen:
 
-Este identificador se conserva como la referencia de implementación requerida por el registro de documentación V14.1. Por sí sola, la referencia no constituye una afirmación de que el panel físico se haya reinicializado o modificado (*flasheado*) durante esta consolidación.
-**C. Evidencia del controlador táctil GT911**
-En la documentación actual del gestor de placas de Espressif se describe al GT911 como un controlador táctil I2C y se identifica un componente `esp_lcd_touch_gt911` para configuraciones táctiles basadas en GT911. Por lo tanto, en el registro V14.1 se trata al GT911 como un componente de interfaz táctil I2C cuya dirección exacta, coordenadas y sincronización de placa deben seguir la configuración del panel verificada, en lugar de inferirse de una placa genérica.
-**D. Evidencia del panel Guition**
-El material de implementación del panel relacionado con Guition se emplea como evidencia de referencia de respaldo para la arquitectura de pantalla ESP32-S3-4848S040. Este material no se utiliza para transferir asignaciones de GPIO no documentadas ni para autorizar cambios de *firmware* en esta consolidación.
-**E. Verificación del repositorio**
-Actualmente, en la configuración de hardware del lado del repositorio se incluye el entorno PlatformIO `panel_4848s040`. En la configuración registrada se identifica el ESP32-S3, el *framework* de Arduino, 16 MB de memoria flash, OPI PSRAM y la dependencia GFX de Arduino. Estos valores proporcionan evidencia a nivel de repositorio para el objetivo de compilación documentado.
-Por último, se conservan los siguientes marcadores de referencia de implementación en el registro de documentación controlado, debido a que forman parte del índice de evidencia solicitado:
+- ST7701S y renderizado 480 × 480;
+- respuesta táctil GT911;
+- asociación Wi-Fi;
+- PSRAM;
+- estabilidad serie por USB-C;
+- audio/GPIO cuando el montaje lo incorpora;
+- estabilidad de alimentación durante arranque y actividad de red.
 
-- `st7701_type8_init_operations`
+Una ejecución de CI en GitHub-hosted runners **no demuestra** por sí sola que un ESP32-S3 real, el ST7701S, el GT911, el USB o la alimentación estén funcionando.
 
-- `server/deviceApi.ts`
+## Inventario de imágenes y ubicación documental
 
-- `server/deviceCommands.ts`
+El árbol fuente contiene **84 archivos de imagen**:
 
-- `server/reviewControl.ts`
+- **15** capturas en <code>doc/images/</code>;
+- **69** recursos gráficos de ejecución en <code>src/assets/images/</code>.
 
-Estos marcadores se consideran referencias de documentación. Su presencia en el documento principal (*README*) no autoriza la modificación de los archivos fuente referenciados.
-**3.2.2. Diseño de software**
-En la documentación de la arquitectura de software se describe un sistema coordinado de comunicación web y de dispositivos. En la capa de aplicación se utilizan componentes de servidor orientados a Node.js, un patrón de API HTTP compatible con Express, una interfaz basada en React y una interpretación de comandos asistida por inteligencia artificial generativa. Por su parte, el panel embebido se comunica con el servicio a través de un contrato de dispositivo controlado, en lugar de escribir directamente en una fuente de datos maestra.
-**A. Entorno Node.js**
-En el diseño de software se registra a Node.js como la familia de servidor y entorno de ejecución empleada por la capa de aplicación del Asistente 3C. El propósito del servidor es recibir y coordinar las solicitudes estructuradas de los dispositivos, preservar la identidad de la solicitud y respaldar el ciclo de vida controlado de los comandos.
-**B. Capa de servicio Express**
-Se documenta a Express como la capa de servicio HTTP utilizada para exponer el contrato de cara al dispositivo. En esta arquitectura se separa el transporte de la decisión de aplicar un cambio. En consecuencia, una solicitud HTTP aceptada representa la recepción o progresión a través del flujo de trabajo, y no una autorización automática para modificar o escribir sobre los datos maestros.
-**C. Interfaz React**
-Se documenta a React como la capa de interfaz de usuario para el flujo de trabajo de revisión controlada. Mediante esta interfaz se puede presentar una operación propuesta, exponer los campos o el estado resultante, y mantener un paso de confirmación humana entre la interpretación y la persistencia de datos.
-**D. Inteligencia Artificial Generativa (GenAI)**
-La inteligencia artificial generativa se documenta como un componente de interpretación. Su función consiste en convertir instrucciones en lenguaje natural en una representación estructurada adecuada para comprobaciones deterministas. Asimismo, se tiene en cuenta que el componente de IA no opera como la autoridad directa para la persistencia de la información.
-**E. Verificación del repositorio**
-Los marcadores de evidencia de software requeridos para el registro V14.1 se conservan explícitamente de la siguiente manera:
+El README fuente no contiene referencias Markdown a imágenes técnicas. Además, el commit fuente de referencia <code>4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53</code> modificó únicamente el README; no añadió ni modificó imágenes.
 
-- `server/deviceApi.ts`
+Para la documentación se muestran solo las capturas que aportan contexto de interfaz:
 
-- `server/deviceCommands.ts`
+- <code>doc/images/home.png</code> → pantalla principal;
+- <code>doc/images/settings.png</code> → configuración;
+- <code>doc/images/loading.png</code> → carga/inicio.
 
-- `server/reviewControl.ts`
+Los demás recursos gráficos se conservan como activos del firmware y no se presentan como evidencia independiente.
 
-De este modo, se retiene a `server/deviceApi.ts` como la referencia de evidencia de la API del dispositivo; a `server/deviceCommands.ts` como la referencia de estado y normalización de comandos; y a `server/reviewControl.ts` como la referencia de control de revisión humana. En el documento principal (*README*) se registran estos archivos como marcadores de evidencia de implementación, por lo cual no se modifica su contenido como parte de esta consolidación de la documentación.
-**3.2.3. Diseño del agente de IA: Modelo de inteligencia artificial y procesamiento controlado**
-El agente de inteligencia artificial constituye la capa de interpretación semántica del sistema Asistente 3C. Su función principal consiste en transformar una instrucción expresada en lenguaje natural en una representación estructurada de la tarea y de las operaciones solicitadas, la cual posteriormente se somete a validaciones deterministas y al flujo de revisión humana. En consecuencia, la generación por parte del modelo no se considera una autorización autónoma para modificar la fuente maestra.
-Para la implementación vigente se utiliza la biblioteca `@google/genai`. El modelo configurado por defecto corresponde a `gemini-2.5-flash`, aunque su selección puede sustituirse mediante la variable de entorno `GEMINI_MODEL`. Mediante esta configuración se mantiene separado el comportamiento del software respecto del identificador concreto del modelo utilizado durante una ejecución determinada.
-**A. Función del modelo**
-La llamada al modelo se realiza mediante la función `ai.models.generateContent`. Se tiene en cuenta que la configuración establece `temperature: 0`, lo que orienta la generación hacia un comportamiento controlado y reduce la variabilidad en la interpretación de comandos equivalentes.
-Asimismo, la salida se solicita mediante `responseMimeType: "application/json"` y un `responseSchema` definido explícitamente. En dicho esquema se establecen los campos para la tarea buscada, el identificador de tarea cuando corresponda, las operaciones propuestas y la indicación de si se requiere revisión. Por consiguiente, el resultado del modelo se procesa como una estructura verificable y no como texto libre destinado a ejecutar cambios.
-Por tanto, la función del modelo se limita a la interpretación semántica. En el flujo lógico posterior se conserva la separación entre el modelo, la salida estructurada, la validación determinista, la localización de la tarea, la propuesta, la revisión humana y la persistencia autorizada.
-**B. Entrada contextual y** ***grounding*** **con información real**
-En la etapa de interpretación, la implementación recibe `detectedHeaders` y `detectedCatalogs` como contexto. Los encabezados permiten contrastar la estructura real de la hoja, mientras que los catálogos proporcionan los valores existentes que pueden utilizarse en los campos categóricos controlados.
-De igual manera, la identificación de la tarea se mantiene vinculada a la estructura de la estrategia. Se establece la búsqueda por *Nombre* en la columna F y se permite utilizar `TareaId` en la columna E cuando el usuario lo especifica explícitamente. Esta distinción evita que el modelo invente identificadores o interprete como identidad una columna diferente a la establecida por el contrato.
-Los catálogos utilizados como contexto corresponden a `ItemMantenible`, `ModoDeFalla`, `Especialidad` y `Labour1`. La finalidad de este mecanismo es restringir la interpretación exclusivamente a valores que existen en la fuente contextualizada.
-Cabe precisar que en esta implementación específica no se evidencia una recuperación vectorial para la etapa de `/api/extract`. El *grounding* documentado para este componente es de tipo tabular y estructural (encabezados, catálogos y reglas de operación), por lo que no se atribuye una arquitectura RAG vectorial en este flujo.
-**C. Contrato de salida estructurada**
-En el `responseSchema` se define una estructura de respuesta que contiene, como mínimo, los campos `tarea_buscada`, `operaciones` y `requiere_revision`, además de `tarea_id` y `motivo_revision` cuando corresponda.
-Cada operación identifica un campo permitido, su valor propuesto y, opcionalmente, una razón asociada. Dado que los campos permitidos se encuentran definidos previamente en `FIELD_RULES`, el modelo no determina libremente qué columnas del sistema se pueden modificar.
-La lista blanca vigente comprende los campos asociados a las columnas B, C, H, I, J, K, L, M, N y O. Por consiguiente, las columnas de identidad, búsqueda o cualquier columna fuera de la lista autorizada permanecen fuera del dominio de modificación. De este modo, el contrato estructurado establece una frontera entre la generación y la ejecución: la inteligencia artificial propone una estructura y la aplicación determina si dicha estructura es aceptable.
-**D. Validación determinista posterior al modelo**
-La respuesta generada se procesa mediante una segunda etapa de validación programática. Antes de aceptar cada operación, se verifica que el campo recibido pertenezca a `FIELD_RULES`.
-Posteriormente, se comprueba que la columna asociada coincida con el encabezado esperado. Cuando existe una discrepancia entre la estructura detectada y la definición de una columna, la auditoría se detiene en lugar de continuar con una operación potencialmente incorrecta.
-Los valores de catálogo se normalizan para su comparación; sin embargo, el valor finalmente utilizado debe corresponder a un elemento existente del catálogo. Esto evita convertir una variación de mayúsculas, minúsculas o acentuación en un valor nuevo no autorizado.
-Asimismo, las frecuencias se convierten en valores enteros mayores o iguales a uno, mientras que las unidades de tiempo se normalizan hacia representaciones canónicas como `Mes`, `Año`, `Semana`, `Día` y `Hora`. Por su parte, los campos de texto largo rechazan expresiones incompletas (como `...`, `…` o `etc.`), debido a que la información destinada a la fuente maestra debe conservar el contenido descriptivo completo.
-**E. Límites de autoridad del agente de IA**
-El agente no posee autoridad directa para modificar la fuente maestra. A través del *endpoint* `/api/extract` se interpreta la instrucción y se devuelve una estructura de operaciones validada, pero no se ejecuta por sí mismo una escritura sobre Google Sheets.
-Asimismo, la recepción de una orden y su interpretación no equivalen a su aplicación. El resultado del modelo se incorpora al proceso de propuesta y revisión, manteniendo separadas la interpretación, la validación y la persistencia.
-En consecuencia, la autoridad de la inteligencia artificial se limita a interpretar la intención expresada por el usuario dentro del contrato de campos, encabezados, catálogos y reglas proporcionado como contexto.
-**F. Integración con revisión humana**
-Cuando la estructura resultante requiere revisión o no contiene operaciones válidas, en el sistema se establece `requiere_revision`. Posteriormente, la propuesta se puede registrar mediante `reviewStore`.
-En la propuesta se conserva la fila objetivo, la coincidencia localizada, las operaciones solicitadas y, cuando corresponde, el identificador de la orden externa que originó el proceso. Por tanto, la revisión humana se mantiene como una condición indispensable entre la propuesta generada y la persistencia.
-Este diseño impide interpretar una respuesta correcta del modelo como una escritura automática, por lo que la decisión final permanece separada de la generación probabilística y se ejecuta mediante el flujo de aprobación o rechazo.
-**G. Secuencia completa de procesamiento de una instrucción**
-El procesamiento de una instrucción se estructura de forma secuencial mediante los siguientes pasos técnicos:
+No se encontró en el árbol fuente una imagen dedicada al hardware físico, un diagrama específico del flujo API, una captura específica del editor/teclado 3C o una fotografía de validación USB. Por ello, no se incorporó evidencia visual inventada.
 
-1. Recepción de la instrucción en lenguaje natural.
+## Estructura del repositorio
 
-2. Incorporación de encabezados, estructura y catálogos disponibles como contexto.
+La importación conserva la estructura funcional completa:
 
-3. Envío de la solicitud al modelo Gemini mediante `@google/genai`.
+~~~text
+.github/
+  ISSUE_TEMPLATE/
+  workflows/
+    ci.yml
+    firmware-cd.yml
+    physical-validation.yml
+backend/
+contract/
+doc/
+  images/
+docs/
+e2e/
+include/
+platformio/
+  src/
+    panel_4848s040/
+scripts/
+src/
+  assets/
+  common/
+  translations/
+  widgets/
+test/
+tests/
+gen_he.py
+platformio.ini
+LICENSE
+README.md
+.gitignore
+~~~
 
-4. Generación de la respuesta en formato JSON con el esquema definido (`responseSchema`).
+Los componentes principales son:
 
-5. Parseo y extracción de la respuesta estructurada.
+- <code>src/</code>: ESPHome + LVGL + ST7701S + GT911.
+- <code>platformio/src/panel_4848s040/</code>: firmware 3C, editor, teclado y cliente API.
+- <code>include/</code>: command buffer, viewport y teclado.
+- <code>backend/</code>: servicio local de prueba.
+- <code>contract/</code>: contrato HTTP.
+- <code>e2e/</code>, <code>test/</code> y <code>tests/</code>: validación de software.
+- <code>scripts/</code>: seis bloques reproducibles.
+- <code>.github/workflows/</code>: CI, CD y validación física.
 
-6. Verificación determinista del campo y de la columna asociada según `FIELD_RULES`.
+## Documentación complementaria
 
-7. Validación de catálogos, frecuencias, unidades y contenido textual.
+- [docs/ESP32-FIRMWARE-BACKEND-README.md](docs/ESP32-FIRMWARE-BACKEND-README.md)
+- [docs/api-e2e.md](docs/api-e2e.md)
+- [docs/physical-validation.md](docs/physical-validation.md)
+- [docs/validation-matrix.md](docs/validation-matrix.md)
 
-8. Determinación de la tarea objetivo por *Nombre* o `TareaId`.
+La documentación académica que utilice esta información debe conservar la lógica **condición → diseño → implementación → evidencia → limitación**, sin crear una numeración paralela dentro de este README.
 
-9. Generación de una propuesta controlada de modificación.
+## Consolidación y comparación
 
-10. Ejecución del flujo de revisión humana.
+Antes de modificar el destino se leyeron y compararon ambos README completos.
 
-11. Persistencia de datos tras obtener la autorización correspondiente.
+El **README fuente** de <code>wpv10barza/ESP32-S3-4848S040</code>, rama <code>main</code>, tiene 21 108 bytes y blob <code>0c33d6c53a2e0f52a200546396b94cf31b5c7b03</code> en el commit de referencia.
 
-Esta secuencia mantiene separadas las responsabilidades de interpretación semántica y ejecución determinista. Se tiene en cuenta que un error de formato, una discrepancia de encabezado, un valor de catálogo inexistente o una condición no verificable interrumpe el avance normal del proceso, evitando que la salida del modelo se convierta en una modificación directa sobre la fuente de datos.
+El **README destino preexistente** fue leído antes de la consolidación. Aportaba una descripción más breve de la importación y de la separación entre software y validación física, además de una sección académica extensa con numeración propia. Esa información útil se integró aquí en una sola estructura, mientras que los apartados duplicados, marcadores que no pertenecen al árbol de este repositorio y afirmaciones visuales no respaldadas fueron eliminados o corregidos.
+
+La comparación del árbol funcional produjo:
+
+| Elemento | Fuente | Destino antes de la consolidación | Resultado |
+|---|---:|---:|---|
+| Archivos fuente | 189 | 189 equivalentes ya importados | 189 conservados |
+| Archivos faltantes | 0 después de la importación | 0 | sin faltantes |
+| README | diferente | presente | reemplazado por uno integrado |
+| Workflows temporales de importación | no existen | presentes | retirados |
+| Activos funcionales | presentes | presentes | conservados |
+
+No se hizo una concatenación literal ni una sustitución ciega del README.
+
+## Procedencia
+
+La versión consolidada utiliza como referencia:
+
+- **Fuente:** <code>wpv10barza/ESP32-S3-4848S040</code>
+- **Rama:** <code>main</code>
+- **Commit fuente:** [4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53](https://github.com/wpv10barza/ESP32-S3-4848S040/commit/4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53)
+- **README fuente:** blob <code>0c33d6c53a2e0f52a200546396b94cf31b5c7b03</code>
+- **Árbol fuente:** <code>f75e091d38c6672ed16ffcdc7ea78a7b80c7ec52</code>
+- **Destino:** <code>wpv10barza/erp-mantto-esp32</code>
+- **Rama destino:** <code>main</code>
+
+El firmware, GPIO, ST7701S, GT911, PSRAM, flash, API, estados, temporización, dependencias y pruebas se mantienen según el snapshot fuente utilizado. La consolidación realizada sobre este repositorio es documental y no rediseña la arquitectura funcional.
