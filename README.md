@@ -9,71 +9,41 @@ El repositorio conserva dos objetivos funcionales separados:
 
 La separación de objetivos es deliberada: la configuración LVGL pertenece al objetivo ESPHome y la interfaz 3C documentada en este README pertenece al objetivo PlatformIO. No se introduce una dependencia independiente <code>lvgl/lvgl</code> en PlatformIO.
 
-## Alcance y arquitectura
+## 3.1. Enfoque del sistema
 
-La condición de entrada es una orden escrita o editada desde el panel. El diseño trata esa orden como una propuesta controlada y no como una escritura directa sobre una fuente maestra.
+El sistema se concibe como una solución embebida de interacción y comunicación controlada para el Asistente 3C. El panel ESP32-S3-4848S040 constituye el punto de interacción local y concentra la visualización, la entrada táctil, la edición de instrucciones y la comunicación con la API del dispositivo. El procesamiento posterior se mantiene fuera de la autoridad directa del panel: la orden se transporta al servicio correspondiente, atraviesa el flujo de interpretación y control establecido y permanece sujeta a revisión humana antes de cualquier aplicación autorizada.
 
-~~~text
-ESP32-S3-4848S040
-├─ ESPHome + LVGL
-│  ├─ ST7701S / 480×480
-│  └─ GT911
-└─ PlatformIO / panel_4848s040
-   ├─ editor 3C
-   ├─ teclado virtual
-   ├─ commandBuffer
-   ├─ viewport horizontal
-   └─ cliente Device API
-             │
-             ▼
-      Asistente 3C / Device API
-             │
-             ▼
-      pending_confirmation
-          ├── applied
-          └── rejected
+La organización del diseño adopta una separación de responsabilidades entre interacción, transporte, interpretación, validación, revisión, persistencia y reporte. Esta separación permite que una respuesta HTTP aceptada o una interpretación válida no se confundan con la aplicación final del cambio. En consecuencia, el capítulo distingue las condiciones que debe satisfacer cada subsistema, las decisiones de diseño adoptadas para cumplirlas, su implementación documentada y los mecanismos de verificación disponibles.
 
-fallo de transporte/protocolo → ERROR
-polling del estado → 2.5 s
-~~~
+## 3.2. Diseño del sistema
 
-La arquitectura separa la interacción, el transporte HTTP, la interpretación, la validación determinista, la revisión humana, la persistencia y el reporte del resultado. Una respuesta HTTP aceptada no significa por sí sola que el cambio ya haya sido aplicado.
+El diseño se desarrolla a partir de condiciones iniciales agrupadas por subsistema. Cada condición se formula como un requisito previo que delimita lo que el sistema debe proporcionar; a continuación se establece la decisión de diseño que responde a la condición, se identifica la implementación documentada y se indica el nivel de evidencia que permite verificarla. Esta separación evita presentar como funcionamiento físico una característica que solamente está declarada, configurada, compilada o probada en software.
 
-El componente de IA del sistema más amplio del Asistente 3C se limita a la interpretación semántica. La persistencia queda fuera de la autoridad del modelo y requiere las validaciones y controles definidos por la aplicación. La implementación productiva de Node.js/React/GenAI no forma parte de este árbol de firmware; el repositorio documenta y prueba su frontera de integración mediante el contrato del dispositivo y los E2E.
+### 3.2.1. Diseño electrónico
 
-## Hardware y configuración
-## Condiciones iniciales del sistema
+El subsistema electrónico debe proporcionar una superficie de interacción visual y táctil compatible con la interfaz del Asistente 3C, conservando la geometría del panel y una integración coherente entre pantalla, controlador táctil, memoria, comunicación y alimentación. Esta condición es necesaria para que la información presentada al usuario y las coordenadas recibidas por el subsistema táctil correspondan al mismo espacio físico de interacción.
 
-Antes de describir la implementación, las condiciones iniciales del panel se fijan a partir de lo que el repositorio declara y configura en código. La condición funcional es disponer de una superficie de interacción de 480 × 480 con visualización ST7701S, entrada táctil GT911 y recursos de ejecución compatibles con los objetivos ESPHome + LVGL y PlatformIO. Estas propiedades definen el subsistema que debe verificarse antes de atribuir funcionamiento físico al dispositivo.
+La solución de diseño utiliza el panel Guition ESP32-S3-4848S040 con una resolución de 480 × 480, pantalla RGB basada en ST7701S y controlador táctil GT911. El objetivo electrónico debe conservar una configuración de memoria y de placa compatible con los dos objetivos de construcción del proyecto. En la configuración ya documentada se registran 16 MB de memoria Flash, PSRAM OPI y el entorno PlatformIO <code>panel_4848s040</code>; estos datos se utilizan como parámetros del diseño y no como demostración de funcionamiento físico.
 
 ![Figura 13. Mapa técnico del panel ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig13_panel_base.png)
 
 **Figura 13. Mapa técnico del panel ESP32-S3-4848S040 y sus condiciones de integración.**
 
-El mapa resume las características y límites de evidencia que sí pueden sostenerse desde el README y el código: resolución 480 × 480, ST7701S, GT911, ESPHome + LVGL, Flash de 16 MB, PSRAM OPI y el entorno PlatformIO `panel_4848s040`. También muestra la diferencia entre comunicación prevista por Wi-Fi/HTTP y validación física: la configuración y la CI prueban software y contratos, pero la comprobación eléctrica y funcional del panel requiere un dispositivo conectado y el workflow de validación física.
+La Figura 13 permite relacionar la geometría del panel con los componentes que deben mantenerse coordinados. Su función es documental: representa las condiciones de integración declaradas para el diseño y no sustituye una prueba eléctrica o funcional sobre el dispositivo.
 
-### Distribución lógica de subsistemas y periféricos
-
-La distribución del subsistema se organiza alrededor del ESP32-S3 y de los bloques que el firmware utiliza de forma explícita. Se incluyen la pantalla ST7701S, el GT911, la retroiluminación, Flash, PSRAM, la comunicación Wi-Fi/HTTP de la interfaz 3C y el audio I²S cuando el montaje lo habilita. No se incorporan IP5306, NS4188, CH340C ni microSD como hechos de esta arquitectura, porque el README vigente y el código revisado no los demuestran como parte verificable del objetivo actual.
+La distribución lógica del subsistema debe preservar la relación entre procesamiento, visualización, tacto, memoria, retroiluminación y comunicación. El diseño del repositorio organiza estos elementos alrededor del ESP32-S3 y diferencia el objetivo ESPHome del objetivo PlatformIO, sin asumir que ambas configuraciones representan una única pila de software en ejecución simultánea.
 
 ![Figura 14. Mapa lógico de subsistemas y periféricos documentados del ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig14_subsystems.png)
 
 **Figura 14. Mapa lógico de subsistemas y periféricos documentados del ESP32-S3-4848S040.**
 
-La figura separa los recursos de procesamiento, visualización, tacto, retroiluminación, memoria y comunicación. Las conexiones representadas son relaciones funcionales documentadas por `src/main.yaml`, `platformio.ini` y `platformio/src/panel_4848s040/main.cpp`; su continuidad y funcionamiento eléctrico siguen siendo una cuestión de validación física.
-
-### Buses y GPIO documentados
-
-Las asignaciones de señales se contrastan directamente con `platformio/src/panel_4848s040/main.cpp` y `src/main.yaml`. El firmware PlatformIO declara CS GPIO39, SPI CLK GPIO48 y MOSI GPIO47; la configuración de pantalla usa DE GPIO18, HSYNC GPIO16, VSYNC GPIO17 y PCLK GPIO21. El GT911 utiliza I²C con SDA GPIO19, SCL GPIO45 y dirección 0x5D; la retroiluminación utiliza GPIO38. Cuando el audio está habilitado, el código reserva BCLK GPIO1, LRCLK GPIO2 y DATA GPIO40.
+La interfaz táctil debe mantener coherencia entre la geometría de la pantalla, las coordenadas recibidas y la lógica de interacción. El sistema utiliza GT911 como controlador táctil; adicionalmente, el README fuente advierte una consideración de uso de puertos en la que GPIO19 participa en I²C del GT911 y GPIO20 forma parte del bus RGB, por lo que esta condición debe revisarse durante la validación física y no interpretarse como una prueba de funcionamiento o de fallo.
 
 ![Figura 15. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig15_gpio_map.png)
 
 **Figura 15. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040.**
 
-El mapa distingue la asignación de software de la continuidad eléctrica real. En consecuencia, una coincidencia entre la configuración y la figura demuestra consistencia documental, pero no sustituye una prueba sobre la placa. El propio README advierte que GPIO19 participa en I²C del GT911 y GPIO20 en el bus RGB, condición que debe revisarse durante la validación física por posible superposición con USB-Serial-JTAG.
-
-
-La implementación existente del panel se conserva sin cambiar GPIO, controladores, temporización ni arquitectura.
+La Figura 15 conserva la evidencia documental de las relaciones de buses y señales ya integradas en el repositorio. La coincidencia entre el mapa y la configuración constituye evidencia de consistencia documental; la continuidad eléctrica de las señales debe comprobarse mediante una validación física.
 
 | Elemento | Configuración documentada |
 |---|---|
@@ -81,24 +51,75 @@ La implementación existente del panel se conserva sin cambiar GPIO, controlador
 | Resolución | 480 × 480 |
 | Display | ST7701S |
 | Touch | GT911 por I²C |
-| Dirección GT911 | 0x5D |
-| I²C | SDA GPIO19 / SCL GPIO45 |
-| Backlight | GPIO38 |
-| RGB DE / HSYNC / VSYNC / PCLK | GPIO18 / GPIO16 / GPIO17 / GPIO21 |
-| SPI de comandos | CLK GPIO48 / MOSI GPIO47 / CS GPIO39 |
 | Flash | 16 MB |
-| PSRAM | OPI; ESPHome configura 80 MHz |
-| Audio, cuando el montaje lo habilita | I²S BCLK GPIO1 / LRCLK GPIO2 / DATA GPIO40 |
+| PSRAM | OPI |
+| Entorno de firmware 3C | PlatformIO <code>panel_4848s040</code> |
+| Objetivo de interfaz | ESPHome + LVGL |
+| Consideración física | validación específica sobre el panel conectado |
 
-La configuración ESPHome utiliza <code>esp32-s3-devkitc-1</code> con **ESP-IDF**. El entorno PlatformIO <code>panel_4848s040</code> utiliza <code>esp32-s3-devkitm-1</code> con **Arduino**. Son dos definiciones de construcción independientes que se conservan para el mismo hardware.
+La configuración de ESPHome y la de PlatformIO se mantienen como objetivos de construcción independientes para el mismo hardware. La primera se orienta a la interfaz ESPHome + LVGL y la segunda al firmware 3C con editor, teclado virtual, <code>commandBuffer</code> y cliente HTTP. Esta separación es una decisión de diseño orientada a evitar que una pila de interfaz reemplace a la otra.
 
-La inicialización del firmware PlatformIO usa <code>st7701_type9_init_operations</code> y el panel RGB de 480 × 480. El mismo marcador es comprobado por <code>scripts/03_verify_guition.sh</code>.
+La verificación de este subsistema se limita al nivel que realmente ejecuta cada procedimiento. Los scripts de verificación y las compilaciones demuestran consistencia de configuración y construcción; la validación física requiere un ESP32-S3 real conectado y un proceso específico de carga, arranque y comprobación de pantalla, táctil, memoria, comunicación y alimentación.
 
-El README fuente de `main` de `wpv10barza/ESP32-S3-4848S040` documenta el identificador `st7701_type8_init_operations`; sin embargo, la implementación actual de `platformio/src/panel_4848s040/main.cpp` utiliza `st7701_type9_init_operations`. Por tratarse de una diferencia entre documentación y código, se conserva expresamente en el README como discrepancia documental pendiente de verificación, sin presentar ninguna de las dos referencias como evidencia de funcionamiento físico.
+### 3.2.2. Diseño de software
 
-### Advertencia de puertos
+El subsistema de software debe permitir que una instrucción sea introducida, editada, transportada y consultada de forma controlada, sin convertir la interacción del usuario en una escritura directa sobre una fuente maestra. Para ello se requiere una arquitectura que mantenga separados el transporte HTTP, el procesamiento de la orden, la validación, la revisión humana, la persistencia y el reporte del estado.
 
-ESPHome usa GPIO19 para I²C del GT911 y GPIO20 como parte del bus RGB. El proyecto advierte que ESPHome puede reportar una posible superposición con USB-Serial-JTAG. Esa advertencia es una consideración de uso de puertos durante la validación física; no constituye evidencia de funcionamiento ni de fallo del panel.
+La decisión de diseño utiliza dos objetivos de firmware relacionados con el mismo panel. ESPHome + LVGL se reserva para la interfaz gráfica, mientras que PlatformIO mantiene el firmware de interacción 3C. La independencia entre ambos objetivos permite conservar la interfaz documentada y, al mismo tiempo, mantener un cliente de dispositivo específico para el flujo de comandos.
+
+En la implementación del firmware 3C, el editor trabaja con un <code>commandBuffer</code> de tamaño fijo y soporta cursor, inserción, borrado, desplazamiento horizontal del texto, teclado virtual <code>ABC/123</code>, letras, números, símbolos, espacio, backspace y enter. La entrada editada se utiliza para construir la solicitud enviada mediante el cliente del dispositivo. De este modo, la condición funcional de disponer de una orden editable se materializa en un componente de interacción concreto y verificable por software.
+
+La comunicación con el Asistente 3C se realiza mediante la Device API versionada. El diseño contempla <code>GET /api/device/v1/health</code>, <code>POST /api/device/v1/commands</code> y <code>GET /api/device/v1/commands/{command_id}</code>. El ciclo de una orden comienza con su creación, pasa al estado <code>pending_confirmation</code>, queda sujeto a confirmación o rechazo humano y finaliza como <code>applied</code> o <code>rejected</code>. El dispositivo consulta el estado mediante *polling* cada 2.5 s y trata los fallos de transporte o protocolo como error, sin convertirlos en una aplicación automática.
+
+El diseño también establece una frontera entre transporte e interpretación. El panel transmite la instrucción y el contexto mínimo necesario para identificar la solicitud; la interpretación y las comprobaciones posteriores pertenecen al flujo controlado del Asistente 3C. La revisión humana permanece entre la propuesta y la aplicación final, por lo que la recepción de una respuesta o la generación de una propuesta no equivale a persistencia autorizada.
+
+La verificación del subsistema se realiza en varios niveles. El Block 3 comprueba la presencia de LVGL, la geometría 480 × 480, ST7701S, GT911, el buffer de comandos, el teclado virtual, la ruta de la API y el *polling* de 2.5 s. El Block 4 valida y compila la configuración ESPHome; el Block 5 ejecuta las pruebas nativas y construye el objetivo <code>panel_4848s040</code>. Las pruebas Python, C++ y E2E permiten verificar contratos, editor, estados y comunicación de software. GitHub Actions automatiza estas comprobaciones, pero no sustituye la validación física del panel.
+
+La relación entre construcción y evidencia se mantiene explícita: la documentación demuestra el diseño declarado; la implementación demuestra la presencia de código y configuración; las pruebas automatizadas demuestran los casos ejecutados; GitHub Actions demuestra las validaciones que el workflow realmente corre; y la validación física demuestra el comportamiento del dispositivo conectado. La Figura 16 conserva el flujo documental de compilación, carga, monitorización y validación.
+
+### 3.2.3. Diseño del agente de IA: Modelo de inteligencia artificial y procesamiento controlado
+
+El agente de inteligencia artificial forma parte del sistema de aplicación del Asistente 3C y se considera una capa de interpretación semántica. Su función queda subordinada al contrato de procesamiento del sistema y no sustituye la validación de reglas ni la revisión humana. En el contexto de este repositorio de firmware, la IA se documenta por su frontera de integración con el dispositivo y no como un componente autónomo de persistencia.
+
+**A. Función del modelo**
+
+El modelo debe transformar una instrucción expresada en lenguaje natural en una propuesta estructurada que pueda continuar hacia las etapas deterministas del sistema. La función del modelo termina en la interpretación de la intención; no incluye la autorización de una modificación física o de una escritura sobre una fuente maestra.
+
+**B. Entrada contextual y** ***grounding*** **con información real**
+
+La interpretación debe operar sobre información real disponible en el flujo de la aplicación, evitando que la salida del modelo introduzca entidades, estados o valores sin correspondencia con el contexto recibido. La orden originada en el panel constituye una entrada controlada y la información necesaria para resolverla debe provenir de las fuentes y contratos que el backend haya puesto a disposición del proceso.
+
+**C. Contrato de salida estructurada**
+
+La salida del modelo debe ajustarse a una representación estructurada y verificable antes de pasar a la ejecución. Esta frontera se relaciona con el contrato de la aplicación y con la Device API: el resultado de la interpretación se convierte en una propuesta que todavía debe ser comprobada y sometida al flujo de revisión.
+
+**D. Validación determinista posterior al modelo**
+
+Después de la interpretación, las condiciones que puedan expresarse como reglas deben resolverse de forma determinista. La validación debe comprobar consistencia de la propuesta, correspondencia con la estructura autorizada y cumplimiento de las restricciones antes de permitir que la orden avance a una etapa de persistencia autorizada.
+
+**E. Límites de autoridad del agente de IA**
+
+El agente no tiene autoridad directa para modificar la fuente maestra. La persistencia queda fuera del alcance del modelo y depende del flujo controlado de la aplicación. En el lado del dispositivo, además, la escritura directa queda fuera del contrato de la Device API; el ESP32 únicamente inicia y consulta el ciclo de la orden.
+
+**F. Integración con revisión humana**
+
+La revisión humana constituye una condición explícita del flujo de aplicación. La orden permanece en <code>pending_confirmation</code> hasta que el sistema de revisión determine su confirmación o rechazo. Por tanto, una respuesta correcta del modelo no es suficiente para considerar aplicada la operación.
+
+**G. Secuencia completa de procesamiento de una instrucción**
+
+La secuencia completa se interpreta de la siguiente manera:
+
+1. Introducción o edición de la instrucción en el panel.
+2. Envío de la orden mediante la Device API.
+3. Recepción y procesamiento controlado en el Asistente 3C.
+4. Interpretación semántica y conformación de la propuesta.
+5. Validación de las condiciones y reglas deterministas aplicables.
+6. Registro de la orden en estado <code>pending_confirmation</code>.
+7. Revisión humana mediante confirmación o rechazo.
+8. Consulta del estado por *polling* desde el dispositivo.
+9. Cierre del ciclo en <code>applied</code>, <code>rejected</code> o error de protocolo/transporte.
+
+La secuencia mantiene separadas la interpretación, la validación, la revisión y la persistencia. De esta forma, una instrucción de usuario puede atravesar todas las etapas sin que el componente probabilístico adquiera por sí mismo autoridad para aplicar cambios.
 
 ## Interfaz ESPHome + LVGL
 
@@ -447,130 +468,6 @@ Los componentes principales son:
 - <code>e2e/</code>, <code>test/</code> y <code>tests/</code>: validación de software.
 - <code>scripts/</code>: seis bloques reproducibles.
 - <code>.github/workflows/</code>: CI, CD y validación física.
-
-**3.2. Diseño del sistema**
-La arquitectura del sistema se divide en una capa de interacción embebida y una capa de coordinación de aplicación y *backend*. Mediante el panel ESP32-S3-4848S040 se proporciona la interfaz de usuario local, la interacción de pantalla, la entrada táctil, la comunicación de red y la presentación del estado de los comandos. Posteriormente, en la capa del Asistente 3C se coordina la recepción, interpretación, validación y control de revisión de comandos, así como la interacción controlada con la fuente de información de mantenimiento.
-Para el diseño, se tiene en cuenta que el principio arquitectónico central es la separación de responsabilidades. Se separa la interpretación probabilística de la validación determinista y de la autoridad de persistencia. Por consiguiente, un comando recibido desde el panel se trata como una entrada a un proceso controlado en lugar de una instrucción de escritura sin restricciones.
-En la documentación del repositorio se distinguen las siguientes etapas lógicas:
-
-- Interacción del usuario
-
-- Transporte de comandos
-
-- Interpretación de solicitudes
-
-- Comprobación determinista
-
-- Revisión o confirmación
-
-- Persistencia
-
-- Reporte de resultados
-
-Esta separación se mantiene en la documentación incluso cuando los componentes individuales de implementación evolucionan.
-**3.2.1. Diseño electrónico**
-En la documentación electrónica se aborda el panel ESP32-S3-4848S040 y su subsistema táctil y de visualización. En la descripción del hardware controlado se identifica una arquitectura de pantalla RGB de 480 × 480, un controlador de pantalla clase ST7701 y un controlador táctil GT911. Asimismo, en la configuración del repositorio se documenta un objetivo PlatformIO `panel_4848s040` en el que se emplea una definición de placa ESP32-S3, una configuración de memoria flash de 16 MB, una configuración OPI PSRAM y la dependencia *GFX Library para Arduino*.
-**A. Evidencia web de Espressif**
-En la documentación de Espressif se describe el funcionamiento de la pantalla LCD RGB en el ESP32-S3 y se identifica que la configuración del panel RGB depende del ancho de datos, el formato de píxeles y la sincronización del panel (*timing*). De igual manera, se documentan las consideraciones de la pantalla RGB que involucran el ancho de banda de la PSRAM y los requisitos del *frame-buffer* en los sistemas ESP32-S3. Estas referencias externas se utilizan como respaldo técnico para la arquitectura de visualización y no se interpretan como evidencia de una prueba de hardware físico en este repositorio.
-**B. Evidencia del controlador ST7701**
-En la documentación del ST7701S, proveniente del material de pantallas de Espressif, se describe la configuración de la interfaz RGB, incluyendo los modos DE y SYNC, así como los formatos de color soportados. Se tiene en cuenta que la configuración eléctrica exacta se mantiene como una propiedad a nivel de placa y debe conservarse de manera coherente con la configuración de hardware verificada.
-Como referencia de evidencia de implementación controlada se tiene:
-
-- `st7701_type8_init_operations`
-
-Este identificador se conserva como la referencia de implementación requerida por el registro de documentación V14.1. Por sí sola, la referencia no constituye una afirmación de que el panel físico se haya reinicializado o modificado (*flasheado*) durante esta consolidación.
-**C. Evidencia del controlador táctil GT911**
-En la documentación actual del gestor de placas de Espressif se describe al GT911 como un controlador táctil I2C y se identifica un componente `esp_lcd_touch_gt911` para configuraciones táctiles basadas en GT911. Por lo tanto, en el registro V14.1 se trata al GT911 como un componente de interfaz táctil I2C cuya dirección exacta, coordenadas y sincronización de placa deben seguir la configuración del panel verificada, en lugar de inferirse de una placa genérica.
-**D. Evidencia del panel Guition**
-El material de implementación del panel relacionado con Guition se emplea como evidencia de referencia de respaldo para la arquitectura de pantalla ESP32-S3-4848S040. Este material no se utiliza para transferir asignaciones de GPIO no documentadas ni para autorizar cambios de *firmware* en esta consolidación.
-**E. Verificación del repositorio**
-Actualmente, en la configuración de hardware del lado del repositorio se incluye el entorno PlatformIO `panel_4848s040`. En la configuración registrada se identifica el ESP32-S3, el *framework* de Arduino, 16 MB de memoria flash, OPI PSRAM y la dependencia GFX de Arduino. Estos valores proporcionan evidencia a nivel de repositorio para el objetivo de compilación documentado.
-Por último, se conservan los siguientes marcadores de referencia de implementación en el registro de documentación controlado, debido a que forman parte del índice de evidencia solicitado:
-
-- `st7701_type8_init_operations`
-
-- `server/deviceApi.ts`
-
-- `server/deviceCommands.ts`
-
-- `server/reviewControl.ts`
-
-Estos marcadores se consideran referencias de documentación. Su presencia en el documento principal (*README*) no autoriza la modificación de los archivos fuente referenciados.
-**3.2.2. Diseño de software**
-En la documentación de la arquitectura de software se describe un sistema coordinado de comunicación web y de dispositivos. En la capa de aplicación se utilizan componentes de servidor orientados a Node.js, un patrón de API HTTP compatible con Express, una interfaz basada en React y una interpretación de comandos asistida por inteligencia artificial generativa. Por su parte, el panel embebido se comunica con el servicio a través de un contrato de dispositivo controlado, en lugar de escribir directamente en una fuente de datos maestra.
-**A. Entorno Node.js**
-En el diseño de software se registra a Node.js como la familia de servidor y entorno de ejecución empleada por la capa de aplicación del Asistente 3C. El propósito del servidor es recibir y coordinar las solicitudes estructuradas de los dispositivos, preservar la identidad de la solicitud y respaldar el ciclo de vida controlado de los comandos.
-**B. Capa de servicio Express**
-Se documenta a Express como la capa de servicio HTTP utilizada para exponer el contrato de cara al dispositivo. En esta arquitectura se separa el transporte de la decisión de aplicar un cambio. En consecuencia, una solicitud HTTP aceptada representa la recepción o progresión a través del flujo de trabajo, y no una autorización automática para modificar o escribir sobre los datos maestros.
-**C. Interfaz React**
-Se documenta a React como la capa de interfaz de usuario para el flujo de trabajo de revisión controlada. Mediante esta interfaz se puede presentar una operación propuesta, exponer los campos o el estado resultante, y mantener un paso de confirmación humana entre la interpretación y la persistencia de datos.
-**D. Inteligencia Artificial Generativa (GenAI)**
-La inteligencia artificial generativa se documenta como un componente de interpretación. Su función consiste en convertir instrucciones en lenguaje natural en una representación estructurada adecuada para comprobaciones deterministas. Asimismo, se tiene en cuenta que el componente de IA no opera como la autoridad directa para la persistencia de la información.
-**E. Verificación del repositorio**
-Los marcadores de evidencia de software requeridos para el registro V14.1 se conservan explícitamente de la siguiente manera:
-
-- `server/deviceApi.ts`
-
-- `server/deviceCommands.ts`
-
-- `server/reviewControl.ts`
-
-De este modo, se retiene a `server/deviceApi.ts` como la referencia de evidencia de la API del dispositivo; a `server/deviceCommands.ts` como la referencia de estado y normalización de comandos; y a `server/reviewControl.ts` como la referencia de control de revisión humana. En el documento principal (*README*) se registran estos archivos como marcadores de evidencia de implementación, por lo cual no se modifica su contenido como parte de esta consolidación de la documentación.
-**3.2.3. Diseño del agente de IA: Modelo de inteligencia artificial y procesamiento controlado**
-El agente de inteligencia artificial constituye la capa de interpretación semántica del sistema Asistente 3C. Su función principal consiste en transformar una instrucción expresada en lenguaje natural en una representación estructurada de la tarea y de las operaciones solicitadas, la cual posteriormente se somete a validaciones deterministas y al flujo de revisión humana. En consecuencia, la generación por parte del modelo no se considera una autorización autónoma para modificar la fuente maestra.
-Para la implementación vigente se utiliza la biblioteca `@google/genai`. El modelo configurado por defecto corresponde a `gemini-2.5-flash`, aunque su selección puede sustituirse mediante la variable de entorno `GEMINI_MODEL`. Mediante esta configuración se mantiene separado el comportamiento del software respecto del identificador concreto del modelo utilizado durante una ejecución determinada.
-**A. Función del modelo**
-La llamada al modelo se realiza mediante la función `ai.models.generateContent`. Se tiene en cuenta que la configuración establece `temperature: 0`, lo que orienta la generación hacia un comportamiento controlado y reduce la variabilidad en la interpretación de comandos equivalentes.
-Asimismo, la salida se solicita mediante `responseMimeType: "application/json"` y un `responseSchema` definido explícitamente. En dicho esquema se establecen los campos para la tarea buscada, el identificador de tarea cuando corresponda, las operaciones propuestas y la indicación de si se requiere revisión. Por consiguiente, el resultado del modelo se procesa como una estructura verificable y no como texto libre destinado a ejecutar cambios.
-Por tanto, la función del modelo se limita a la interpretación semántica. En el flujo lógico posterior se conserva la separación entre el modelo, la salida estructurada, la validación determinista, la localización de la tarea, la propuesta, la revisión humana y la persistencia autorizada.
-**B. Entrada contextual y** ***grounding*** **con información real**
-En la etapa de interpretación, la implementación recibe `detectedHeaders` y `detectedCatalogs` como contexto. Los encabezados permiten contrastar la estructura real de la hoja, mientras que los catálogos proporcionan los valores existentes que pueden utilizarse en los campos categóricos controlados.
-De igual manera, la identificación de la tarea se mantiene vinculada a la estructura de la estrategia. Se establece la búsqueda por *Nombre* en la columna F y se permite utilizar `TareaId` en la columna E cuando el usuario lo especifica explícitamente. Esta distinción evita que el modelo invente identificadores o interprete como identidad una columna diferente a la establecida por el contrato.
-Los catálogos utilizados como contexto corresponden a `ItemMantenible`, `ModoDeFalla`, `Especialidad` y `Labour1`. La finalidad de este mecanismo es restringir la interpretación exclusivamente a valores que existen en la fuente contextualizada.
-Cabe precisar que en esta implementación específica no se evidencia una recuperación vectorial para la etapa de `/api/extract`. El *grounding* documentado para este componente es de tipo tabular y estructural (encabezados, catálogos y reglas de operación), por lo que no se atribuye una arquitectura RAG vectorial en este flujo.
-**C. Contrato de salida estructurada**
-En el `responseSchema` se define una estructura de respuesta que contiene, como mínimo, los campos `tarea_buscada`, `operaciones` y `requiere_revision`, además de `tarea_id` y `motivo_revision` cuando corresponda.
-Cada operación identifica un campo permitido, su valor propuesto y, opcionalmente, una razón asociada. Dado que los campos permitidos se encuentran definidos previamente en `FIELD_RULES`, el modelo no determina libremente qué columnas del sistema se pueden modificar.
-La lista blanca vigente comprende los campos asociados a las columnas B, C, H, I, J, K, L, M, N y O. Por consiguiente, las columnas de identidad, búsqueda o cualquier columna fuera de la lista autorizada permanecen fuera del dominio de modificación. De este modo, el contrato estructurado establece una frontera entre la generación y la ejecución: la inteligencia artificial propone una estructura y la aplicación determina si dicha estructura es aceptable.
-**D. Validación determinista posterior al modelo**
-La respuesta generada se procesa mediante una segunda etapa de validación programática. Antes de aceptar cada operación, se verifica que el campo recibido pertenezca a `FIELD_RULES`.
-Posteriormente, se comprueba que la columna asociada coincida con el encabezado esperado. Cuando existe una discrepancia entre la estructura detectada y la definición de una columna, la auditoría se detiene en lugar de continuar con una operación potencialmente incorrecta.
-Los valores de catálogo se normalizan para su comparación; sin embargo, el valor finalmente utilizado debe corresponder a un elemento existente del catálogo. Esto evita convertir una variación de mayúsculas, minúsculas o acentuación en un valor nuevo no autorizado.
-Asimismo, las frecuencias se convierten en valores enteros mayores o iguales a uno, mientras que las unidades de tiempo se normalizan hacia representaciones canónicas como `Mes`, `Año`, `Semana`, `Día` y `Hora`. Por su parte, los campos de texto largo rechazan expresiones incompletas (como `...`, `…` o `etc.`), debido a que la información destinada a la fuente maestra debe conservar el contenido descriptivo completo.
-**E. Límites de autoridad del agente de IA**
-El agente no posee autoridad directa para modificar la fuente maestra. A través del *endpoint* `/api/extract` se interpreta la instrucción y se devuelve una estructura de operaciones validada, pero no se ejecuta por sí mismo una escritura sobre Google Sheets.
-Asimismo, la recepción de una orden y su interpretación no equivalen a su aplicación. El resultado del modelo se incorpora al proceso de propuesta y revisión, manteniendo separadas la interpretación, la validación y la persistencia.
-En consecuencia, la autoridad de la inteligencia artificial se limita a interpretar la intención expresada por el usuario dentro del contrato de campos, encabezados, catálogos y reglas proporcionado como contexto.
-**F. Integración con revisión humana**
-Cuando la estructura resultante requiere revisión o no contiene operaciones válidas, en el sistema se establece `requiere_revision`. Posteriormente, la propuesta se puede registrar mediante `reviewStore`.
-En la propuesta se conserva la fila objetivo, la coincidencia localizada, las operaciones solicitadas y, cuando corresponde, el identificador de la orden externa que originó el proceso. Por tanto, la revisión humana se mantiene como una condición indispensable entre la propuesta generada y la persistencia.
-Este diseño impide interpretar una respuesta correcta del modelo como una escritura automática, por lo que la decisión final permanece separada de la generación probabilística y se ejecuta mediante el flujo de aprobación o rechazo.
-**G. Secuencia completa de procesamiento de una instrucción**
-El procesamiento de una instrucción se estructura de forma secuencial mediante los siguientes pasos técnicos:
-
-1. Recepción de la instrucción en lenguaje natural.
-
-2. Incorporación de encabezados, estructura y catálogos disponibles como contexto.
-
-3. Envío de la solicitud al modelo Gemini mediante `@google/genai`.
-
-4. Generación de la respuesta en formato JSON con el esquema definido (`responseSchema`).
-
-5. Parseo y extracción de la respuesta estructurada.
-
-6. Verificación determinista del campo y de la columna asociada según `FIELD_RULES`.
-
-7. Validación de catálogos, frecuencias, unidades y contenido textual.
-
-8. Determinación de la tarea objetivo por *Nombre* o `TareaId`.
-
-9. Generación de una propuesta controlada de modificación.
-
-10. Ejecución del flujo de revisión humana.
-
-11. Persistencia de datos tras obtener la autorización correspondiente.
-
-Esta secuencia mantiene separadas las responsabilidades de interpretación semántica y ejecución determinista. Se tiene en cuenta que un error de formato, una discrepancia de encabezado, un valor de catálogo inexistente o una condición no verificable interrumpe el avance normal del proceso, evitando que la salida del modelo se convierta en una modificación directa sobre la fuente de datos.
 
 ## Documentación complementaria
 
