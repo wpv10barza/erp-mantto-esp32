@@ -409,6 +409,12 @@ contract/
 doc/
   images/
 docs/
+  images/
+    esp32-s3-4848s040/
+      fig13_panel_base.png
+      fig14_subsystems.png
+      fig15_gpio_map.png
+      fig16_validation_flow.png
 e2e/
 include/
 platformio/
