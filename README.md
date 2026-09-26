@@ -42,6 +42,36 @@ La arquitectura separa la interacción, el transporte HTTP, la interpretación, 
 El componente de IA del sistema más amplio del Asistente 3C se limita a la interpretación semántica. La persistencia queda fuera de la autoridad del modelo y requiere las validaciones y controles definidos por la aplicación. La implementación productiva de Node.js/React/GenAI no forma parte de este árbol de firmware; el repositorio documenta y prueba su frontera de integración mediante el contrato del dispositivo y los E2E.
 
 ## Hardware y configuración
+## Condiciones iniciales del sistema
+
+Antes de describir la implementación, las condiciones iniciales del panel se fijan a partir de lo que el repositorio declara y configura en código. La condición funcional es disponer de una superficie de interacción de 480 × 480 con visualización ST7701S, entrada táctil GT911 y recursos de ejecución compatibles con los objetivos ESPHome + LVGL y PlatformIO. Estas propiedades definen el subsistema que debe verificarse antes de atribuir funcionamiento físico al dispositivo.
+
+![Figura 13. Mapa técnico del panel ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig13_panel_base.png)
+
+**Figura 13. Mapa técnico del panel ESP32-S3-4848S040 y sus condiciones de integración.**
+
+El mapa resume las características y límites de evidencia que sí pueden sostenerse desde el README y el código: resolución 480 × 480, ST7701S, GT911, ESPHome + LVGL, Flash de 16 MB, PSRAM OPI y el entorno PlatformIO `panel_4848s040`. También muestra la diferencia entre comunicación prevista por Wi-Fi/HTTP y validación física: la configuración y la CI prueban software y contratos, pero la comprobación eléctrica y funcional del panel requiere un dispositivo conectado y el workflow de validación física.
+
+### Distribución lógica de subsistemas y periféricos
+
+La distribución del subsistema se organiza alrededor del ESP32-S3 y de los bloques que el firmware utiliza de forma explícita. Se incluyen la pantalla ST7701S, el GT911, la retroiluminación, Flash, PSRAM, la comunicación Wi-Fi/HTTP de la interfaz 3C y el audio I²S cuando el montaje lo habilita. No se incorporan IP5306, NS4188, CH340C ni microSD como hechos de esta arquitectura, porque el README vigente y el código revisado no los demuestran como parte verificable del objetivo actual.
+
+![Figura 14. Mapa lógico de subsistemas y periféricos documentados del ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig14_subsystems.png)
+
+**Figura 14. Mapa lógico de subsistemas y periféricos documentados del ESP32-S3-4848S040.**
+
+La figura separa los recursos de procesamiento, visualización, tacto, retroiluminación, memoria y comunicación. Las conexiones representadas son relaciones funcionales documentadas por `src/main.yaml`, `platformio.ini` y `platformio/src/panel_4848s040/main.cpp`; su continuidad y funcionamiento eléctrico siguen siendo una cuestión de validación física.
+
+### Buses y GPIO documentados
+
+Las asignaciones de señales se contrastan directamente con `platformio/src/panel_4848s040/main.cpp` y `src/main.yaml`. El firmware PlatformIO declara CS GPIO39, SPI CLK GPIO48 y MOSI GPIO47; la configuración de pantalla usa DE GPIO18, HSYNC GPIO16, VSYNC GPIO17 y PCLK GPIO21. El GT911 utiliza I²C con SDA GPIO19, SCL GPIO45 y dirección 0x5D; la retroiluminación utiliza GPIO38. Cuando el audio está habilitado, el código reserva BCLK GPIO1, LRCLK GPIO2 y DATA GPIO40.
+
+![Figura 15. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig15_gpio_map.png)
+
+**Figura 15. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040.**
+
+El mapa distingue la asignación de software de la continuidad eléctrica real. En consecuencia, una coincidencia entre la configuración y la figura demuestra consistencia documental, pero no sustituye una prueba sobre la placa. El propio README advierte que GPIO19 participa en I²C del GT911 y GPIO20 en el bus RGB, condición que debe revisarse durante la validación física por posible superposición con USB-Serial-JTAG.
+
 
 La implementación existente del panel se conserva sin cambiar GPIO, controladores, temporización ni arquitectura.
 
@@ -188,6 +218,12 @@ Las credenciales personales deben permanecer fuera del control de versiones. El 
 ## Seis bloques de ejecución
 
 El fuente original define seis bloques para WSL/Ubuntu. Como este repositorio se ejecuta sobre el **destino** <code>erp-mantto-esp32</code>, se debe establecer <code>REPO_DIR</code> y utilizar la URL del destino en el Bloque 1.
+
+![Figura 16. Flujo técnico de compilación, carga, monitorización y validación del firmware](docs/images/esp32-s3-4848s040/fig16_validation_flow.png)
+
+**Figura 16. Flujo técnico de compilación, carga, monitorización y validación del firmware.**
+
+La figura resume los seis bloques reproducibles del proyecto: actualización, herramientas, verificación, ESPHome, PlatformIO y carga/monitorización. También separa la evidencia obtenida en GitHub Actions —código, pruebas, contratos y compilación— de la validación física ejecutada mediante `.github/workflows/physical-validation.yml` en un runner `self-hosted` conectado al panel. La ejecución sobre un runner `ubuntu-latest` no demuestra por sí sola la conexión ni el funcionamiento del ESP32-S3, ST7701S, GT911, USB o alimentación reales.
 
 ### Block 1 — clone/update
 
@@ -346,22 +382,16 @@ Una ejecución de CI en GitHub-hosted runners **no demuestra** por sí sola que 
 
 ## Inventario de imágenes y ubicación documental
 
-El árbol fuente contiene **84 archivos de imagen**:
+El árbol fuente conserva **84 archivos de imagen** entre `doc/images/` y `src/assets/images/`. Esta consolidación añade cuatro mapas técnicos específicos del ESP32-S3-4848S040 bajo `docs/images/esp32-s3-4848s040/` para documentar condiciones iniciales, subsistemas, buses/GPIO y validación.
 
-- **15** capturas en <code>doc/images/</code>;
-- **69** recursos gráficos de ejecución en <code>src/assets/images/</code>.
+Los cuatro mapas se integran en el punto del README donde se explica cada contenido:
 
-El README fuente no contiene referencias Markdown a imágenes técnicas. Además, el commit fuente de referencia <code>4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53</code> modificó únicamente el README; no añadió ni modificó imágenes.
+- `fig13_panel_base.png` → condiciones iniciales del panel;
+- `fig14_subsystems.png` → distribución lógica de subsistemas y periféricos;
+- `fig15_gpio_map.png` → buses, señales y GPIO;
+- `fig16_validation_flow.png` → compilación, carga, monitorización y validación.
 
-Para la documentación se muestran solo las capturas que aportan contexto de interfaz:
-
-- <code>doc/images/home.png</code> → pantalla principal;
-- <code>doc/images/settings.png</code> → configuración;
-- <code>doc/images/loading.png</code> → carga/inicio.
-
-Los demás recursos gráficos se conservan como activos del firmware y no se presentan como evidencia independiente.
-
-No se encontró en el árbol fuente una imagen dedicada al hardware físico, un diagrama específico del flujo API, una captura específica del editor/teclado 3C o una fotografía de validación USB. Por ello, no se incorporó evidencia visual inventada.
+Estas figuras son **elaboración documental** a partir del README vigente y del código del repositorio. No son fotografías de laboratorio ni sustituyen la validación física del panel.
 
 ## Estructura del repositorio
 
@@ -452,6 +482,10 @@ La versión consolidada utiliza como referencia:
 - **Rama destino:** <code>main</code>
 
 El firmware, GPIO, ST7701S, GT911, PSRAM, flash, API, estados, temporización, dependencias y pruebas se mantienen según el snapshot fuente utilizado. La consolidación realizada sobre este repositorio es documental y no rediseña la arquitectura funcional.
+
+### Mapas técnicos del panel incorporados desde main
+
+Los cuatro mapas técnicos de las Figuras 13–16 se derivan del `README.md` de `main` de `wpv10barza/ESP32-S3-4848S040` y de los archivos `platformio/src/panel_4848s040/main.cpp`, `platformio.ini`, `src/main.yaml`, `scripts/03_verify_guition.sh`, `scripts/04_esphome_guition.sh`, `scripts/05_platformio_guition.sh`, `scripts/06_flash_monitor_guition.sh`, `.github/workflows/ci.yml`, `.github/workflows/firmware-cd.yml` y `.github/workflows/physical-validation.yml`. La fuente de la rama `main` utilizada para esta actualización corresponde al commit `4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53`.
 
 ## Consolidación documental de la fuente técnica
 

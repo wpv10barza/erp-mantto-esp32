@@ -1,0 +1,39 @@
+name: Materialize ESP32 panel map PNGs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/images/esp32-s3-4848s040/.staging/*.b64
+      - .github/workflows/materialize-esp32-panel-maps.yml
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decode technical panel maps
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          target="docs/images/esp32-s3-4848s040"
+          mkdir -p "$target"
+          for name in fig13_panel_base fig14_subsystems fig15_gpio_map fig16_validation_flow; do
+            base64 -d "$target/.staging/$name.b64" > "$target/$name.png"
+          done
+
+      - name: Commit materialized PNGs and remove staging
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf docs/images/esp32-s3-4848s040/.staging
+          rm -f .github/workflows/materialize-esp32-panel-maps.yml
+          git add -A
+          git commit -m "docs: materialize ESP32 panel map PNGs [skip ci]"
+          git push
