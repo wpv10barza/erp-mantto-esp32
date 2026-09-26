@@ -1,0 +1,41 @@
+name: Import ESP32-S3-4848S040 source tree
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  import-source-tree:
+    if: github.repository == 'wpv10barza/erp-mantto-esp32'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout destination
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Import source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/esp32-source
+          git clone --depth 1 --branch main https://github.com/wpv10barza/ESP32-S3-4848S040.git /tmp/esp32-source
+          rsync -a --delete --exclude='.git' --exclude='README.md' /tmp/esp32-source/ ./
+          rm -f .github/workflows/import-source-tree.yml
+
+      - name: Commit imported firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No source-tree changes to commit.'
+            exit 0
+          fi
+          git commit -m 'feat: import ESP32 firmware source tree'
+          git push origin HEAD:main
