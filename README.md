@@ -452,3 +452,43 @@ La versión consolidada utiliza como referencia:
 - **Rama destino:** <code>main</code>
 
 El firmware, GPIO, ST7701S, GT911, PSRAM, flash, API, estados, temporización, dependencias y pruebas se mantienen según el snapshot fuente utilizado. La consolidación realizada sobre este repositorio es documental y no rediseña la arquitectura funcional.
+
+## Consolidación documental de la fuente técnica
+
+Esta versión del README se consolidó después de leer y comparar directamente el `README.md` de `wpv10barza/ESP32-S3-4848S040` en la rama `main` antes de modificar el repositorio destino.
+
+**Referencia de sincronización**
+
+- Repositorio fuente: `wpv10barza/ESP32-S3-4848S040`
+- Rama fuente: `main`
+- Commit fuente utilizado: `4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53`
+- Árbol fuente: `f75e091d38c6672ed16ffcdc7ea78a7b80c7ec52`
+- Blob del README fuente: `0c33d6c53a2e0f52a200546396b94cf31b5c7b03`
+
+La comparación realizada antes de esta edición mostró que el repositorio destino ya contenía el mismo árbol funcional del firmware: ambos repositorios resolvían al árbol `f75e091d38c6672ed16ffcdc7ea78a7b80c7ec52`, con 189 archivos en total y los mismos blobs para la estructura, contratos, pruebas, scripts, PlatformIO, ESPHome y workflows. Por ello, **no fue necesario reemplazar ni eliminar archivos de firmware** en esta consolidación; el destino ya contenía el snapshot completo de la fuente.
+
+### Inventario de imágenes
+
+El README fuente no contiene referencias Markdown a imágenes. El árbol del proyecto sí conserva:
+
+- 16 imágenes de documentación bajo `doc/images/`;
+- los activos de interfaz bajo `src/assets/images/`;
+- las fuentes bajo `src/assets/fonts/`.
+
+Las 16 imágenes de `doc/images/` ya están presentes en el destino y coinciden con los mismos SHA del repositorio fuente, por lo que no fue necesario copiarlas nuevamente ni introducir duplicados. Ninguna imagen se presenta aquí como evidencia de funcionamiento físico del panel.
+
+### Niveles de evidencia
+
+La documentación distingue entre:
+
+**Documentación:** lo declarado por el README y los archivos de configuración.
+
+**Implementación:** lo presente en el código y en el árbol del repositorio.
+
+**Pruebas automatizadas:** pruebas Python/C++ y ejecuciones definidas por los workflows.
+
+**GitHub Actions:** validaciones de código, contratos, compilación y pruebas que el workflow realmente ejecuta.
+
+**Validación física:** requiere un ESP32-S3 real conectado al hardware; la CI en la nube no demuestra por sí sola el funcionamiento eléctrico del ST7701S o del GT911.
+
+Esta consolidación conserva la arquitectura, GPIO, contratos, estados, temporización y dependencias documentadas por la fuente técnica y no constituye un rediseño del firmware.
