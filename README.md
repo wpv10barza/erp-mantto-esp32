@@ -372,3 +372,5 @@ The source README does not reference inline Markdown documentation images. The i
 The destination repository was empty before consolidation. The final README was written only after reading the source README, confirming the destination README was absent because the repository was empty, comparing the two states, identifying the destination as missing the firmware tree and documentation, and then importing the source project.
 
 Source reference used for this consolidation: `wpv10barza/ESP32-S3-4848S040@4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53`.
+
+<!-- Source-tree import trigger: ESP32-S3-4848S040 main @ 4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53 -->
