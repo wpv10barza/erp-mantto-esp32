@@ -1,0 +1,96 @@
+name: 🐛 Bug Report
+description: Use only for reporting bugs. For questions and suggestions use Discussions!
+title: "[BUG]: "
+labels: ["bug"]
+assignees:
+  - alaltitov
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ⚠️ ATTENTION!
+        
+        **This section is only for bug reports!**
+        
+        - 💬 **Questions and suggestions** → [Discussions](https://github.com/alaltitov/Guition-ESP32-S3-4848S040/discussions)
+        
+        ---
+
+  - type: checkboxes
+    id: prerequisites
+    attributes:
+      label: ✅ Prerequisites
+      description: Make sure you have completed all items
+      options:
+        - label: I have checked that the problem is not related to incorrect entity configuration in Home Assistant
+          required: true
+        - label: I have checked that the problem is not related to incorrect entity configuration in ESPHome
+          required: true
+        - label: I have confirmed this is actually a bug, not a question (use Discussions for questions)
+          required: true
+
+  - type: input
+    id: esphome-version
+    attributes:
+      label: 🔧 ESPHome Version
+      description: Specify your ESPHome version (e.g., 2024.7.3)
+      placeholder: "2024.7.3"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 📝 Bug Description
+      description: Clearly describe what happens and what was expected
+      placeholder: |
+        What happens:
+        
+        What was expected:
+        
+        Steps to reproduce:
+        1. 
+        2. 
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 📋 Error Logs
+      description: Paste logs from ESPHome or Home Assistant
+      render: shell
+      placeholder: |
+        Paste error logs here...
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: 📸 Screenshot (if applicable)
+      description: Attach a screenshot of the problem if it's a visual error
+      placeholder: Drag image here or paste link
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: ⚙️ Configuration
+      description: Attach relevant part of your YAML configuration
+      render: yaml
+      placeholder: |
+        # Paste relevant configuration here
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 📎 Additional Information
+      description: Any other information that might help
+      placeholder: Additional details...
+    validations:
+      required: false

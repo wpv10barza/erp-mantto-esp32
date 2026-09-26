@@ -1,0 +1,54 @@
+name: Physical ESP32-S3 validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      serial_port:
+        description: "Serial port on the self-hosted runner (for example /dev/ttyACM0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  physical:
+    name: Flash and smoke-test physical ESP32-S3
+    runs-on: [self-hosted, linux, x64, esp32]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: pip install platformio
+      - name: Build firmware
+        run: pio run -e panel_4848s040
+      - name: Flash firmware
+        env:
+          SERIAL_PORT: ${{ inputs.serial_port }}
+        run: |
+          set -Eeuo pipefail
+          if [[ "$SERIAL_PORT" == /dev/ttyS* ]]; then
+            echo "ERROR: $SERIAL_PORT is a legacy PC serial device; use /dev/ttyACM* or /dev/ttyUSB*."
+            exit 20
+          fi
+          if [[ ! -e "$SERIAL_PORT" ]]; then
+            echo "ERROR: serial port does not exist: $SERIAL_PORT"
+            exit 20
+          fi
+          pio run -e panel_4848s040 -t upload --upload-port "$SERIAL_PORT"
+      - name: Capture serial boot log
+        env:
+          SERIAL_PORT: ${{ inputs.serial_port }}
+        run: |
+          set +e
+          timeout 45s pio device monitor -e panel_4848s040 --port "$SERIAL_PORT" --baud 115200 > physical-boot.log 2>&1
+          status=$?
+          cat physical-boot.log
+          test "$status" = "124"
+      - name: Upload physical evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-s3-physical-boot-log
+          path: physical-boot.log

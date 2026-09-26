@@ -1,0 +1,132 @@
+name: Firmware CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firmware-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout Asistente 3C Monitor
+        uses: actions/checkout@v4
+        with:
+          repository: wpv10barza/asistente-3c
+          ref: d67465d82d9e81b307492c8f17c3f359e01abffd
+          path: monitor
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Block 2 - tools
+        env:
+          REPO_DIR: ${{ github.workspace }}
+        run: bash scripts/02_tools_guition.sh
+
+      - name: Block 3 - verify
+        env:
+          REPO_DIR: ${{ github.workspace }}
+        run: bash scripts/03_verify_guition.sh
+
+      - name: Block 4 - ESPHome
+        env:
+          REPO_DIR: ${{ github.workspace }}
+          BUILD_MODE: validate
+        run: bash scripts/04_esphome_guition.sh
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Test Monitor
+        working-directory: monitor
+        env:
+          GEMINI_API_KEY: ci-placeholder
+          ESP32_API_TOKEN: ci-e2e-token
+          PORT: "3000"
+          ALLOW_INSECURE_DEVICE_API: "false"
+        run: |
+          npm ci
+          npm run lint
+          find test -type f -name '*.test.ts' -print0 | xargs -0 node --import tsx --test
+
+      - name: Start Monitor
+        env:
+          GEMINI_API_KEY: ci-placeholder
+          ESP32_API_TOKEN: ci-e2e-token
+          VITE_E2E_MODE: "true"
+          PORT: "3000"
+          ALLOW_INSECURE_DEVICE_API: "false"
+        run: |
+          mkdir -p .ci
+          nohup npm --prefix monitor run dev > .ci/monitor.log 2>&1 &
+          echo $! > .ci/monitor.pid
+          python - <<'PY'
+          import time
+          import urllib.request
+          last = None
+          for _ in range(30):
+              try:
+                  with urllib.request.urlopen("http://127.0.0.1:3000/api/device/v1/health", timeout=2) as r:
+                      if r.status == 200:
+                          print(r.read().decode())
+                          raise SystemExit(0)
+              except Exception as exc:
+                  last = exc
+              time.sleep(1)
+          raise SystemExit(f"Monitor health failed: {last}")
+          PY
+
+      - name: Device API E2E
+        env:
+          DEVICE_API_BASE_URL: http://127.0.0.1:3000
+          ESP32_API_TOKEN: ci-e2e-token
+        run: python tests/test_device_api_e2e.py
+
+      - name: Browser UI E2E
+        working-directory: e2e
+        run: |
+          npm init -y
+          npm install --no-save @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+          ./node_modules/.bin/playwright test monitor_ui.spec.mjs --reporter=line
+
+      - name: Stop Monitor
+        if: always()
+        run: |
+          test ! -f .ci/monitor.pid || kill "$(cat .ci/monitor.pid)" || true
+
+      - name: Block 5 - native tests + firmware
+        env:
+          REPO_DIR: ${{ github.workspace }}
+        run: bash scripts/05_platformio_guition.sh
+
+      - name: Package firmware
+        run: |
+          mkdir -p dist
+          cp .pio/build/panel_4848s040/firmware.bin dist/
+          cp .pio/build/panel_4848s040/bootloader.bin dist/
+          cp .pio/build/panel_4848s040/partitions.bin dist/
+          cp .pio/build/panel_4848s040/firmware.elf dist/
+          printf '%s\n'             '0x0000 bootloader.bin'             '0x8000 partitions.bin'             '0x10000 firmware.bin' > dist/flash-layout.txt
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          printf '{"source_sha":"%s","environment":"panel_4848s040","validation":"compiled_not_physically_flashed"}\n' "${GITHUB_SHA}" > dist/manifest.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esp32-s3-4848s040-firmware
+          path: dist/
+          if-no-files-found: error

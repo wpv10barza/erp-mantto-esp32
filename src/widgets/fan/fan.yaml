@@ -1,0 +1,1155 @@
+globals:
+  - id: ${widget_name}_supported_features
+    type: int
+    restore_value: no
+    initial_value: '63'
+
+  - id: ${widget_name}_current_mode
+    type: int
+    initial_value: '0'
+
+  - id: ${widget_name}_pending_action
+    type: std::string
+    restore_value: no
+    initial_value: ""
+
+  - id: ${widget_name}_percentage_step
+    type: float
+    restore_value: no
+    initial_value: '1.0'
+
+  - id: ${widget_name}_current_percentage
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+  - id: ${widget_name}_is_animating
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+
+sensor:
+  - platform: homeassistant
+    id: ${widget_name}_supported_features_sensor
+    entity_id: "${fan_entity}"
+    attribute: supported_features
+    on_value:
+      - lambda: |-
+          int features = 0;
+
+          if (!std::isnan(x)) {
+            features = int(x);
+          }
+
+          ESP_LOGD("fan", "Supported features: %d", features);
+
+          id(${widget_name}_supported_features) = features;
+
+          // SET_SPEED = 1
+          bool has_set_speed = (features & 1) != 0;
+          // OSCILLATE = 2
+          bool has_oscillate = (features & 2) != 0;
+          // DIRECTION = 4
+          bool has_direction = (features & 4) != 0;
+          // PRESET_MODE = 8
+          bool has_preset_mode = (features & 8) != 0;
+
+          ESP_LOGD("fan", "Has preset_mode: %d", has_preset_mode);
+
+          // Скрываем/показываем арку
+          if (has_set_speed) {
+            lv_obj_add_flag(id(${widget_name}_arc), LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_clear_flag(id(${widget_name}_arc), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_clear_flag(id(${widget_name}_arc), LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_flag(id(${widget_name}_arc), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          // Управление кнопками OSCILLATE и DIRECTION
+          if (has_oscillate || has_direction) {
+            lv_obj_clear_flag(id(${widget_name}_oscillating_btn_bg), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(id(${widget_name}_direction_btn_bg), LV_OBJ_FLAG_HIDDEN);
+
+            if (has_oscillate) {
+              lv_obj_add_flag(id(${widget_name}_oscillating_btn), LV_OBJ_FLAG_CLICKABLE);
+              lv_obj_set_style_text_color(id(${widget_name}_oscillating_btn_icon), lv_color_hex(0x9DB4C0), 0);
+            } else {
+              lv_obj_clear_flag(id(${widget_name}_oscillating_btn), LV_OBJ_FLAG_CLICKABLE);
+              lv_obj_set_style_text_color(id(${widget_name}_oscillating_btn_icon), lv_color_hex(0x3D5A6C), 0);
+            }
+
+            if (has_direction) {
+              lv_obj_add_flag(id(${widget_name}_direction_btn), LV_OBJ_FLAG_CLICKABLE);
+              lv_obj_set_style_text_color(id(${widget_name}_direction_btn_icon), lv_color_hex(0x9DB4C0), 0);
+            } else {
+              lv_obj_clear_flag(id(${widget_name}_direction_btn), LV_OBJ_FLAG_CLICKABLE);
+              lv_obj_set_style_text_color(id(${widget_name}_direction_btn_icon), lv_color_hex(0x3D5A6C), 0);
+            }
+          } else {
+            lv_obj_add_flag(id(${widget_name}_oscillating_btn_bg), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(id(${widget_name}_direction_btn_bg), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          if (has_preset_mode) {
+            ESP_LOGD("fan", "Showing preset button");
+            lv_obj_clear_flag(id(${widget_name}_controls_presets), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            ESP_LOGD("fan", "Hiding preset button");
+            lv_obj_add_flag(id(${widget_name}_controls_presets), LV_OBJ_FLAG_HIDDEN);
+          }
+
+  - platform: homeassistant
+    id: ${widget_name}_percentage_sensor
+    entity_id: "${fan_entity}"
+    attribute: percentage
+    on_value:
+      - lambda: |-
+          int value = 0;
+
+          if (!std::isnan(x)) {
+            value = int(x);
+          }
+
+          if (value < 0) value = 0;
+          if (value > 100) value = 100;
+
+          id(${widget_name}_current_percentage) = value;
+
+          lv_arc_set_value(id(${widget_name}_arc), value);
+
+          static char buf[8];
+          snprintf(buf, sizeof(buf), "%d%%", value);
+          lv_label_set_text(id(${widget_name}_percentage_label), buf);
+
+          ESP_LOGD("fan", "Percentage updated: raw=%.2f, safe=%d", x, value);
+
+      - if:
+          condition:
+            lambda: 'return id(${widget_name}_state_sensor).state == "on";'
+          then:
+            - script.execute: ${widget_name}_update_animation_speed
+
+  - platform: homeassistant
+    id: ${widget_name}_percentage_step_sensor
+    entity_id: "${fan_entity}"
+    attribute: percentage_step
+    on_value:
+      - lambda: |-
+          if (std::isnan(x) || x <= 0.0f) {
+            id(${widget_name}_percentage_step) = 1.0f;
+          } else {
+            id(${widget_name}_percentage_step) = x;
+          }
+
+          ESP_LOGD("fan", "Percentage step: %.2f", id(${widget_name}_percentage_step));
+
+
+text_sensor:
+  - platform: homeassistant
+    id: ${widget_name}_state_sensor
+    entity_id: "${fan_entity}"
+    on_value:
+      - script.execute: ${widget_name}_translations
+
+      - lambda: |-
+          ESP_LOGD("fan", "State changed to: %s", x.c_str());
+
+      - if:
+          condition:
+            lambda: 'return x == "on";'
+          then:
+            - lvgl.obj.update:
+                id: ${widget_name}_state_image_bg
+                bg_color: color_green
+            - script.execute: ${widget_name}_start_animation
+          else:
+            - lvgl.obj.update:
+                id: ${widget_name}_state_image_bg
+                bg_color: color_misty_blue
+            - script.execute: ${widget_name}_stop_animation
+
+  - platform: homeassistant
+    id: ${widget_name}_preset_modes_sensor
+    entity_id: "${fan_entity}"
+    attribute: preset_modes
+    on_value:
+      - script.execute: ${widget_name}_update_preset_buttons_visibility
+
+  - platform: homeassistant
+    id: ${widget_name}_preset_mode_sensor
+    entity_id: "${fan_entity}"
+    attribute: preset_mode
+    on_value:
+      - lambda: |-
+          std::string mode = x;
+
+          lv_color_t eco_color = lv_color_hex(0x9DB4C0);
+          lv_color_t home_color = lv_color_hex(0x9DB4C0);
+          lv_color_t away_color = lv_color_hex(0x9DB4C0);
+          lv_color_t comfort_color = lv_color_hex(0x9DB4C0);
+          lv_color_t boost_color = lv_color_hex(0x9DB4C0);
+          lv_color_t sleep_color = lv_color_hex(0x9DB4C0);
+          lv_color_t smart_color = lv_color_hex(0x9DB4C0);
+
+          if (mode == "eco") {
+            eco_color = id(color_green);
+          } else if (mode == "home") {
+            home_color = id(color_blue);
+          } else if (mode == "away") {
+            away_color = id(color_orange);
+          } else if (mode == "comfort") {
+            comfort_color = id(color_yellow);
+          } else if (mode == "boost") {
+            boost_color = id(color_red);
+          } else if (mode == "sleep") {
+            sleep_color = id(color_dark_blue);
+          } else if (mode == "smart") {
+            smart_color = id(color_crimson);
+          }
+
+          lv_obj_set_style_text_color(id(${widget_name}_eco_preset_label), eco_color, 0);
+          lv_obj_set_style_text_color(id(${widget_name}_home_preset_label), home_color, 0);
+          lv_obj_set_style_text_color(id(${widget_name}_away_preset_label), away_color, 0);
+          lv_obj_set_style_text_color(id(${widget_name}_comfort_preset_label), comfort_color, 0);
+          lv_obj_set_style_text_color(id(${widget_name}_boost_preset_label), boost_color, 0);
+          lv_obj_set_style_text_color(id(${widget_name}_sleep_preset_label), sleep_color, 0);
+          lv_obj_set_style_text_color(id(${widget_name}_smart_preset_label), smart_color, 0);
+
+  - platform: homeassistant
+    id: ${widget_name}_direction_sensor
+    entity_id: "${fan_entity}"
+    attribute: direction
+    on_value:
+      - if:
+          condition:
+            lambda: 'return x == "forward";'
+          then:
+            - lvgl.label.update:
+                id: ${widget_name}_direction_btn_icon
+                text: "${rotate_right_icon}"
+          else:
+            - lvgl.label.update:
+                id: ${widget_name}_direction_btn_icon
+                text: "${rotate_left_icon}"
+
+      - if:
+          condition:
+            lambda: 'return id(${widget_name}_state_sensor).state == "on";'
+          then:
+            - script.execute: ${widget_name}_update_animation_direction
+
+  - platform: homeassistant
+    id: ${widget_name}_name_sensor
+    entity_id: "${fan_entity}"
+    attribute: friendly_name
+    on_value:
+      - lvgl.label.update:
+          id: ${widget_name}_name_label
+          text: !lambda return x;
+
+
+binary_sensor:
+  - platform: homeassistant
+    id: ${widget_name}_oscillating_sensor
+    entity_id: "${fan_entity}"
+    attribute: oscillating
+    on_state:
+      if:
+        condition:
+          lambda: 'return x;'
+        then:
+          - lvgl.label.update:
+              id: ${widget_name}_oscillating_btn_icon
+              text: "${swing_on_icon}"
+        else:
+          - lvgl.label.update:
+              id: ${widget_name}_oscillating_btn_icon
+              text: "${swing_off_icon}"
+
+
+lvgl:
+  pages:
+    - id: ${widget_name}_page
+      bg_color: color_black
+      scrollable: false
+      widgets:
+
+        - label:
+            id: ${widget_name}_name_label
+            y: 15
+            align: top_mid
+            text_font: nunito_20
+            text_color: color_misty_blue
+            text: "My Fan"
+
+        - obj:
+            id: ${widget_name}_main_background
+            y: 60
+            width: 440
+            height: 180
+            align: top_mid
+            clickable: false
+            scrollable: false
+            radius: 20
+            pad_all: 0
+            bg_color: color_slate_blue_gray
+            border_opa: transp
+            border_width: 0
+            shadow_opa: transp
+            widgets:
+              - obj:
+                  id: ${widget_name}_controls_presets
+                  width: 400
+                  height: 40
+                  align: top_mid
+                  clickable: false
+                  scrollable: false
+                  pad_all: 0
+                  bg_opa: transp
+                  border_opa: transp
+                  border_width: 0
+                  shadow_opa: transp
+                  layout:
+                    type: flex
+                    flex_flow: row
+                    flex_align_main: center
+                    flex_align_cross: center
+                    flex_align_track: center
+                  widgets:
+                    - obj:
+                        id: ${widget_name}_eco_preset_btn
+                        hidden: true
+                        width: 35
+                        height: 35
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        widgets:
+                          - label:
+                              id: ${widget_name}_eco_preset_label
+                              align: center
+                              text_font: mdi_icons_24
+                              text_color: color_misty_blue
+                              text: "${eco_preset_icon}"
+                        on_press:
+                          - homeassistant.action:
+                              action: fan.set_preset_mode
+                              data:
+                                entity_id: "${fan_entity}"
+                                preset_mode: eco
+
+                    - obj:
+                        id: ${widget_name}_away_preset_btn
+                        hidden: true
+                        width: 35
+                        height: 35
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        widgets:
+                          - label:
+                              id: ${widget_name}_away_preset_label
+                              align: center
+                              text_font: mdi_icons_24
+                              text_color: color_misty_blue
+                              text: "${away_preset_icon}"
+                        on_press:
+                          - homeassistant.action:
+                              action: fan.set_preset_mode
+                              data:
+                                entity_id: "${fan_entity}"
+                                preset_mode: away
+
+                    - obj:
+                        id: ${widget_name}_boost_preset_btn
+                        hidden: true
+                        width: 35
+                        height: 35
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        widgets:
+                          - label:
+                              id: ${widget_name}_boost_preset_label
+                              align: center
+                              text_font: mdi_icons_24
+                              text_color: color_misty_blue
+                              text: "${boost_preset_icon}"
+                        on_press:
+                          - homeassistant.action:
+                              action: fan.set_preset_mode
+                              data:
+                                entity_id: "${fan_entity}"
+                                preset_mode: boost
+
+                    - obj:
+                        id: ${widget_name}_comfort_preset_btn
+                        hidden: true
+                        width: 35
+                        height: 35
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        widgets:
+                          - label:
+                              id: ${widget_name}_comfort_preset_label
+                              align: center
+                              text_font: mdi_icons_24
+                              text_color: color_misty_blue
+                              text: "${comfort_preset_icon}"
+                        on_press:
+                          - homeassistant.action:
+                              action: fan.set_preset_mode
+                              data:
+                                entity_id: "${fan_entity}"
+                                preset_mode: comfort
+
+                    - obj:
+                        id: ${widget_name}_home_preset_btn
+                        hidden: true
+                        width: 35
+                        height: 35
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        widgets:
+                          - label:
+                              id: ${widget_name}_home_preset_label
+                              align: center
+                              text_font: mdi_icons_24
+                              text_color: color_misty_blue
+                              text: "${home_preset_icon}"
+                        on_press:
+                          - homeassistant.action:
+                              action: fan.set_preset_mode
+                              data:
+                                entity_id: "${fan_entity}"
+                                preset_mode: home
+
+                    - obj:
+                        id: ${widget_name}_sleep_preset_btn
+                        hidden: true
+                        width: 35
+                        height: 35
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        widgets:
+                          - label:
+                              id: ${widget_name}_sleep_preset_label
+                              align: center
+                              text_font: mdi_icons_24
+                              text_color: color_misty_blue
+                              text: "${sleep_preset_icon}"
+                        on_press:
+                          - homeassistant.action:
+                              action: fan.set_preset_mode
+                              data:
+                                entity_id: "${fan_entity}"
+                                preset_mode: sleep
+
+                    - obj:
+                        id: ${widget_name}_smart_preset_btn
+                        hidden: true
+                        width: 35
+                        height: 35
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        widgets:
+                          - label:
+                              id: ${widget_name}_smart_preset_label
+                              align: center
+                              text_font: mdi_icons_24
+                              text_color: color_misty_blue
+                              text: "${smart_preset_icon}"
+                        on_press:
+                          - homeassistant.action:
+                              action: fan.set_preset_mode
+                              data:
+                                entity_id: "${fan_entity}"
+                                preset_mode: smart
+
+              - obj:
+                  id: ${widget_name}_state_widget
+                  width: 440
+                  height: 100
+                  align: center
+                  clickable: false
+                  scrollable: false
+                  radius: 20
+                  pad_all: 0
+                  bg_opa: transp
+                  border_opa: transp
+                  border_width: 0
+                  shadow_opa: transp
+                  widgets:
+                    - obj:
+                        id: ${widget_name}_state_image_bg
+                        x: 20
+                        width: 80
+                        height: 80
+                        align: left_mid
+                        clickable: false
+                        scrollable: false
+                        bg_color: color_misty_blue
+                        bg_opa: 20%
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        radius: 60
+                        pad_all: 0
+                        widgets:
+                          - image:
+                              id: ${widget_name}_state_image
+                              x: 0
+                              y: 0
+                              align: center
+                              clickable: false
+                              src: fan_misty_image
+
+                    - obj:
+                        id: ${widget_name}_state_info_bg
+                        width: 300
+                        height: 120
+                        align: right_mid
+                        clickable: false
+                        scrollable: false
+                        bg_color: color_steel_blue
+                        bg_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        shadow_opa: transp
+                        radius: 10
+                        pad_all: 0
+                        widgets:
+                          - label:
+                              id: ${widget_name}_state_label
+                              y: -5
+                              height: 40
+                              width: 260
+                              long_mode: DOT
+                              align: center
+                              text_color: color_misty_blue
+                              text_font: nunito_20
+                              text: "Off"
+
+                          - label:
+                              id: ${widget_name}_percentage_label
+                              y: 25
+                              height: 40
+                              width: 260
+                              align: center
+                              text_color: color_misty_blue
+                              text_font: nunito_18
+                              text: "0%"
+
+        - obj:
+            id: ${widget_name}_primary_buttons_background
+            y: 250
+            width: 440
+            height: 100
+            align: top_mid
+            clickable: false
+            scrollable: false
+            radius: 20
+            pad_all: 0
+            bg_color: color_slate_blue_gray
+            border_opa: transp
+            border_width: 0
+            shadow_opa: transp
+            widgets:
+              - obj:
+                  id: ${widget_name}_primary_buttons_controls
+                  width: 440
+                  height: 100
+                  align: center
+                  clickable: false
+                  scrollable: false
+                  radius: 20
+                  pad_all: 0
+                  bg_opa: transp
+                  border_opa: transp
+                  border_width: 0
+                  shadow_opa: transp
+                  widgets:
+                    - obj:
+                        id: ${widget_name}_direction_btn_bg
+                        x: 30
+                        width: 90
+                        height: 90
+                        align: left_mid
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        shadow_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        widgets:
+                          - button:
+                              id: ${widget_name}_direction_btn
+                              width: 70
+                              height: 70
+                              align: center
+                              clickable: true
+                              scrollable: false
+                              radius: 50
+                              pad_all: 0
+                              bg_opa: transp
+                              border_opa: transp
+                              border_width: 0
+                              shadow_width: 8
+                              shadow_spread: 2
+                              shadow_offset_y: 0
+                              shadow_color: color_black
+                              shadow_opa: cover
+                              pressed:
+                                bg_color: color_steel_blue
+                                shadow_width: 4
+                              on_click:
+                                if:
+                                  condition:
+                                    lambda: 'return id(${widget_name}_direction_sensor).state == "forward";'
+                                  then:
+                                    - homeassistant.action:
+                                        action: fan.set_direction
+                                        data:
+                                          entity_id: "${fan_entity}"
+                                          direction: reverse
+                                  else:
+                                    - homeassistant.action:
+                                        action: fan.set_direction
+                                        data:
+                                          entity_id: "${fan_entity}"
+                                          direction: forward
+
+                          - obj:
+                              width: 60
+                              height: 60
+                              align: center
+                              clickable: false
+                              scrollable: false
+                              radius: 45
+                              pad_all: 0
+                              bg_opa: transp
+                              border_opa: transp
+                              border_width: 0
+                              shadow_width: 4
+                              shadow_color: 0xFFFFFF
+                              shadow_offset_x: -4
+                              shadow_offset_y: -2
+                              shadow_opa: 30%
+
+                          - obj:
+                              width: 65
+                              height: 65
+                              pad_all: 0
+                              align: center
+                              clickable: false
+                              scrollable: false
+                              radius: 50
+                              border_opa: transp
+                              border_width: 0
+                              bg_color: color_slate_blue_gray
+                              widgets:
+                                - label:
+                                    id: ${widget_name}_direction_btn_icon
+                                    align: center
+                                    text_font: mdi_icons_28
+                                    text_color: color_misty_blue
+                                    text: "${rotate_left_icon}"
+
+                    - obj:
+                        id: ${widget_name}_oscillating_btn_bg
+                        x: -30
+                        width: 90
+                        height: 90
+                        align: right_mid
+                        pad_all: 0
+                        scrollable: false
+                        bg_opa: transp
+                        shadow_opa: transp
+                        border_opa: transp
+                        border_width: 0
+                        widgets:
+                          - button:
+                              id: ${widget_name}_oscillating_btn
+                              width: 70
+                              height: 70
+                              align: center
+                              clickable: true
+                              scrollable: false
+                              radius: 50
+                              pad_all: 0
+                              bg_opa: transp
+                              border_opa: transp
+                              border_width: 0
+                              shadow_width: 8
+                              shadow_spread: 2
+                              shadow_offset_y: 0
+                              shadow_color: color_black
+                              shadow_opa: cover
+                              pressed:
+                                bg_color: color_steel_blue
+                                shadow_width: 4
+                              on_click:
+                                if:
+                                  condition:
+                                    lambda: return id(${widget_name}_oscillating_sensor).state;
+                                  then:
+                                    - homeassistant.action:
+                                        action: fan.oscillate
+                                        data:
+                                          entity_id: "${fan_entity}"
+                                          oscillating: 'false'
+                                  else:
+                                    - homeassistant.action:
+                                        action: fan.oscillate
+                                        data:
+                                          entity_id: "${fan_entity}"
+                                          oscillating: 'true'
+
+                          - obj:
+                              width: 60
+                              height: 60
+                              align: center
+                              clickable: false
+                              scrollable: false
+                              radius: 45
+                              pad_all: 0
+                              bg_opa: transp
+                              border_opa: transp
+                              border_width: 0
+                              shadow_width: 4
+                              shadow_color: 0xFFFFFF
+                              shadow_offset_x: -4
+                              shadow_offset_y: -2
+                              shadow_opa: 30%
+
+                          - obj:
+                              width: 65
+                              height: 65
+                              pad_all: 0
+                              align: center
+                              clickable: false
+                              scrollable: false
+                              radius: 50
+                              border_opa: transp
+                              border_width: 0
+                              bg_color: color_slate_blue_gray
+                              widgets:
+                                - label:
+                                    id: ${widget_name}_oscillating_btn_icon
+                                    align: center
+                                    text_font: mdi_icons_28
+                                    text_color: color_misty_blue
+                                    text: "${swing_off_icon}"
+
+        - obj:
+            id: ${widget_name}_secondary_buttons_background
+            y: 360
+            width: 440
+            height: 60
+            align: top_mid
+            clickable: false
+            scrollable: false
+            radius: 20
+            pad_all: 0
+            bg_color: color_slate_blue_gray
+            border_opa: transp
+            border_width: 0
+            shadow_opa: transp
+
+        - obj:
+            id: ${widget_name}_circle_background
+            y: 60
+            width: 150
+            height: 150
+            align: center
+            clickable: false
+            scrollable: false
+            radius: 75
+            pad_all: 0
+            bg_color: color_black
+            border_opa: transp
+            border_width: 0
+            shadow_opa: transp
+            widgets:
+              - obj:
+                  width: 100
+                  height: 100
+                  pad_all: 0
+                  align: center
+                  clickable: false
+                  scrollable: false
+                  radius: 50
+                  border_opa: transp
+                  border_width: 0
+                  bg_color: color_slate_blue_gray
+
+              - obj:
+                  width: 150
+                  height: 150
+                  align: center
+                  clickable: false
+                  scrollable: false
+                  radius: 75
+                  pad_all: 0
+                  bg_opa: transp
+                  border_opa: transp
+                  border_width: 0
+                  shadow_opa: transp
+                  widgets:
+                    - arc:
+                        clickable: false
+                        adjustable: false
+                        adv_hittest: false
+                        align: center
+                        width: 130
+                        height: 130
+                        min_value: 0
+                        max_value: 100
+                        start_angle: 0
+                        end_angle: 360
+                        rotation: 0
+                        arc_width: 5
+                        arc_color: color_steel_blue
+                        arc_rounded: false
+                        indicator:
+                          arc_width: 5
+                          arc_opa: transp
+                        knob:
+                          bg_opa: transp
+
+                    - arc:
+                        id: ${widget_name}_arc
+                        clickable: true
+                        adjustable: true
+                        adv_hittest: true
+                        align: center
+                        width: 130
+                        height: 130
+                        min_value: 0
+                        max_value: 100
+                        value: 0
+                        start_angle: 0
+                        end_angle: 270
+                        rotation: 135
+                        arc_width: 5
+                        arc_color: color_steel_blue
+                        arc_rounded: false
+                        indicator:
+                          arc_width: 5
+                          arc_color: color_steel_blue
+                        knob:
+                          bg_opa: transp
+
+                        on_value:
+                          - lambda: |-
+                              int value = int(x);
+
+                              if (value < 0) value = 0;
+                              if (value > 100) value = 100;
+
+                              id(${widget_name}_current_percentage) = value;
+
+                              static char buffer[16];
+                              snprintf(buffer, sizeof(buffer), "%d%%", value);
+                              lv_label_set_text(id(${widget_name}_percentage_label), buffer);
+
+                        on_release:
+                          - lambda: |-
+                              int raw_value = int(x);
+                              int rounded_value = raw_value;
+
+                              if (rounded_value < 0) rounded_value = 0;
+                              if (rounded_value > 100) rounded_value = 100;
+
+                              float step = id(${widget_name}_percentage_step);
+
+                              if (std::isnan(step) || step <= 0.0f) {
+                                step = 1.0f;
+                              }
+
+                              if (step > 1.0f) {
+                                int num_steps = roundf(raw_value / step);
+                                rounded_value = roundf(num_steps * step);
+
+                                if (rounded_value < 0) rounded_value = 0;
+                                if (rounded_value > 100) rounded_value = 100;
+                              }
+
+                              lv_arc_set_value(id(${widget_name}_arc), rounded_value);
+
+                              id(${widget_name}_current_percentage) = rounded_value;
+
+                              static char buffer[16];
+                              snprintf(buffer, sizeof(buffer), "%d%%", rounded_value);
+                              lv_label_set_text(id(${widget_name}_percentage_label), buffer);
+
+                          - homeassistant.action:
+                              action: fan.set_percentage
+                              data:
+                                entity_id: "${fan_entity}"
+                                percentage: !lambda |-
+                                  return to_string(id(${widget_name}_current_percentage));
+
+                    - obj:
+                        width: 100
+                        height: 100
+                        pad_all: 0
+                        align: center
+                        clickable: false
+                        scrollable: false
+                        radius: 50
+                        border_opa: transp
+                        border_width: 0
+                        bg_opa: transp
+                        widgets:
+                          - label:
+                              id: ${widget_name}_switch_icon
+                              align: center
+                              text_color: color_misty_blue
+                              text_font: mdi_icons_52
+                              text: "${power_icon}"
+                              on_press:
+                                - if:
+                                    condition:
+                                      lambda: 'return id(${widget_name}_state_sensor).state == "off";'
+                                    then:
+                                      - homeassistant.action:
+                                          action: fan.turn_on
+                                          data:
+                                            entity_id: "${fan_entity}"
+                                    else:
+                                      - homeassistant.action:
+                                          action: fan.turn_off
+                                          data:
+                                            entity_id: "${fan_entity}"
+
+        - obj:
+            y: 0
+            width: 80
+            height: 70
+            align: bottom_mid
+            bg_opa: transp
+            pad_all: 0
+            scrollable: false
+            border_opa: transp
+            border_width: 0
+            shadow_opa: transp
+            radius: 0
+            widgets:
+              - obj:
+                  y: -20
+                  width: 80
+                  height: 5
+                  align: bottom_mid
+                  bg_color: color_steel_blue
+                  pad_all: 0
+                  scrollable: false
+                  border_opa: transp
+                  border_width: 0
+                  shadow_opa: transp
+                  radius: 15
+            on_click:
+              - lvgl.widget.hide: fan_select_widget
+              - lvgl.page.show: home_page
+
+
+script:
+  - id: ${widget_name}_start_animation
+    then:
+      - lambda: |-
+          ESP_LOGD("fan", "START_ANIMATION script called");
+
+          if (id(${widget_name}_is_animating)) {
+            ESP_LOGD("fan", "Animation already running, skipping");
+            return;
+          }
+
+          auto img_widget = id(${widget_name}_state_image);
+          lv_obj_t* img = img_widget;
+
+          lv_anim_del(img, nullptr);
+
+          lv_img_set_src(img, id(fan_green_image));
+
+          int percentage = id(${widget_name}_current_percentage);
+
+          if (percentage < 1) percentage = 100;
+          if (percentage > 100) percentage = 100;
+
+          int anim_time = (int)(3000.0 / (percentage / 33.0));
+
+          if (anim_time < 500) anim_time = 500;
+          if (anim_time > 5000) anim_time = 5000;
+
+          ESP_LOGD("fan", "Animation time: %d ms (percentage: %d)", anim_time, percentage);
+
+          bool is_forward = id(${widget_name}_direction_sensor).state == "forward";
+          int start_angle = is_forward ? 0 : 3600;
+          int end_angle = is_forward ? 3600 : 0;
+
+          ESP_LOGD("fan", "Direction: %s", is_forward ? "forward" : "reverse");
+
+          lv_anim_t anim_rotation;
+
+          lv_anim_init(&anim_rotation);
+          lv_anim_set_var(&anim_rotation, img);
+          lv_anim_set_values(&anim_rotation, start_angle, end_angle);
+          lv_anim_set_time(&anim_rotation, anim_time);
+          lv_anim_set_repeat_count(&anim_rotation, LV_ANIM_REPEAT_INFINITE);
+          lv_anim_set_exec_cb(&anim_rotation, [](void * var, int32_t v) {
+            lv_img_set_angle((lv_obj_t*) var, v);
+          });
+          lv_anim_set_path_cb(&anim_rotation, lv_anim_path_linear);
+          lv_anim_start(&anim_rotation);
+
+          id(${widget_name}_is_animating) = true;
+
+          ESP_LOGD("fan", "✓ Animation STARTED");
+
+  - id: ${widget_name}_stop_animation
+    then:
+      - lambda: |-
+          ESP_LOGD("fan", "STOP_ANIMATION script called");
+
+          auto img_widget = id(${widget_name}_state_image);
+          lv_obj_t* img = img_widget;
+
+          lv_anim_del(img, nullptr);
+
+          lv_img_set_src(img, id(fan_misty_image));
+
+          lv_img_set_angle(img, 0);
+
+          id(${widget_name}_is_animating) = false;
+
+          ESP_LOGD("fan", "✓ Animation STOPPED");
+
+  - id: ${widget_name}_update_animation_speed
+    then:
+      - lambda: |-
+          ESP_LOGD("fan", "UPDATE_SPEED called");
+
+          if (!id(${widget_name}_is_animating)) {
+            ESP_LOGD("fan", "Animation not running, skipping");
+            return;
+          }
+
+          ESP_LOGD("fan", "Restarting animation with new speed");
+
+          auto img_widget = id(${widget_name}_state_image);
+          lv_obj_t* img = img_widget;
+          lv_anim_del(img, nullptr);
+
+          id(${widget_name}_is_animating) = false;
+
+      - script.execute: ${widget_name}_start_animation
+
+  - id: ${widget_name}_update_animation_direction
+    then:
+      - lambda: |-
+          ESP_LOGD("fan", "UPDATE_DIRECTION called");
+
+          if (!id(${widget_name}_is_animating)) {
+            ESP_LOGD("fan", "Animation not running, skipping");
+            return;
+          }
+
+          ESP_LOGD("fan", "Restarting animation with new direction");
+
+          auto img_widget = id(${widget_name}_state_image);
+          lv_obj_t* img = img_widget;
+          lv_anim_del(img, nullptr);
+
+          id(${widget_name}_is_animating) = false;
+
+      - script.execute: ${widget_name}_start_animation
+
+  - id: ${widget_name}_translations
+    then:
+      - lvgl.label.update:
+          id: ${widget_name}_state_label
+          text: !lambda |-
+            std::string state = id(${widget_name}_state_sensor).state;
+
+            if (state.empty() || state == "unknown" || state == "unavailable") {
+              state = "off";
+            }
+
+            std::string key = "fan.state." + state;
+            return id(i18n_translations).translate(key);
+
+  - id: ${widget_name}_update_preset_buttons_visibility
+    then:
+      - lambda: |-
+          std::string presets_str = id(${widget_name}_preset_modes_sensor).state;
+          ESP_LOGD("HVAC", "Available presets: %s", presets_str.c_str());
+
+          if (presets_str.find("eco") != std::string::npos) {
+            lv_obj_clear_flag(id(${widget_name}_eco_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(${widget_name}_eco_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          if (presets_str.find("away") != std::string::npos) {
+            lv_obj_clear_flag(id(${widget_name}_away_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(${widget_name}_away_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          if (presets_str.find("boost") != std::string::npos) {
+            lv_obj_clear_flag(id(${widget_name}_boost_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(${widget_name}_boost_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          if (presets_str.find("comfort") != std::string::npos) {
+            lv_obj_clear_flag(id(${widget_name}_comfort_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(${widget_name}_comfort_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          if (presets_str.find("home") != std::string::npos) {
+            lv_obj_clear_flag(id(${widget_name}_home_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(${widget_name}_home_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          if (presets_str.find("sleep") != std::string::npos) {
+            lv_obj_clear_flag(id(${widget_name}_sleep_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(${widget_name}_sleep_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          if (presets_str.find("smart") != std::string::npos) {
+            lv_obj_clear_flag(id(${widget_name}_smart_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          } else {
+            lv_obj_add_flag(id(${widget_name}_smart_preset_btn), LV_OBJ_FLAG_HIDDEN);
+          }
+
+          ESP_LOGD("HVAC", "Preset buttons visibility updated");

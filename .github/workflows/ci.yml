@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: pip install platformio==6.2.0
+
+      - name: Validate six Bash blocks
+        run: |
+          set -euo pipefail
+          for f in scripts/01_clone_guition.sh                    scripts/02_tools_guition.sh                    scripts/03_verify_guition.sh                    scripts/04_esphome_guition.sh                    scripts/05_platformio_guition.sh                    scripts/06_flash_monitor_guition.sh; do
+            bash -n "$f"
+          done
+
+      - name: Verify project
+        run: REPO_DIR="${{ github.workspace }}" bash scripts/03_verify_guition.sh
+
+      - name: PlatformIO native tests
+        run: pio test -e native
+
+      - name: Python contracts
+        run: |
+          python tests/test_panel_state_contract.py
+          python tests/test_wifi_source.py
+          python tests/test_command_editor_integration.py
+          python test/command_buffer_regression.py

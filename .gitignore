@@ -1,0 +1,25 @@
+# Gitignore settings for ESPHome
+src/.esphome/
+src/secrets.yaml
+.DS_Store
+
+# Local bootstrap/build metadata
+.guition-env
+.ci/
+
+# PlatformIO
+.pio/
+.platformio/
+
+# Python test/cache
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# 3C local configuration and generated firmware
+include/local_config.h
+*.bin
+*.elf
+*.map
+credentials.json
+.env
