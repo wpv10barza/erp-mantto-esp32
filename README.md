@@ -4,6 +4,17 @@ Firmware para el panel Guition ESP32-S3-4848S040 de 480×480 y su interfaz 3C co
 
 > **Fuente técnica de referencia:** `wpv10barza/ESP32-S3-4848S040` · rama `main` · commit `4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53`.
 
+## Consolidación documental y sincronización con el repositorio fuente
+
+El README de este repositorio fue construido **después de leer y comparar** los README de `erp-mantto-esp32` y `ESP32-S3-4848S040` en sus respectivas ramas `main`. No se realizó una sustitución ciega ni una concatenación literal.
+
+La comparación contra el repositorio fuente en el commit `4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53` verificó **189 archivos fuente**. Los 189 archivos del árbol fuente ya están presentes en este repositorio con el mismo contenido; únicamente se conserva además el workflow específico de importación `.github/workflows/import-source-tree.yml` del repositorio destino. Por tanto, en esta actualización no se elimina ni se altera ese archivo adicional.
+
+La única diferencia de contenido entre ambos árboles corresponde a `README.md`: el árbol de firmware está sincronizado y esta versión del README integra la información del README fuente con la documentación específica del repositorio destino.
+
+El README fuente utilizado para esta consolidación corresponde al blob `0c33d6c53a2e0f52a200546396b94cf31b5c7b03`. Como control adicional, las rutas de imágenes citadas explícitamente en este README existen dentro del árbol del repositorio destino.
+
+
 ## Alcance
 
 El sistema tiene dos objetivos de firmware separados:
