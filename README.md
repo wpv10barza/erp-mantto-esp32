@@ -29,6 +29,29 @@ La organización del diseño adopta una separación de responsabilidades entre i
 
 El diseño se desarrolla a partir de condiciones iniciales agrupadas por subsistema. Cada condición se formula como un requisito previo que delimita lo que el sistema debe proporcionar; a continuación se establece la decisión de diseño que responde a la condición, se identifica la implementación documentada y se indica el nivel de evidencia que permite verificarla. Esta separación evita presentar como funcionamiento físico una característica que solamente está declarada, configurada, compilada o probada en software.
 
+**Tabla 3.1**  
+**Secuencia de actividades, responsables, artefactos y aplicaciones vinculadas para la integración del sistema**
+
+| PASO | TIPO_FIGURA | ACTIVIDAD | ROL | Documento/Artefacto | Aplicación VINCULADA |
+|---|---|---|---|---|---|
+| 1 | Hexágono azul (Actividad ordenador) | Desarrollar el firmware e implementar la interfaz táctil del panel de 480 × 480 | Desarrollador Firmware | `main.cpp`, Arduino-GFX, GT911, `command_buffer`, `virtual_keyboard` | VS Code / PlatformIO (`wpv10barza/ESP32-S3-4848S040`) |
+| 2 | Hexágono azul (Actividad ordenador) | Desarrollar la lógica del backend y la Device API para la comunicación con el ESP32 | Desarrollador Backend | API TypeScript/Express, autenticación, estados de comandos, conectividad con Google Sheets | Node.js / TypeScript (`wpv10barza/asistente-3c`) |
+| 3 | Trapecio azul (Actividad ordenador) | Compilar y, cuando corresponda a la validación física, cargar el firmware 3C en la terminal | Desarrollador Firmware | Objetivos `esp_hi_3c` y `panel_4848s040` | PlatformIO (`wpv10barza/esp32-3C`) |
+| 4 | Rectángulo rojo (Documento de entrada) | Mantener como referencia documental el registro técnico integrado V14.1 + V15 | Líder de Proyecto / Técnico | `README.md` V15 integrado | GitHub (`wpv10barza/esp32-firmware-backend-`) |
+| 5 | Hexágono azul (Actividad ordenador) | Verificar y sincronizar el código de la interfaz del panel con el repositorio destino | Analista TI / DevOps | `main.cpp`; comparación por SHA y referencia | Git / GitHub (`wpv10barza/erp-mantto-esp32`) |
+| 6 | Hexágono azul (Actividad ordenador) | Consolidar la documentación técnica y actualizar los capítulos del proyecto | Responsable de Documentación | `README.md` consolidado, Capítulo 3, mapas técnicos y evidencias | Git / GitHub (`wpv10barza/erp-mantto-esp32`) |
+| 7 | Decisión verde | **¿El código de interfaz del panel está idéntico al código de referencia?** | Responsable de Calidad | SHA de `main.cpp` y comparación de diferencias | Git Diff / GitHub |
+| 7-SÍ | Opción amarilla (Ruta Sí) | Continuar con la revisión y asignación de figuras documentales por capítulo | Responsable de Calidad | `README.md` en revisión | GitHub (`wpv10barza/erp-mantto-esp32`) |
+| 7-NO | Opción amarilla (Ruta No) | Corregir las diferencias detectadas, resincronizar `main.cpp` y retornar al paso 5 para una nueva verificación | Desarrollador Firmware | `main.cpp` corregido y nueva verificación SHA | VS Code / Git / GitHub |
+| 8 | Hexágono azul (Actividad ordenador) | Asignar una figura documental específica y técnicamente coherente a cada capítulo requerido | Responsable de Documentación | Figuras del README y referencia del cambio documental | GitHub Web / Editor Markdown (`wpv10barza/erp-mantto-esp32`) |
+| 9 | Decisión verde | **¿El proyecto consolidado cumple los requisitos técnicos y documentales de entrega?** | Responsable de Calidad | Firmware, backend, documentación, evidencias y estructura del repositorio | Revisión de Pares / QA |
+| 9-SÍ | Opción amarilla (Ruta Sí) | Preparar la liberación y entrega del repositorio consolidado | Analista TI / DevOps | Versión final, commit o release de entrega | GitHub (`wpv10barza/erp-mantto-esp32`) |
+| 9-NO | Opción amarilla (Ruta No) | Registrar los faltantes, corregir los desajustes de documentación, código o API y retornar al paso de corrección correspondiente | Líder de Proyecto | Bitácora de ajustes pendientes y evidencias de corrección | GitHub Issues / sistema documental del proyecto |
+| 10 | Rectángulo rojo (Documento de salida) | Emitir el entregable final del sistema ERP-Mantenimiento-ESP32 | Técnico / Cliente | Repositorio consolidado y, cuando corresponda, paquete ZIP de entrega | GitHub (`wpv10barza/erp-mantto-esp32`) |
+| 11 | Trapecio azul (Actividad ordenador) | Respaldar la documentación final, código, diagramas y estado de entrega en un medio seguro | Analista TI | `README.md` consolidado, código fuente, diagramas y registro de versión | SharePoint / Servidor de backups |
+
+**Nota.** Elaboración propia. La tabla se estructura siguiendo la convención editorial observada en el material T-030 de Mejía: identificación de tabla, título descriptivo y nota académica posterior. Los nombres de repositorios y artefactos corresponden al estado documentado del proyecto; la presencia de código, configuración o commit no se interpreta por sí sola como evidencia de validación física.
+
 ### 3.2.1. Diseño electrónico
 
 #### A. Condiciones iniciales del subsistema electrónico
