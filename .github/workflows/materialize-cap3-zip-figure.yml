@@ -1,0 +1,154 @@
+name: Materialize selected Chapter 3 ZIP figure
+
+on:
+  push:
+    branches: [cap3-zip-image-clean]
+    paths:
+      - 'docs/images/esp32-s3-4848s040/.staging-cap3-zip/**'
+      - '.github/workflows/materialize-cap3-zip-figure.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: cap3-zip-image-clean
+          fetch-depth: 0
+
+      - name: Reconstruct exact JPEG from staged source data
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          stage='docs/images/esp32-s3-4848s040/.staging-cap3-zip'
+          target='docs/images/esp32-s3-4848s040/condiciones-iniciales'
+          mkdir -p "$target"
+
+          # Verify the exact clean prefix staged from the user ZIP/RAR image.
+          test "$(git hash-object "$stage/p01.b64")" = '17518ce4ce06f12dce92a3082dbd2ad03c0bc55e'
+          test "$(git hash-object "$stage/p02.b64")" = 'cd3a79ead1cfb00118b9eef15ebf43169ba95154'
+          test "$(git hash-object "$stage/p03.b64")" = 'f56135d53c33a45fb54e157c1e6ddd852345c95b'
+          test "$(git hash-object "$stage/p04.b64")" = 'b764f381fa5ceb39dd34523899af13696bd03726'
+          test "$(git hash-object "$stage/p05.b64")" = 'fa6022b8e814954cab154f5b7e5d5e20ad0c221f'
+          test "$(git hash-object "$stage/p06.b64")" = '691437ed1c9bff5d1a297344bd15e8e32e9a5d98'
+          test "$(git hash-object "$stage/p07.b64")" = '6d88e63318e3c7eac358a7a5e9b4994ef88459a9'
+          test "$(git hash-object "$stage/p08.b64")" = '39d384b630ea25e2111a0b805f6c40ed3affbd9d'
+
+          git fetch origin cap3-zip-materialize-final:refs/remotes/origin/cap3-zip-materialize-final
+          oldstage='docs/images/esp32-s3-4848s040/.staging-cap3-match'
+          : > /tmp/old.b64
+          for n in 01 02 03 04 05 06; do
+            git show "origin/cap3-zip-materialize-final:${oldstage}/electronic.${n}.b64part" >> /tmp/old.b64
+          done
+
+          cat "$stage"/p{01,02,03,04,05,06,07,08}.b64 > /tmp/prefix.b64
+
+          python - <<'PY'
+          from pathlib import Path
+          import base64, hashlib, re
+
+          prefix = ''.join(Path('/tmp/prefix.b64').read_text().split())
+          old = ''.join(Path('/tmp/old.b64').read_text().split())
+          expected = '323002401c95593bb1797ed709e47a2cb8dd37fc44a04fd764f356de004df4a5'
+          full_len = 63152
+          need = full_len - len(prefix)
+          assert len(prefix) == 56000, len(prefix)
+          assert need == 7152, need
+
+          candidates = []
+          # Most reliable recovery: the final characters of the earlier staging
+          # are the exact tail of the same user-supplied JPEG.
+          if len(old) >= need:
+              candidates.append(prefix + old[-need:])
+
+          # Also recover by overlap with the clean prefix in case earlier staging
+          # contained extra leading material or duplicated chunk boundaries.
+          for nlen in (512, 256, 128, 64, 32):
+              needle = prefix[-nlen:]
+              start = 0
+              while True:
+                  pos = old.find(needle, start)
+                  if pos < 0:
+                      break
+                  after = pos + nlen
+                  tail = old[after:after + need]
+                  if len(tail) == need:
+                      candidates.append(prefix + tail)
+                  start = pos + 1
+
+          seen = set()
+          for candidate in candidates:
+              if candidate in seen or len(candidate) != full_len:
+                  continue
+              seen.add(candidate)
+              try:
+                  raw = base64.b64decode(candidate, validate=True)
+              except Exception:
+                  continue
+              if hashlib.sha256(raw).hexdigest() == expected:
+                  out = Path('docs/images/esp32-s3-4848s040/condiciones-iniciales/ESP32-4848S040回路図2.jpg')
+                  out.write_bytes(raw)
+                  print('Recovered exact JPEG:', len(raw), expected)
+                  break
+          else:
+              raise SystemExit('Could not reconstruct the exact ZIP/RAR JPEG from staged source data')
+          PY
+
+          echo '323002401c95593bb1797ed709e47a2cb8dd37fc44a04fd764f356de004df4a5  docs/images/esp32-s3-4848s040/condiciones-iniciales/ESP32-4848S040回路図2.jpg' | sha256sum -c -
+          test "$(stat -c '%s' "$target/ESP32-4848S040回路図2.jpg")" = '47363'
+
+      - name: Match figure to Chapter 3 and enforce one displayed figure per subsection
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('README.md')
+          s = p.read_text(encoding='utf-8')
+          start = s.index('### 3.2.1. Diseño electrónico')
+          end = s.index('### 3.2.2. Diseño de software', start)
+          sec = s[start:end]
+
+          # Remove the three former displayed technical maps from 3.2.1 only.
+          sec = re.sub(r'\n!\[Figura 13\.[^\n]*\]\(docs/images/esp32-s3-4848s040/fig13_panel_base\.png\)\n\n\*\*Figura 13\.[^\n]*\*\*\n', '\n', sec)
+          sec = re.sub(r'\n!\[Figura 14\.[^\n]*\]\(docs/images/esp32-s3-4848s040/fig14_subsystems\.png\)\n\n\*\*Figura 14\.[^\n]*\*\*\n', '\n', sec)
+          sec = re.sub(r'\n!\[Figura 15\.[^\n]*\]\(docs/images/esp32-s3-4848s040/fig15_gpio_map\.png\)\n\n\*\*Figura 15\.[^\n]*\*\*\n', '\n', sec)
+
+          sec = sec.replace('La Figura 15 conserva la evidencia documental de las relaciones de buses y señales ya integradas en el repositorio.', 'La documentación de buses y señales conserva la evidencia de las relaciones ya integradas en el repositorio.')
+
+          anchor = ('La solución de diseño utiliza el panel Guition ESP32-S3-4848S040 con una resolución de 480 × 480, pantalla RGB basada en ST7701S y controlador táctil GT911. El objetivo electrónico debe conservar una configuración de memoria y de placa compatible con los dos objetivos de construcción del proyecto. En la configuración ya documentada se registran 16 MB de memoria Flash, PSRAM OPI y el entorno PlatformIO <code>panel_4848s040</code>; estos datos se utilizan como parámetros del diseño y no como demostración de funcionamiento físico.\n')
+          block = ('\n![Figura 13. Esquema eléctrico de referencia del ESP32-4848S040](docs/images/esp32-s3-4848s040/condiciones-iniciales/ESP32-4848S040回路図2.jpg)\n\n'
+                   '**Figura 13. Esquema eléctrico de referencia del panel ESP32-4848S040.**\n\n'
+                   '**Nota.** La figura procede del material técnico reunido para las condiciones iniciales y se utiliza para contrastar el ESP32-S3, la interfaz del panel y sus periféricos con la configuración documentada. No sustituye una verificación eléctrica sobre la placa.\n')
+
+          if 'ESP32-4848S040回路図2.jpg' not in sec:
+              if anchor not in sec:
+                  raise SystemExit('No se encontró el ancla de 3.2.1')
+              sec = sec.replace(anchor, anchor + block, 1)
+
+          # Enforce the user's rule: exactly one displayed image in 3.2.1.
+          count = len(re.findall(r'!\[[^\]]*\]\([^\)]*\)', sec))
+          if count != 1:
+              raise SystemExit(f'3.2.1 must contain exactly one displayed image, found {count}')
+
+          s = s[:start] + sec + s[end:]
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Commit clean result and remove temporary staging
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf docs/images/esp32-s3-4848s040/.staging-cap3-zip
+          rm -f .github/workflows/materialize-cap3-zip-figure.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'docs: materializa figura ZIP e integra 3.2.1'
+          git push origin HEAD:cap3-zip-image-clean
