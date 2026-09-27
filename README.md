@@ -21,6 +21,8 @@ El diseño se desarrolla a partir de condiciones iniciales agrupadas por subsist
 
 ### 3.2.1. Diseño electrónico
 
+#### A. Condiciones iniciales del subsistema electrónico
+
 El subsistema electrónico debe proporcionar una superficie de interacción visual y táctil compatible con la interfaz del Asistente 3C, conservando la geometría del panel y una integración coherente entre pantalla, controlador táctil, memoria, comunicación y alimentación. Esta condición es necesaria para que la información presentada al usuario y las coordenadas recibidas por el subsistema táctil correspondan al mismo espacio físico de interacción.
 
 La solución de diseño utiliza el panel Guition ESP32-S3-4848S040 con una resolución de 480 × 480, pantalla RGB basada en ST7701S y controlador táctil GT911. El objetivo electrónico debe conservar una configuración de memoria y de placa compatible con los dos objetivos de construcción del proyecto. En la configuración ya documentada se registran 16 MB de memoria Flash, PSRAM OPI y el entorno PlatformIO <code>panel_4848s040</code>; estos datos se utilizan como parámetros del diseño y no como demostración de funcionamiento físico.
@@ -29,7 +31,7 @@ La solución de diseño utiliza el panel Guition ESP32-S3-4848S040 con una resol
 
 **Figura 13. Mapa técnico del panel ESP32-S3-4848S040 y sus condiciones de integración.**
 
-La Figura 13 permite relacionar la geometría del panel con los componentes que deben mantenerse coordinados. Su función es documental: representa las condiciones de integración declaradas para el diseño y no sustituye una prueba eléctrica o funcional sobre el dispositivo.
+**Nota.** La Figura 13 permite relacionar la geometría del panel con los componentes que deben mantenerse coordinados. Su función es documental: representa las condiciones de integración declaradas para el diseño y no sustituye una prueba eléctrica o funcional sobre el dispositivo.
 
 La distribución lógica del subsistema debe preservar la relación entre procesamiento, visualización, tacto, memoria, retroiluminación y comunicación. El diseño del repositorio organiza estos elementos alrededor del ESP32-S3 y diferencia el objetivo ESPHome del objetivo PlatformIO, sin asumir que ambas configuraciones representan una única pila de software en ejecución simultánea.
 
@@ -63,9 +65,17 @@ La verificación de este subsistema se limita al nivel que realmente ejecuta cad
 
 ### 3.2.2. Diseño de software
 
+#### A. Condiciones iniciales del subsistema de software
+
 El subsistema de software debe permitir que una instrucción sea introducida, editada, transportada y consultada de forma controlada, sin convertir la interacción del usuario en una escritura directa sobre una fuente maestra. Para ello se requiere una arquitectura que mantenga separados el transporte HTTP, el procesamiento de la orden, la validación, la revisión humana, la persistencia y el reporte del estado.
 
 La decisión de diseño utiliza dos objetivos de firmware relacionados con el mismo panel. ESPHome + LVGL se reserva para la interfaz gráfica, mientras que PlatformIO mantiene el firmware de interacción 3C. La independencia entre ambos objetivos permite conservar la interfaz documentada y, al mismo tiempo, mantener un cliente de dispositivo específico para el flujo de comandos.
+
+![Figura 16. Flujo técnico de compilación, carga, monitorización y validación del firmware](docs/images/esp32-s3-4848s040/fig16_validation_flow.png)
+
+**Figura 16. Flujo técnico de compilación, carga, monitorización y validación del firmware.**
+
+**Nota.** La figura resume los seis bloques reproducibles del proyecto: actualización, herramientas, verificación, ESPHome, PlatformIO y carga/monitorización. También separa la evidencia obtenida en GitHub Actions —código, pruebas, contratos y compilación— de la validación física ejecutada mediante `.github/workflows/physical-validation.yml` en un runner `self-hosted` conectado al panel. La ejecución sobre un runner `ubuntu-latest` no demuestra por sí sola la conexión ni el funcionamiento del ESP32-S3, ST7701S, GT911, USB o alimentación reales.
 
 En la implementación del firmware 3C, el editor trabaja con un <code>commandBuffer</code> de tamaño fijo y soporta cursor, inserción, borrado, desplazamiento horizontal del texto, teclado virtual <code>ABC/123</code>, letras, números, símbolos, espacio, backspace y enter. La entrada editada se utiliza para construir la solicitud enviada mediante el cliente del dispositivo. De este modo, la condición funcional de disponer de una orden editable se materializa en un componente de interacción concreto y verificable por software.
 
@@ -242,11 +252,7 @@ Las credenciales personales deben permanecer fuera del control de versiones. El 
 
 El fuente original define seis bloques para WSL/Ubuntu. Como este repositorio se ejecuta sobre el **destino** <code>erp-mantto-esp32</code>, se debe establecer <code>REPO_DIR</code> y utilizar la URL del destino en el Bloque 1.
 
-![Figura 16. Flujo técnico de compilación, carga, monitorización y validación del firmware](docs/images/esp32-s3-4848s040/fig16_validation_flow.png)
-
-**Figura 16. Flujo técnico de compilación, carga, monitorización y validación del firmware.**
-
-La figura resume los seis bloques reproducibles del proyecto: actualización, herramientas, verificación, ESPHome, PlatformIO y carga/monitorización. También separa la evidencia obtenida en GitHub Actions —código, pruebas, contratos y compilación— de la validación física ejecutada mediante `.github/workflows/physical-validation.yml` en un runner `self-hosted` conectado al panel. La ejecución sobre un runner `ubuntu-latest` no demuestra por sí sola la conexión ni el funcionamiento del ESP32-S3, ST7701S, GT911, USB o alimentación reales.
+El flujo técnico de compilación, carga, monitorización y validación se documenta en la **Figura 16** del apartado **3.2.2. Diseño de software**, junto con su nota de alcance y limitación de evidencia física.
 
 ### Block 1 — clone/update
 
@@ -412,7 +418,7 @@ Los cuatro mapas se integran en el punto del README donde se explica cada conten
 - `fig13_panel_base.png` → condiciones iniciales del panel;
 - `fig14_subsystems.png` → distribución lógica de subsistemas y periféricos;
 - `fig15_gpio_map.png` → buses, señales y GPIO;
-- `fig16_validation_flow.png` → compilación, carga, monitorización y validación.
+- `fig16_validation_flow.png` → condiciones iniciales del subsistema de software y flujo de compilación, carga, monitorización y validación.
 
 Estas figuras son **elaboración documental** a partir del README vigente y del código del repositorio. No son fotografías de laboratorio ni sustituyen la validación física del panel.
 
