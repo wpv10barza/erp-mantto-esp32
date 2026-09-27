@@ -9,6 +9,16 @@ El repositorio conserva dos objetivos funcionales separados:
 
 La separación de objetivos es deliberada: la configuración LVGL pertenece al objetivo ESPHome y la interfaz 3C documentada en este README pertenece al objetivo PlatformIO. No se introduce una dependencia independiente <code>lvgl/lvgl</code> en PlatformIO.
 
+## 2. Bases teóricas y arquitectura
+
+La base teórica y arquitectónica del sistema se apoya en la separación funcional entre procesamiento, visualización, interacción táctil, memoria y comunicación. La figura seleccionada resume esa distribución sin utilizar una captura de interfaz como evidencia.
+
+![Figura 2.1. Mapa lógico de subsistemas y periféricos del ESP32-S3-4848S040](doc/images/capitulo-2-arquitectura-subsystems.png)
+
+**Figura 2.1. Mapa lógico de subsistemas y periféricos del ESP32-S3-4848S040.**
+
+**Nota.** La figura tiene función documental y sirve para contextualizar las bases técnicas y la arquitectura del panel. No representa una prueba física de funcionamiento ni sustituye la validación del hardware.
+
 ## 3.1. Enfoque del sistema
 
 El sistema se concibe como una solución embebida de interacción y comunicación controlada para el Asistente 3C. El panel ESP32-S3-4848S040 constituye el punto de interacción local y concentra la visualización, la entrada táctil, la edición de instrucciones y la comunicación con la API del dispositivo. El procesamiento posterior se mantiene fuera de la autoridad directa del panel: la orden se transporta al servicio correspondiente, atraviesa el flujo de interpretación y control establecido y permanece sujeta a revisión humana antes de cualquier aplicación autorizada.
@@ -25,27 +35,17 @@ El diseño se desarrolla a partir de condiciones iniciales agrupadas por subsist
 
 El subsistema electrónico debe proporcionar una superficie de interacción visual y táctil compatible con la interfaz del Asistente 3C, conservando la geometría del panel y una integración coherente entre pantalla, controlador táctil, memoria, comunicación y alimentación. Esta condición es necesaria para que la información presentada al usuario y las coordenadas recibidas por el subsistema táctil correspondan al mismo espacio físico de interacción.
 
+![Figura 3.1. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040](doc/images/capitulo-3-diseno-electronico-gpio-panel.png)
+
+**Figura 3.1. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040.**
+
+**Nota.** La figura documenta la relación entre el panel, sus buses y las asignaciones GPIO utilizadas por la implementación descrita. Su función es documental; la continuidad eléctrica, el arranque y la respuesta táctil deben comprobarse mediante validación física.
+
 La solución de diseño utiliza el panel Guition ESP32-S3-4848S040 con una resolución de 480 × 480, pantalla RGB basada en ST7701S y controlador táctil GT911. El objetivo electrónico debe conservar una configuración de memoria y de placa compatible con los dos objetivos de construcción del proyecto. En la configuración ya documentada se registran 16 MB de memoria Flash, PSRAM OPI y el entorno PlatformIO <code>panel_4848s040</code>; estos datos se utilizan como parámetros del diseño y no como demostración de funcionamiento físico.
-
-![Figura 13. Mapa técnico del panel ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig13_panel_base.png)
-
-**Figura 13. Mapa técnico del panel ESP32-S3-4848S040 y sus condiciones de integración.**
-
-**Nota.** La Figura 13 permite relacionar la geometría del panel con los componentes que deben mantenerse coordinados. Su función es documental: representa las condiciones de integración declaradas para el diseño y no sustituye una prueba eléctrica o funcional sobre el dispositivo.
 
 La distribución lógica del subsistema debe preservar la relación entre procesamiento, visualización, tacto, memoria, retroiluminación y comunicación. El diseño del repositorio organiza estos elementos alrededor del ESP32-S3 y diferencia el objetivo ESPHome del objetivo PlatformIO, sin asumir que ambas configuraciones representan una única pila de software en ejecución simultánea.
 
-![Figura 14. Mapa lógico de subsistemas y periféricos documentados del ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig14_subsystems.png)
-
-**Figura 14. Mapa lógico de subsistemas y periféricos documentados del ESP32-S3-4848S040.**
-
 La interfaz táctil debe mantener coherencia entre la geometría de la pantalla, las coordenadas recibidas y la lógica de interacción. El sistema utiliza GT911 como controlador táctil; adicionalmente, el README fuente advierte una consideración de uso de puertos en la que GPIO19 participa en I²C del GT911 y GPIO20 forma parte del bus RGB, por lo que esta condición debe revisarse durante la validación física y no interpretarse como una prueba de funcionamiento o de fallo.
-
-![Figura 15. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040](docs/images/esp32-s3-4848s040/fig15_gpio_map.png)
-
-**Figura 15. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040.**
-
-La Figura 15 conserva la evidencia documental de las relaciones de buses y señales ya integradas en el repositorio. La coincidencia entre el mapa y la configuración constituye evidencia de consistencia documental; la continuidad eléctrica de las señales debe comprobarse mediante una validación física.
 
 | Elemento | Configuración documentada |
 |---|---|
@@ -70,12 +70,6 @@ La verificación de este subsistema se limita al nivel que realmente ejecuta cad
 El subsistema de software debe permitir que una instrucción sea introducida, editada, transportada y consultada de forma controlada, sin convertir la interacción del usuario en una escritura directa sobre una fuente maestra. Para ello se requiere una arquitectura que mantenga separados el transporte HTTP, el procesamiento de la orden, la validación, la revisión humana, la persistencia y el reporte del estado.
 
 La decisión de diseño utiliza dos objetivos de firmware relacionados con el mismo panel. ESPHome + LVGL se reserva para la interfaz gráfica, mientras que PlatformIO mantiene el firmware de interacción 3C. La independencia entre ambos objetivos permite conservar la interfaz documentada y, al mismo tiempo, mantener un cliente de dispositivo específico para el flujo de comandos.
-
-![Figura 16. Flujo técnico de compilación, carga, monitorización y validación del firmware](docs/images/esp32-s3-4848s040/fig16_validation_flow.png)
-
-**Figura 16. Flujo técnico de compilación, carga, monitorización y validación del firmware.**
-
-**Nota.** La figura resume los seis bloques reproducibles del proyecto: actualización, herramientas, verificación, ESPHome, PlatformIO y carga/monitorización. También separa la evidencia obtenida en GitHub Actions —código, pruebas, contratos y compilación— de la validación física ejecutada mediante `.github/workflows/physical-validation.yml` en un runner `self-hosted` conectado al panel. La ejecución sobre un runner `ubuntu-latest` no demuestra por sí sola la conexión ni el funcionamiento del ESP32-S3, ST7701S, GT911, USB o alimentación reales.
 
 En la implementación del firmware 3C, el editor trabaja con un <code>commandBuffer</code> de tamaño fijo y soporta cursor, inserción, borrado, desplazamiento horizontal del texto, teclado virtual <code>ABC/123</code>, letras, números, símbolos, espacio, backspace y enter. La entrada editada se utiliza para construir la solicitud enviada mediante el cliente del dispositivo. De este modo, la condición funcional de disponer de una orden editable se materializa en un componente de interacción concreto y verificable por software.
 
@@ -239,7 +233,7 @@ Las credenciales personales deben permanecer fuera del control de versiones. El 
 
 El fuente original define seis bloques para WSL/Ubuntu. Como este repositorio se ejecuta sobre el **destino** <code>erp-mantto-esp32</code>, se debe establecer <code>REPO_DIR</code> y utilizar la URL del destino en el Bloque 1.
 
-El flujo técnico de compilación, carga, monitorización y validación se documenta en la **Figura 16** del apartado **3.2.2. Diseño de software**, junto con su nota de alcance y limitación de evidencia física.
+El flujo técnico de compilación, carga, monitorización y validación se documenta en el apartado **3.2.2. Diseño de software**, manteniendo separada la evidencia documental de la validación física.
 
 ### Block 1 — clone/update
 
@@ -398,16 +392,12 @@ Una ejecución de CI en GitHub-hosted runners **no demuestra** por sí sola que 
 
 ## Inventario de imágenes y ubicación documental
 
-El árbol fuente conserva **84 archivos de imagen** entre `doc/images/` y `src/assets/images/`. Esta consolidación añade cuatro mapas técnicos específicos del ESP32-S3-4848S040 bajo `docs/images/esp32-s3-4848s040/` para documentar condiciones iniciales, subsistemas, buses/GPIO y validación.
+La biblioteca del repositorio conserva los archivos gráficos de `doc/images/` y los activos de interfaz de `src/assets/images/`. Para la documentación por capítulos se mantienen únicamente dos referencias visibles en este README, una por capítulo, y ambas corresponden a PNG técnicos ya existentes en el árbol del repositorio.
 
-Los cuatro mapas se integran en el punto del README donde se explica cada contenido:
+- `doc/images/capitulo-2-arquitectura-subsystems.png` → **Capítulo 2**, bases teóricas y arquitectura.
+- `doc/images/capitulo-3-diseno-electronico-gpio-panel.png` → **Capítulo 3**, apartado **3.2.1. Diseño electrónico**.
 
-- `fig13_panel_base.png` → condiciones iniciales del panel;
-- `fig14_subsystems.png` → distribución lógica de subsistemas y periféricos;
-- `fig15_gpio_map.png` → buses, señales y GPIO;
-- `fig16_validation_flow.png` → condiciones iniciales del subsistema de software y flujo de compilación, carga, monitorización y validación.
-
-Estas figuras son **elaboración documental** a partir del README vigente y del código del repositorio. No son fotografías de laboratorio ni sustituyen la validación física del panel.
+Las dos copias documentales reutilizan mapas técnicos existentes del panel y se integran directamente en la ubicación del capítulo correspondiente. Las imágenes de la biblioteca que no cumplen este criterio permanecen como activos del proyecto y no se presentan como evidencia documental del capítulo.
 
 ## Estructura del repositorio
 
@@ -505,9 +495,9 @@ La versión consolidada utiliza como referencia:
 
 El firmware, GPIO, ST7701S, GT911, PSRAM, flash, API, estados, temporización, dependencias y pruebas se mantienen según el snapshot fuente utilizado. La consolidación realizada sobre este repositorio es documental y no rediseña la arquitectura funcional.
 
-### Mapas técnicos del panel incorporados desde main
+### Figuras documentales por capítulo
 
-Los cuatro mapas técnicos de las Figuras 13–16 se derivan del `README.md` de `main` de `wpv10barza/ESP32-S3-4848S040` y de los archivos `platformio/src/panel_4848s040/main.cpp`, `platformio.ini`, `src/main.yaml`, `scripts/03_verify_guition.sh`, `scripts/04_esphome_guition.sh`, `scripts/05_platformio_guition.sh`, `scripts/06_flash_monitor_guition.sh`, `.github/workflows/ci.yml`, `.github/workflows/firmware-cd.yml` y `.github/workflows/physical-validation.yml`. La fuente de la rama `main` utilizada para esta actualización corresponde al commit `4ef0e9a6bd55a3a935d14ae8d84aa8d290114b53`.
+La documentación visible en este README sigue la regla **capítulo → una sola figura pertinente → PNG en `doc/images/` → referencia en README**. Cada figura se integra en su ubicación de capítulo y se acompaña de nombre de figura y nota aclaratoria.
 
 ## Consolidación documental de la fuente técnica
 
@@ -531,7 +521,7 @@ El README fuente no contiene referencias Markdown a imágenes. El árbol del pro
 - los activos de interfaz bajo `src/assets/images/`;
 - las fuentes bajo `src/assets/fonts/`.
 
-Las 16 imágenes de `doc/images/` ya están presentes en el destino y coinciden con los mismos SHA del repositorio fuente, por lo que no fue necesario copiarlas nuevamente ni introducir duplicados. Ninguna imagen se presenta aquí como evidencia de funcionamiento físico del panel.
+Las imágenes documentales disponibles en el repositorio se mantienen como activos de referencia; únicamente las dos figuras definidas por capítulo se muestran en este README. Ninguna imagen se presenta como evidencia de funcionamiento físico del panel.
 
 ### Niveles de evidencia
 
