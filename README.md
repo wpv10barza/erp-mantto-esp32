@@ -141,19 +141,6 @@ La configuración fija el componente externo de <code>i18n</code> al commit:
 
 La referencia está fijada para reproducibilidad. El proyecto no debe sustituirla por <code>@dev</code> de manera arbitraria.
 
-Las siguientes capturas son activos documentales existentes en <code>doc/images/</code>. Sirven para describir la interfaz; no constituyen evidencia de una prueba física.
-
-### Pantalla principal
-
-![Pantalla principal de la interfaz ESPHome/LVGL](doc/images/home.png)
-
-### Configuración
-
-![Pantalla de configuración](doc/images/settings.png)
-
-### Carga e inicio
-
-![Pantalla de carga](doc/images/loading.png)
 
 ## Editor 3C y teclado virtual
 
