@@ -70,6 +70,9 @@ La distribución lógica del subsistema debe preservar la relación entre proces
 
 La interfaz táctil debe mantener coherencia entre la geometría de la pantalla, las coordenadas recibidas y la lógica de interacción. El sistema utiliza GT911 como controlador táctil; adicionalmente, el README fuente advierte una consideración de uso de puertos en la que GPIO19 participa en I²C del GT911 y GPIO20 forma parte del bus RGB, por lo que esta condición debe revisarse durante la validación física y no interpretarse como una prueba de funcionamiento o de fallo.
 
+**Tabla 3.2**  
+**Configuración documentada del subsistema electrónico del panel ESP32-S3-4848S040**
+
 | Elemento | Configuración documentada |
 |---|---|
 | Panel | Guition ESP32-S3-4848S040 |
@@ -81,6 +84,8 @@ La interfaz táctil debe mantener coherencia entre la geometría de la pantalla,
 | Entorno de firmware 3C | PlatformIO <code>panel_4848s040</code> |
 | Objetivo de interfaz | ESPHome + LVGL |
 | Consideración física | validación específica sobre el panel conectado |
+
+**Nota.** Elaboración propia a partir de la configuración técnica documentada del panel y sus objetivos de construcción. Los valores identifican parámetros de diseño y configuración; no constituyen por sí mismos evidencia de funcionamiento físico.
 
 La configuración de ESPHome y la de PlatformIO se mantienen como objetivos de construcción independientes para el mismo hardware. La primera se orienta a la interfaz ESPHome + LVGL y la segunda al firmware 3C con editor, teclado virtual, <code>commandBuffer</code> y cliente HTTP. Esta separación es una decisión de diseño orientada a evitar que una pila de interfaz reemplace a la otra.
 
@@ -183,11 +188,16 @@ La interfaz del panel mantiene las zonas de interacción **PROBAR WSL** y **ENVI
 
 El contrato versionado se encuentra en [contract/device-command-v1.json](contract/device-command-v1.json).
 
+**Tabla 3.3**  
+**Operaciones de la Device API versionada para la comunicación con el panel**
+
 | Operación | Endpoint | Función |
 |---|---|---|
 | Health | <code>GET /api/device/v1/health</code> | comprobar disponibilidad |
 | Crear orden | <code>POST /api/device/v1/commands</code> | enviar una propuesta |
 | Estado | <code>GET /api/device/v1/commands/{command_id}</code> | consultar el estado |
+
+**Nota.** Elaboración propia a partir del contrato versionado de la Device API documentado en el repositorio. La tabla describe las operaciones y sus funciones; una respuesta HTTP aceptada no implica por sí sola que una orden haya sido confirmada o aplicada.
 
 El firmware genera una petición con la estructura:
 
@@ -238,6 +248,9 @@ La prueba [tests/test_device_api_e2e.py](tests/test_device_api_e2e.py) verifica 
 
 ## Versiones y dependencias
 
+**Tabla 3.4**  
+**Versiones y referencias de las herramientas y dependencias del sistema**
+
 | Componente | Versión o referencia |
 |---|---|
 | ESPHome | 2026.8.2 |
@@ -247,6 +260,8 @@ La prueba [tests/test_device_api_e2e.py](tests/test_device_api_e2e.py) verifica 
 | Framework PlatformIO | Arduino |
 | Framework ESPHome | ESP-IDF |
 | i18n externo | commit <code>1b487af0ef26ff8e7908d34e415d99cc13fc1f98</code> |
+
+**Nota.** Elaboración propia a partir de las versiones y referencias fijadas por la configuración y los scripts del repositorio. La tabla documenta dependencias y referencias de construcción; su presencia no equivale a una ejecución física satisfactoria.
 
 Las versiones se aseguran desde [scripts/02_tools_guition.sh](scripts/02_tools_guition.sh). La configuración PlatformIO también fija la plataforma y la dependencia GFX.
 
@@ -356,6 +371,9 @@ El repositorio conserva pruebas Python, C++ y E2E:
 
 ### Qué demuestra cada nivel
 
+**Tabla 3.5**  
+**Niveles de evidencia y alcance de verificación del proyecto**
+
 | Nivel de evidencia | Demuestra | No demuestra |
 |---|---|---|
 | Documentación | diseño declarado, contratos y procedimiento | funcionamiento físico |
@@ -363,6 +381,8 @@ El repositorio conserva pruebas Python, C++ y E2E:
 | Prueba automatizada | resultados de los tests ejecutados | presencia de hardware físico |
 | GitHub Actions | validación automática, compilación y E2E software | USB, pantalla, touch o alimentación reales |
 | Validación física | comportamiento del ESP32 conectado al hardware | no sustituye las pruebas de software |
+
+**Nota.** Elaboración propia. La clasificación separa la evidencia documental, de implementación, automatizada, de CI y física para evitar que un nivel de verificación sea interpretado como evidencia de otro.
 
 ## GitHub Actions
 
@@ -494,6 +514,9 @@ El **README destino preexistente** fue leído antes de la consolidación. Aporta
 
 La comparación del árbol funcional produjo:
 
+**Tabla 3.6**  
+**Comparación del árbol funcional entre el repositorio fuente y el repositorio destino**
+
 | Elemento | Fuente | Destino antes de la consolidación | Resultado |
 |---|---:|---:|---|
 | Archivos fuente | 189 | 189 equivalentes ya importados | 189 conservados |
@@ -501,6 +524,8 @@ La comparación del árbol funcional produjo:
 | README | diferente | presente | reemplazado por uno integrado |
 | Workflows temporales de importación | no existen | presentes | retirados |
 | Activos funcionales | presentes | presentes | conservados |
+
+**Nota.** Elaboración propia a partir de la comparación documental y funcional realizada entre la fuente técnica y el repositorio destino. La tabla registra correspondencias del árbol y del README; no constituye por sí sola una prueba de ejecución del hardware.
 
 No se hizo una concatenación literal ni una sustitución ciega del README.
 
