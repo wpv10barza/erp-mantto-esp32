@@ -13,9 +13,11 @@
 #define WIFI_PASSWORD_VALUE ""
 #endif
 
-// Use the Windows LAN IPv4 that exposes WSL, never 127.0.0.1.
+// Deprecated compatibility setting. Backend discovery is now dynamic:
+// Wi-Fi -> mDNS _3c._tcp -> hostname/IP + port -> /api/device/v1/health.
+// The firmware no longer uses a fixed backend IP or this value at runtime.
 #ifndef ASSISTANT_BASE_URL_VALUE
-#define ASSISTANT_BASE_URL_VALUE "http://192.168.1.50:3000"
+#define ASSISTANT_BASE_URL_VALUE ""
 #endif
 
 #ifndef ESP32_API_TOKEN_VALUE

@@ -4,6 +4,7 @@
 #include <Arduino_GFX_Library.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -61,6 +62,46 @@ bool displayReady = false;
 bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
+
+struct BackendEndpoint {
+  String logicalHost;
+  String address;
+  uint16_t port = 0;
+
+  bool valid() const {
+    return logicalHost.length() > 0 && address.length() > 0 && port > 0;
+  }
+
+  String baseUrl() const {
+    return valid() ? String("http://") + address + ":" + String(port) : String();
+  }
+
+  void clear() {
+    logicalHost = "";
+    address = "";
+    port = 0;
+  }
+
+  bool operator==(const BackendEndpoint& other) const {
+    return logicalHost == other.logicalHost &&
+           address == other.address &&
+           port == other.port;
+  }
+
+  bool operator!=(const BackendEndpoint& other) const {
+    return !(*this == other);
+  }
+};
+
+Preferences backendPrefs;
+BackendEndpoint backendEndpoint;
+constexpr char kBackendPrefsNamespace[] = "backend";
+constexpr char kBackendLogicalHost[] = "3c-backend.local";
+constexpr char kBackendHostKey[] = "host";
+constexpr char kBackendAddressKey[] = "addr";
+constexpr char kBackendPortKey[] = "port";
+constexpr char kBackendMdnsService[] = "3c";
+constexpr char kBackendMdnsProtocol[] = "tcp";
 bool touchDown = false;
 constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
@@ -82,7 +123,7 @@ const char* stateLabel(PanelState state) {
   switch (state) {
     case PanelState::Booting: return "INICIANDO";
     case PanelState::Offline: return "SIN CONEXION";
-    case PanelState::Ready: return "WSL DISPONIBLE";
+    case PanelState::Ready: return "BACKEND DISPONIBLE";
     case PanelState::Busy: return "PROCESANDO";
     case PanelState::Pending: return "PENDIENTE";
     case PanelState::Applied: return "APLICADO";
@@ -184,7 +225,7 @@ void drawEditor() {
              keyboardMode == virtual_keyboard::KeyboardMode::Alpha ? "123" : "ABC",
              color565(45, 70, 100));
 }
-  
+
 void drawPanel() {
   if (commandEditorOpen) { drawEditor(); return; }
   if (!displayReady) return;
@@ -221,7 +262,7 @@ void drawPanel() {
     drawCentered(WiFi.localIP().toString(), 310, 1, color565(150, 205, 235));
   }
 
-  drawButton(20, 370, 210, 82, "PROBAR WSL", color565(15, 82, 135));
+  drawButton(20, 370, 210, 82, "PROBAR BACKEND", color565(15, 82, 135));
   drawButton(250, 370, 210, 82, "ENVIAR 3C", color565(18, 105, 73));
 }
 
@@ -343,9 +384,9 @@ bool initializeDisplay() {
     1, 10, 8, 50,
     1, 10, 8, 20,
     0, 12000000, false, 0, 0, 0);
-  Serial.println("DISPLAY: using Arduino-GFX ST7701 type8 init sequence");
-  // Match the Arduino-GFX reference for GUITION ESP32-4848S040 86BOX:
-  // ST7701 type9 init, rotation 1, 12 MHz RGB PCLK, big-endian RGB565 disabled.
+  // Match the Guition ESP32-4848S040 reference: ST7701 type9,
+  // rotation 1, 12 MHz RGB PCLK, RGB565 big-endian disabled.
+  Serial.println("DISPLAY: using Arduino-GFX ST7701 type9 init sequence");
   display = new Arduino_RGB_Display(
     kScreenWidth, kScreenHeight, rgbPanel, 1, true,
     displayBus, GFX_NOT_DEFINED,
@@ -407,8 +448,124 @@ TouchSample readTouch() {
   return sample;
 }
 
+void loadBackendEndpointFromNvs() {
+  backendEndpoint.clear();
+  if (!backendPrefs.begin(kBackendPrefsNamespace, true)) {
+    Serial.println("BACKEND: NVS cache unavailable; mDNS discovery required");
+    return;
+  }
+
+  backendEndpoint.logicalHost = backendPrefs.getString(
+    kBackendHostKey, kBackendLogicalHost);
+  backendEndpoint.address = backendPrefs.getString(kBackendAddressKey, "");
+  backendEndpoint.port = backendPrefs.getUShort(kBackendPortKey, 0);
+  backendPrefs.end();
+
+  if (backendEndpoint.valid() &&
+      backendEndpoint.logicalHost.equalsIgnoreCase(kBackendLogicalHost)) {
+    Serial.printf("BACKEND: cached endpoint loaded %s -> %s:%u\n",
+      backendEndpoint.logicalHost.c_str(),
+      backendEndpoint.address.c_str(),
+      backendEndpoint.port);
+  } else {
+    backendEndpoint.clear();
+    Serial.println("BACKEND: no valid cached endpoint; mDNS discovery required");
+  }
+}
+
+void saveBackendEndpointToNvs(const BackendEndpoint& endpointValue) {
+  if (!endpointValue.valid()) return;
+  if (!backendPrefs.begin(kBackendPrefsNamespace, false)) {
+    Serial.println("BACKEND: unable to open NVS cache for write");
+    return;
+  }
+  backendPrefs.putString(kBackendHostKey, endpointValue.logicalHost);
+  backendPrefs.putString(kBackendAddressKey, endpointValue.address);
+  backendPrefs.putUShort(kBackendPortKey, endpointValue.port);
+  backendPrefs.end();
+  Serial.printf("BACKEND: cached endpoint saved %s -> %s:%u\n",
+    endpointValue.logicalHost.c_str(),
+    endpointValue.address.c_str(),
+    endpointValue.port);
+}
+
+bool startMdns() {
+  if (mdnsReady) return true;
+  mdnsReady = MDNS.begin("esp32-panel-3c");
+  if (!mdnsReady) {
+    Serial.println("BACKEND: mDNS responder/query interface initialization FAILED");
+    return false;
+  }
+  MDNS.addService("http", "tcp", 80);
+  Serial.println("BACKEND: mDNS responder initialized");
+  return true;
+}
+
+bool discoverBackendEndpoint() {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  if (!startMdns()) return false;
+
+  Serial.printf("BACKEND: querying mDNS _%s._%s\n",
+    kBackendMdnsService, kBackendMdnsProtocol);
+  const int services = MDNS.queryService(kBackendMdnsService, kBackendMdnsProtocol);
+  if (services <= 0) {
+    Serial.printf("BACKEND: mDNS _%s._%s found no services\n",
+      kBackendMdnsService, kBackendMdnsProtocol);
+    return false;
+  }
+
+  for (int index = 0; index < services; ++index) {
+    String logicalHost = MDNS.hostname(index);
+    logicalHost.trim();
+    while (logicalHost.endsWith(".")) logicalHost.remove(logicalHost.length() - 1);
+    if (!logicalHost.endsWith(".local")) logicalHost += ".local";
+
+    const uint16_t port = MDNS.port(index);
+    if (port == 0) continue;
+
+    if (!logicalHost.equalsIgnoreCase(kBackendLogicalHost)) {
+      continue;
+    }
+
+    const IPAddress address = MDNS.queryHost(kBackendLogicalHost);
+    if (address == IPAddress()) {
+      Serial.printf(
+        "BACKEND: mDNS host %s did not resolve to an IPv4 address\n",
+        kBackendLogicalHost);
+      continue;
+    }
+
+    Serial.printf(
+      "BACKEND: mDNS candidate host=%s address=%s port=%u\n",
+      logicalHost.c_str(), address.toString().c_str(), port);
+
+    BackendEndpoint discovered;
+    discovered.logicalHost = kBackendLogicalHost;
+    discovered.address = address.toString();
+    discovered.port = port;
+    if (!discovered.valid()) continue;
+
+    const bool changed = discovered != backendEndpoint;
+    backendEndpoint = discovered;
+    if (changed) saveBackendEndpointToNvs(backendEndpoint);
+
+    Serial.printf("BACKEND: mDNS discovered %s -> %s:%u%s\n",
+      backendEndpoint.logicalHost.c_str(),
+      backendEndpoint.address.c_str(),
+      backendEndpoint.port,
+      changed ? " (cache updated)" : " (cache unchanged)");
+    return true;
+  }
+
+  Serial.printf(
+    "BACKEND: mDNS _%s._%s did not return logical host %s\n",
+    kBackendMdnsService, kBackendMdnsProtocol, kBackendLogicalHost);
+  return false;
+}
+
 String endpoint(const String& path) {
-  String base(app_config::assistantBaseUrl);
+  if (!backendEndpoint.valid()) return "";
+  String base = backendEndpoint.baseUrl();
   while (base.endsWith("/")) base.remove(base.length() - 1);
   return base + path;
 }
@@ -449,16 +606,27 @@ void addDeviceToken(HTTPClient& http) {
   if (strlen(app_config::apiToken)) http.addHeader("X-3C-Device-Token", app_config::apiToken);
 }
 
-bool checkBackendHealth() {
-  if (WiFi.status() != WL_CONNECTED) {
+bool checkBackendHealthOnce() {
+  if (!backendEndpoint.valid()) {
     backendAvailable = false;
-    updatePanel(PanelState::Offline, "Wi-Fi desconectado", true);
+    lastBackendMessage = "Sin endpoint descubierto";
+    updatePanel(PanelState::Error, "Endpoint no descubierto", true);
     return false;
   }
-  updatePanel(PanelState::Busy, "Verificando endpoint WSL");
+
+  updatePanel(PanelState::Busy, "Verificando endpoint 3C");
   HTTPClient http;
   http.setTimeout(app_config::httpTimeoutMs);
-  http.begin(endpoint("/api/device/v1/health"));
+  const String url = endpoint("/api/device/v1/health");
+  if (!http.begin(url)) {
+    lastBackendMessage = "No se pudo abrir URL " + url;
+    http.end();
+    backendAvailable = false;
+    updatePanel(PanelState::Error, lastBackendMessage, true);
+    Serial.printf("[ERROR] health begin failed url=%s\n", url.c_str());
+    return false;
+  }
+
   const int code = http.GET();
   lastBackendMessage = code > 0 ? http.getString() : http.errorToString(code);
   http.end();
@@ -468,10 +636,40 @@ bool checkBackendHealth() {
     backendAvailable ? "Endpoint 3C conectado" : String("Health HTTP ") + code,
     true);
   if (!backendAvailable) {
-    Serial.printf("[ERROR] health HTTP=%d detail=%s\n", code, lastBackendMessage.c_str());
+    Serial.printf("[ERROR] health HTTP=%d endpoint=%s detail=%s\n",
+      code, backendEndpoint.baseUrl().c_str(), lastBackendMessage.c_str());
   }
-  Serial.printf("GET health -> %d %s\n", code, lastBackendMessage.c_str());
+  Serial.printf("GET health -> %d %s endpoint=%s\n",
+    code, lastBackendMessage.c_str(), backendEndpoint.baseUrl().c_str());
   return backendAvailable;
+}
+
+bool checkBackendHealth() {
+  if (WiFi.status() != WL_CONNECTED) {
+    backendAvailable = false;
+    updatePanel(PanelState::Offline, "Wi-Fi desconectado", true);
+    return false;
+  }
+
+  if (!backendEndpoint.valid()) {
+    discoverBackendEndpoint();
+  }
+
+  if (checkBackendHealthOnce()) return true;
+
+  const BackendEndpoint failedEndpoint = backendEndpoint;
+  Serial.printf("BACKEND: health failed; rediscovering _%s._%s\n",
+    kBackendMdnsService, kBackendMdnsProtocol);
+  if (!discoverBackendEndpoint()) return false;
+
+  if (backendEndpoint == failedEndpoint) {
+    Serial.printf("BACKEND: mDNS returned the same endpoint %s; retrying once\n",
+      backendEndpoint.baseUrl().c_str());
+  } else {
+    Serial.printf("BACKEND: endpoint changed after health failure: %s -> %s\n",
+      failedEndpoint.baseUrl().c_str(), backendEndpoint.baseUrl().c_str());
+  }
+  return checkBackendHealthOnce();
 }
 
 int send3CCommand(const String& rawCommand) {
@@ -487,9 +685,20 @@ int send3CCommand(const String& rawCommand) {
   }
 
   updatePanel(PanelState::Busy, "Enviando vista previa", true);
+  if (!backendEndpoint.valid()) {
+    discoverBackendEndpoint();
+    if (!backendEndpoint.valid()) {
+      updatePanel(PanelState::Error, "Endpoint no descubierto", true);
+      return 503;
+    }
+  }
+
   HTTPClient http;
   http.setTimeout(app_config::httpTimeoutMs);
-  http.begin(endpoint("/api/device/v1/commands"));
+  if (!http.begin(endpoint("/api/device/v1/commands"))) {
+    updatePanel(PanelState::Error, "No se pudo abrir endpoint 3C", true);
+    return 503;
+  }
   http.addHeader("Content-Type", "application/json");
   addDeviceToken(http);
 
@@ -522,9 +731,13 @@ int send3CCommand(const String& rawCommand) {
 
 void pollCommandStatus() {
   if (!lastCommandId.length() || WiFi.status() != WL_CONNECTED) return;
+  if (!backendEndpoint.valid()) return;
   HTTPClient http;
   http.setTimeout(app_config::httpTimeoutMs);
-  http.begin(endpoint("/api/device/v1/commands/" + lastCommandId));
+  if (!http.begin(endpoint("/api/device/v1/commands/" + lastCommandId))) {
+    setTransportError("POLL", -1, "No se pudo abrir endpoint 3C", true);
+    return;
+  }
   addDeviceToken(http);
   const int code = http.GET();
   const String body = code > 0 ? http.getString() : http.errorToString(code);
@@ -540,13 +753,13 @@ void pollCommandStatus() {
   Serial.printf("GET command status -> %d status=%s result=%s\n", code, status.c_str(), result.c_str());
 
   if (status == "applied") {
-    updatePanel(PanelState::Applied, result.length() ? result : "Confirmado en WSL", true);
+    updatePanel(PanelState::Applied, result.length() ? result : "Confirmado en backend 3C", true);
     lastCommandId = "";
   } else if (status == "rejected") {
-    updatePanel(PanelState::Rejected, result.length() ? result : "Rechazado en WSL", true);
+    updatePanel(PanelState::Rejected, result.length() ? result : "Rechazado en backend 3C", true);
     lastCommandId = "";
   } else if (status == "error" || status == "failed" || status == "fallido") {
-    setProtocolError("POLL", result.length() ? result : "Error reportado por WSL");
+    setProtocolError("POLL", result.length() ? result : "Error reportado por backend 3C");
   } else if (status == "pending_confirmation" || status == "pending" || status == "pendiente") {
     backendAvailable = true;
     updatePanel(PanelState::Pending, "CONFIRMACIÓN REQUERIDA EN WEB");
@@ -558,7 +771,7 @@ void pollCommandStatus() {
 const char controlPage[] PROGMEM = R"HTML(
 <!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{font-family:system-ui;max-width:680px;margin:auto;padding:24px;background:#eef3f7}section{background:white;padding:20px;border-radius:16px;box-shadow:0 5px 20px #0001}button,textarea{font:inherit}button{padding:13px 18px;border:0;border-radius:10px;background:#08784f;color:white}textarea{box-sizing:border-box;width:100%;min-height:120px;padding:12px;margin:8px 0 12px}.warn{color:#805500}</style>
-<h1>Panel ESP32-4848S040 3C</h1><section><p class="warn">La orden se envía al backend y queda pendiente de confirmación en la web. Google Sheets cambia solo después de la confirmación web.</p><textarea id="text" placeholder="Cambia la tarea J10 a mensual"></textarea><button onclick="send3c()">Enviar al asistente</button><button onclick="health()">Probar WSL</button><pre id="result"></pre></section>
+<h1>Panel ESP32-4848S040 3C</h1><section><p class="warn">La orden se envía al backend y queda pendiente de confirmación en la web. Google Sheets cambia solo después de la confirmación web.</p><textarea id="text" placeholder="Cambia la tarea J10 a mensual"></textarea><button onclick="send3c()">Enviar al asistente</button><button onclick="health()">Probar backend</button><pre id="result"></pre></section>
 <script>async function send3c(){const b=new URLSearchParams({text:document.querySelector('#text').value});const r=await fetch('/api/3c',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});result.textContent=r.status+' '+await r.text()}async function health(){const r=await fetch('/api/backend-health',{method:'POST'});result.textContent=r.status+' '+await r.text()}</script></html>
 )HTML";
 
@@ -670,7 +883,6 @@ void handleTouch() {
           drawEditor();
         }
       } else if (sample.y >= 42 && sample.y < 114) {
-        // Tap in the text field: place cursor approximately at the tapped character.
         String text(commandBuffer.c_str());
         if (text.length()) {
           display->setTextSize(2);
@@ -712,7 +924,9 @@ void setup() {
   Wire.begin(pins::touchSda, pins::touchScl, 100000);
   audioReady = initializeAudio();
   commandBuffer.set(app_config::commandBuffer.c_str());
-  updatePanel(PanelState::Booting, "Hardware inicializado");
+  loadBackendEndpointFromNvs();
+  updatePanel(PanelState::Booting,
+    backendEndpoint.valid() ? "Hardware inicializado; endpoint en cache" : "Hardware inicializado");
   playTone(520, 60);
   connectWifi();
   configureWebServer();
@@ -727,10 +941,7 @@ void loop() {
       wifiAnnounced = true;
       Serial.printf("Wi-Fi listo: http://%s/ gateway=%s rssi=%d\n",
         WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(), WiFi.RSSI());
-      if (!mdnsReady) {
-        mdnsReady = MDNS.begin("esp32-panel-3c");
-        if (mdnsReady) MDNS.addService("http", "tcp", 80);
-      }
+      startMdns();
       checkBackendHealth();
     }
     if (lastCommandId.length() && millis() - lastCommandPoll >= app_config::commandPollMs) {
