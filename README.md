@@ -21,13 +21,58 @@ La base teórica y arquitectónica del sistema se apoya en la separación funcio
 
 ## 3.1. Enfoque del sistema
 
-El sistema se concibe como una solución embebida de interacción y comunicación controlada para el Asistente 3C. El panel ESP32-S3-4848S040 constituye el punto de interacción local y concentra la visualización, la entrada táctil, la edición de instrucciones y la comunicación con la API del dispositivo. El procesamiento posterior se mantiene fuera de la autoridad directa del panel: la orden se transporta al servicio correspondiente, atraviesa el flujo de interpretación y control establecido y permanece sujeta a revisión humana antes de cualquier aplicación autorizada.
+El sistema se concibe como una solución embebida de interacción y comunicación controlada para el Asistente 3C. El panel ESP32-S3-4848S040 constituye el punto de interacción local y concentra la visualización, la entrada táctil, la edición de instrucciones y la comunicación con la Device API. El procesamiento posterior se mantiene fuera de la autoridad directa del panel: la orden se transporta al servicio correspondiente, atraviesa el flujo de interpretación y validación establecido y permanece sujeta a revisión humana antes de cualquier aplicación autorizada.
 
-La organización del diseño adopta una separación de responsabilidades entre interacción, transporte, interpretación, validación, revisión, persistencia y reporte. Esta separación permite que una respuesta HTTP aceptada o una interpretación válida no se confundan con la aplicación final del cambio. En consecuencia, el capítulo distingue las condiciones que debe satisfacer cada subsistema, las decisiones de diseño adoptadas para cumplirlas, su implementación documentada y los mecanismos de verificación disponibles.
+La organización documental adopta la secuencia **condiciones iniciales → diseño → integración → implementación → validación → trazabilidad**. Esta separación evita confundir una característica declarada o configurada con evidencia de funcionamiento físico y sigue el patrón de organización documental utilizado como referencia académica.
 
-## 3.2. Diseño del sistema
+## 3.2. Condiciones iniciales
 
-El diseño se desarrolla a partir de condiciones iniciales agrupadas por subsistema. Cada condición se formula como un requisito previo que delimita lo que el sistema debe proporcionar; a continuación se establece la decisión de diseño que responde a la condición, se identifica la implementación documentada y se indica el nivel de evidencia que permite verificarla. Esta separación evita presentar como funcionamiento físico una característica que solamente está declarada, configurada, compilada o probada en software.
+Las condiciones iniciales describen el punto de partida técnico que delimita el diseño. No representan todavía decisiones de implementación ni resultados de prueba.
+
+### 3.2.1. Condiciones iniciales del hardware y periféricos
+
+El sistema parte de un panel Guition ESP32-S3-4848S040 con resolución de **480 × 480**, pantalla basada en **ST7701S** y controlador táctil **GT911**. La configuración registrada para el objetivo PlatformIO `panel_4848s040` contempla **16 MB de Flash**, **OPI PSRAM** y framework Arduino. El objetivo ESPHome mantiene por separado la configuración de interfaz con LVGL.
+
+### 3.2.2. Condiciones iniciales del sistema transaccional de estados
+
+El contrato de dispositivo parte de un ciclo de orden en el que la creación conduce a `pending_confirmation`, la aplicación autorizada conduce a `applied` o `rejected`, y los fallos de transporte o protocolo se tratan como error. El firmware consulta el estado aproximadamente cada **2.5 s** y no realiza por sí mismo la confirmación o el rechazo.
+
+### 3.2.3. Condiciones iniciales del sistema de identificación y comunicación
+
+La comunicación se realiza mediante la Device API versionada sobre HTTP/LAN. La solicitud utiliza `device_id`, `request_id` y `text`; cuando está configurado, el cliente añade el encabezado de autenticación `X-3C-Device-Token`. El contrato define endpoints para health, creación de órdenes y consulta de estado.
+
+### 3.2.4. Condiciones iniciales de alimentación y estabilidad
+
+La operación física depende de un ESP32-S3 conectado, del arranque correcto de la pantalla y del subsistema táctil, de la estabilidad de la alimentación y de la disponibilidad de USB/serie y red. La configuración vigente debe considerar que **GPIO19** participa en I²C del GT911 y **GPIO20** forma parte del bus RGB; las advertencias asociadas a estos recursos son una condición de validación y no una prueba de funcionamiento.
+
+### 3.2.5. Condiciones iniciales del sistema de control centralizado
+
+La aplicación del cambio no pertenece al panel. El diseño presupone un servicio Asistente 3C que recibe la orden, la interpreta y valida, la coloca en el flujo de revisión y conserva la autoridad de persistencia. La escritura directa sobre la fuente maestra queda fuera del contrato de la Device API.
+
+**Tabla 3.2**  
+**Resumen de las condiciones iniciales del sistema**
+
+| Subsistema | Condición inicial documentada |
+|---|---|
+| Hardware | ESP32-S3-4848S040, 480 × 480, ST7701S y GT911 |
+| Memoria | Flash de 16 MB y OPI PSRAM |
+| Firmware 3C | objetivo PlatformIO `panel_4848s040` |
+| Interfaz alternativa | objetivo ESPHome + LVGL |
+| Comunicación | Device API versionada por HTTP/LAN |
+| Estados | `pending_confirmation`, `applied`, `rejected` y error |
+| Identificación | `device_id`, `request_id` y `text` |
+| Control | confirmación humana antes de la aplicación |
+| Validación física | panel real, USB, pantalla, touch, alimentación y red |
+
+**Nota.** Elaboración propia a partir del `README.md` de `wpv10barza/ESP32-S3-4848S040` en `main` y de la configuración documentada en el repositorio destino. Las condiciones iniciales delimitan requisitos y restricciones; no representan resultados experimentales.
+
+## 3.3. Diseño del sistema
+
+A partir de las condiciones iniciales se definen las decisiones de arquitectura e implementación. El principio central es la separación de responsabilidades entre interacción, transporte, interpretación, validación, revisión, persistencia y reporte.
+
+### 3.3.1. Diseño de la arquitectura general y los subsistemas
+
+La solución se divide en una capa de interacción embebida y una capa de coordinación de aplicación y backend. El panel proporciona la interfaz local, el tacto, la edición de órdenes, la conectividad y la presentación de estados. El Asistente 3C coordina la interpretación, validación, revisión humana y persistencia autorizada.
 
 **Tabla 3.1**  
 **Secuencia de actividades, responsables, artefactos y aplicaciones vinculadas para la integración del sistema**
@@ -52,11 +97,11 @@ El diseño se desarrolla a partir de condiciones iniciales agrupadas por subsist
 
 **Nota.** Elaboración propia. La tabla se estructura siguiendo la convención editorial observada en el material T-030 de Mejía: identificación de tabla, título descriptivo y nota académica posterior. Los nombres de repositorios y artefactos corresponden al estado documentado del proyecto; la presencia de código, configuración o commit no se interpreta por sí sola como evidencia de validación física.
 
-### 3.2.1. Diseño electrónico
+**Nota.** Elaboración propia. La tabla se mantiene como evidencia de integración documental del proyecto; la presencia de un artefacto, repositorio o aplicación en esta secuencia no constituye por sí sola evidencia de funcionamiento físico.
 
-#### A. Condiciones iniciales del subsistema electrónico
+### 3.3.2. Diseño electrónico del panel y periféricos
 
-El subsistema electrónico debe proporcionar una superficie de interacción visual y táctil compatible con la interfaz del Asistente 3C, conservando la geometría del panel y una integración coherente entre pantalla, controlador táctil, memoria, comunicación y alimentación. Esta condición es necesaria para que la información presentada al usuario y las coordenadas recibidas por el subsistema táctil correspondan al mismo espacio físico de interacción.
+El diseño electrónico mantiene una pantalla RGB de 480 × 480 basada en ST7701S y un controlador GT911 para la entrada táctil. La configuración del objetivo PlatformIO conserva Flash de 16 MB, OPI PSRAM y la dependencia GFX de Arduino. La configuración de ESPHome + LVGL se mantiene como objetivo separado.
 
 ![Figura 3.1. Mapa técnico de buses, señales y asignaciones GPIO del panel ESP32-S3-4848S040](doc/images/capitulo-3-diseno-electronico-gpio-panel.png)
 
@@ -64,94 +109,122 @@ El subsistema electrónico debe proporcionar una superficie de interacción visu
 
 **Nota.** La figura documenta la relación entre el panel, sus buses y las asignaciones GPIO utilizadas por la implementación descrita. Su función es documental; la continuidad eléctrica, el arranque y la respuesta táctil deben comprobarse mediante validación física.
 
-La solución de diseño utiliza el panel Guition ESP32-S3-4848S040 con una resolución de 480 × 480, pantalla RGB basada en ST7701S y controlador táctil GT911. El objetivo electrónico debe conservar una configuración de memoria y de placa compatible con los dos objetivos de construcción del proyecto. En la configuración ya documentada se registran 16 MB de memoria Flash, PSRAM OPI y el entorno PlatformIO <code>panel_4848s040</code>; estos datos se utilizan como parámetros del diseño y no como demostración de funcionamiento físico.
+### 3.3.3. Diseño de software del firmware 3C
 
-La distribución lógica del subsistema debe preservar la relación entre procesamiento, visualización, tacto, memoria, retroiluminación y comunicación. El diseño del repositorio organiza estos elementos alrededor del ESP32-S3 y diferencia el objetivo ESPHome del objetivo PlatformIO, sin asumir que ambas configuraciones representan una única pila de software en ejecución simultánea.
+El software del panel mantiene separados los objetivos **ESPHome + LVGL** y **PlatformIO 3C**. En PlatformIO, el objetivo `panel_4848s040` concentra el editor de órdenes, el `commandBuffer`, el teclado virtual y el cliente HTTP del dispositivo. El acceso al GT911 se realiza mediante `Wire` y funciones I²C en `platformio/src/panel_4848s040/main.cpp`.
 
-La interfaz táctil debe mantener coherencia entre la geometría de la pantalla, las coordenadas recibidas y la lógica de interacción. El sistema utiliza GT911 como controlador táctil; adicionalmente, el README fuente advierte una consideración de uso de puertos en la que GPIO19 participa en I²C del GT911 y GPIO20 forma parte del bus RGB, por lo que esta condición debe revisarse durante la validación física y no interpretarse como una prueba de funcionamiento o de fallo.
+La arquitectura de compilación se documenta como una cadena de preprocesamiento, compilación, enlazado y generación de artefactos. El archivo `firmware.elf` representa el ejecutable enlazado y los archivos `.bin` constituyen las imágenes utilizadas posteriormente para la carga.
 
-**Tabla 3.2**  
-**Configuración documentada del subsistema electrónico del panel ESP32-S3-4848S040**
+### 3.3.4. Diseño de la interfaz ESPHome + LVGL
 
-| Elemento | Configuración documentada |
-|---|---|
-| Panel | Guition ESP32-S3-4848S040 |
-| Resolución | 480 × 480 |
-| Display | ST7701S |
-| Touch | GT911 por I²C |
-| Flash | 16 MB |
-| PSRAM | OPI |
-| Entorno de firmware 3C | PlatformIO <code>panel_4848s040</code> |
-| Objetivo de interfaz | ESPHome + LVGL |
-| Consideración física | validación específica sobre el panel conectado |
+El archivo [src/main.yaml](src/main.yaml) define el objetivo ESPHome con LVGL, traducciones, fuentes, widgets, OTA, Wi-Fi, GT911 y ST7701S. El componente externo `i18n` se mantiene fijado al commit `1b487af0ef26ff8e7908d34e415d99cc13fc1f98` para reproducibilidad.
 
-**Nota.** Elaboración propia a partir de la configuración técnica documentada del panel y sus objetivos de construcción. Los valores identifican parámetros de diseño y configuración; no constituyen por sí mismos evidencia de funcionamiento físico.
+### 3.3.5. Diseño del editor de comandos y `commandBuffer`
 
-La configuración de ESPHome y la de PlatformIO se mantienen como objetivos de construcción independientes para el mismo hardware. La primera se orienta a la interfaz ESPHome + LVGL y la segunda al firmware 3C con editor, teclado virtual, <code>commandBuffer</code> y cliente HTTP. Esta separación es una decisión de diseño orientada a evitar que una pila de interfaz reemplace a la otra.
+El firmware 3C utiliza un `commandBuffer` de **240 caracteres** como fuente de texto en tiempo de ejecución. El diseño conserva cursor, inserción, borrado, viewport horizontal, cancelación y edición táctil. El texto enviado por `send3CCommand()` corresponde al contenido actual del buffer y no al comando por defecto una vez iniciada la edición.
 
-La verificación de este subsistema se limita al nivel que realmente ejecuta cada procedimiento. Los scripts de verificación y las compilaciones demuestran consistencia de configuración y construcción; la validación física requiere un ESP32-S3 real conectado y un proceso específico de carga, arranque y comprobación de pantalla, táctil, memoria, comunicación y alimentación.
+### 3.3.6. Diseño del teclado virtual y la interacción táctil
 
-### 3.2.2. Diseño de software
+El teclado virtual incorpora modo `ABC/123`, letras, números, símbolos, espacio, backspace y enter. La interacción mantiene las zonas **PROBAR WSL** y **ENVIAR 3C**; la primera comprueba el endpoint y la segunda abre la edición de la orden. El hit-testing y la posición del cursor deben conservar correspondencia con las coordenadas reales del GT911.
 
-#### A. Condiciones iniciales del subsistema de software
+### 3.3.7. Diseño de la Device API y el contrato de estados
 
-El subsistema de software debe permitir que una instrucción sea introducida, editada, transportada y consultada de forma controlada, sin convertir la interacción del usuario en una escritura directa sobre una fuente maestra. Para ello se requiere una arquitectura que mantenga separados el transporte HTTP, el procesamiento de la orden, la validación, la revisión humana, la persistencia y el reporte del estado.
+La API versionada define:
 
-La decisión de diseño utiliza dos objetivos de firmware relacionados con el mismo panel. ESPHome + LVGL se reserva para la interfaz gráfica, mientras que PlatformIO mantiene el firmware de interacción 3C. La independencia entre ambos objetivos permite conservar la interfaz documentada y, al mismo tiempo, mantener un cliente de dispositivo específico para el flujo de comandos.
+| Operación | Endpoint | Función |
+|---|---|---|
+| Health | `GET /api/device/v1/health` | comprobar disponibilidad |
+| Crear orden | `POST /api/device/v1/commands` | enviar una propuesta |
+| Estado | `GET /api/device/v1/commands/{command_id}` | consultar el estado |
 
-En la implementación del firmware 3C, el editor trabaja con un <code>commandBuffer</code> de tamaño fijo y soporta cursor, inserción, borrado, desplazamiento horizontal del texto, teclado virtual <code>ABC/123</code>, letras, números, símbolos, espacio, backspace y enter. La entrada editada se utiliza para construir la solicitud enviada mediante el cliente del dispositivo. De este modo, la condición funcional de disponer de una orden editable se materializa en un componente de interacción concreto y verificable por software.
+El ciclo de estados conserva `pending_confirmation` hasta que la revisión humana determina confirmación o rechazo. El dispositivo realiza *polling* cada **2500 ms** y trata los estados desconocidos o fallos de transporte/protocolo como error.
 
-La comunicación con el Asistente 3C se realiza mediante la Device API versionada. El diseño contempla <code>GET /api/device/v1/health</code>, <code>POST /api/device/v1/commands</code> y <code>GET /api/device/v1/commands/{command_id}</code>. El ciclo de una orden comienza con su creación, pasa al estado <code>pending_confirmation</code>, queda sujeto a confirmación o rechazo humano y finaliza como <code>applied</code> o <code>rejected</code>. El dispositivo consulta el estado mediante *polling* cada 2.5 s y trata los fallos de transporte o protocolo como error, sin convertirlos en una aplicación automática.
+### 3.3.8. Diseño del pipeline de interpretación, validación y revisión humana
 
-El diseño también establece una frontera entre transporte e interpretación. El panel transmite la instrucción y el contexto mínimo necesario para identificar la solicitud; la interpretación y las comprobaciones posteriores pertenecen al flujo controlado del Asistente 3C. La revisión humana permanece entre la propuesta y la aplicación final, por lo que la recepción de una respuesta o la generación de una propuesta no equivale a persistencia autorizada.
+El procesamiento se separa en:
 
-La verificación del subsistema se realiza en varios niveles. El Block 3 comprueba la presencia de LVGL, la geometría 480 × 480, ST7701S, GT911, el buffer de comandos, el teclado virtual, la ruta de la API y el *polling* de 2.5 s. El Block 4 valida y compila la configuración ESPHome; el Block 5 ejecuta las pruebas nativas y construye el objetivo <code>panel_4848s040</code>. Las pruebas Python, C++ y E2E permiten verificar contratos, editor, estados y comunicación de software. GitHub Actions automatiza estas comprobaciones, pero no sustituye la validación física del panel.
+**Interacción → transporte → interpretación → validación determinista → propuesta → revisión humana → persistencia → reporte.**
 
-La relación entre construcción y evidencia se mantiene explícita: la documentación demuestra el diseño declarado; la implementación demuestra la presencia de código y configuración; las pruebas automatizadas demuestran los casos ejecutados; GitHub Actions demuestra las validaciones que el workflow realmente corre; y la validación física demuestra el comportamiento del dispositivo conectado. La Figura 16 conserva el flujo documental de compilación, carga, monitorización y validación.
+La inteligencia artificial se documenta como componente de interpretación y no como autoridad de persistencia. La propuesta generada debe pasar por las reglas y estructuras autorizadas antes de llegar al flujo de revisión. El Asistente 3C conserva la responsabilidad de decidir si una propuesta puede continuar a una aplicación autorizada.
 
-### 3.2.3. Diseño del agente de IA: Modelo de inteligencia artificial y procesamiento controlado
+## 3.4. Integración de los subsistemas
 
-El agente de inteligencia artificial forma parte del sistema de aplicación del Asistente 3C y se considera una capa de interpretación semántica. Su función queda subordinada al contrato de procesamiento del sistema y no sustituye la validación de reglas ni la revisión humana. En el contexto de este repositorio de firmware, la IA se documenta por su frontera de integración con el dispositivo y no como un componente autónomo de persistencia.
+La integración relaciona el panel, el transporte HTTP, el Asistente 3C, el mecanismo de revisión humana y la persistencia. La integración se considera completa únicamente cuando las interfaces entre subsistemas conservan el contrato de identificación, transporte y estados y cuando la separación entre propuesta y aplicación sigue siendo verificable.
 
-**A. Función del modelo**
+### 3.4.1. Integración del firmware y la interfaz
 
-El modelo debe transformar una instrucción expresada en lenguaje natural en una propuesta estructurada que pueda continuar hacia las etapas deterministas del sistema. La función del modelo termina en la interpretación de la intención; no incluye la autorización de una modificación física o de una escritura sobre una fuente maestra.
+El objetivo PlatformIO proporciona la interacción 3C y el cliente del dispositivo; el objetivo ESPHome mantiene la interfaz gráfica basada en LVGL como construcción independiente.
 
-**B. Entrada contextual y** ***grounding*** **con información real**
+### 3.4.2. Integración con el servicio Asistente 3C
 
-La interpretación debe operar sobre información real disponible en el flujo de la aplicación, evitando que la salida del modelo introduzca entidades, estados o valores sin correspondencia con el contexto recibido. La orden originada en el panel constituye una entrada controlada y la información necesaria para resolverla debe provenir de las fuentes y contratos que el backend haya puesto a disposición del proceso.
+El panel crea y consulta órdenes a través de la Device API. La interpretación y la revisión se ejecutan en la capa de aplicación, no dentro de la lógica de persistencia del firmware.
 
-**C. Contrato de salida estructurada**
+### 3.4.3. Integración con la Device API
 
-La salida del modelo debe ajustarse a una representación estructurada y verificable antes de pasar a la ejecución. Esta frontera se relaciona con el contrato de la aplicación y con la Device API: el resultado de la interpretación se convierte en una propuesta que todavía debe ser comprobada y sometida al flujo de revisión.
+La integración utiliza `device_id`, `request_id`, `text`, autenticación cuando corresponde, creación de orden, estado `pending_confirmation` y consulta periódica.
 
-**D. Validación determinista posterior al modelo**
+### 3.4.4. Integración con la revisión humana
 
-Después de la interpretación, las condiciones que puedan expresarse como reglas deben resolverse de forma determinista. La validación debe comprobar consistencia de la propuesta, correspondencia con la estructura autorizada y cumplimiento de las restricciones antes de permitir que la orden avance a una etapa de persistencia autorizada.
+La aprobación o el rechazo se mantiene fuera del ESP32. Una orden aceptada por transporte no se considera aplicada hasta que el flujo de revisión la confirme.
 
-**E. Límites de autoridad del agente de IA**
+## 3.5. Implementación del prototipo
 
-El agente no tiene autoridad directa para modificar la fuente maestra. La persistencia queda fuera del alcance del modelo y depende del flujo controlado de la aplicación. En el lado del dispositivo, además, la escritura directa queda fuera del contrato de la Device API; el ESP32 únicamente inicia y consulta el ciclo de la orden.
+La implementación materializa el diseño mediante el árbol de firmware, los contratos, las pruebas y los scripts reproducibles.
 
-**F. Integración con revisión humana**
+### 3.5.1. Implementación del firmware
 
-La revisión humana constituye una condición explícita del flujo de aplicación. La orden permanece en <code>pending_confirmation</code> hasta que el sistema de revisión determine su confirmación o rechazo. Por tanto, una respuesta correcta del modelo no es suficiente para considerar aplicada la operación.
+El objetivo `panel_4848s040` genera el firmware 3C y mantiene el conjunto de archivos de interfaz, buffer, viewport, teclado y cliente API.
 
-**G. Secuencia completa de procesamiento de una instrucción**
+### 3.5.2. Implementación de la interfaz y el editor
 
-La secuencia completa se interpreta de la siguiente manera:
+La interfaz conserva el flujo de edición, las zonas táctiles y el consumo del contenido actual del `commandBuffer`.
 
-1. Introducción o edición de la instrucción en el panel.
-2. Envío de la orden mediante la Device API.
-3. Recepción y procesamiento controlado en el Asistente 3C.
-4. Interpretación semántica y conformación de la propuesta.
-5. Validación de las condiciones y reglas deterministas aplicables.
-6. Registro de la orden en estado <code>pending_confirmation</code>.
-7. Revisión humana mediante confirmación o rechazo.
-8. Consulta del estado por *polling* desde el dispositivo.
-9. Cierre del ciclo en <code>applied</code>, <code>rejected</code> o error de protocolo/transporte.
+### 3.5.3. Implementación de comunicación y estados
 
-La secuencia mantiene separadas la interpretación, la validación, la revisión y la persistencia. De esta forma, una instrucción de usuario puede atravesar todas las etapas sin que el componente probabilístico adquiera por sí mismo autoridad para aplicar cambios.
+La implementación utiliza los endpoints versionados y consulta el estado cada 2.5 s. Los fallos de protocolo o transporte se aíslan del ciclo de aplicación normal.
+
+### 3.5.4. Implementación de pruebas automatizadas
+
+El repositorio mantiene pruebas Python, C++ y E2E para validar editor, contratos, estados, conectividad y comunicación de software.
+
+### 3.5.5. Implementación reproducible
+
+El proyecto conserva seis bloques de ejecución para WSL/Ubuntu: actualización del repositorio, herramientas, verificación, compilación ESPHome, pruebas/compilación PlatformIO y carga/monitorización del dispositivo físico. El detalle operativo permanece documentado más abajo en **Seis bloques de ejecución**.
+
+## 3.6. Validación del sistema
+
+La validación se interpreta por niveles de evidencia, evitando atribuir a la CI o a una compilación una capacidad que requiere hardware real.
+
+### 3.6.1. Validación funcional
+
+Se verifican editor, teclado virtual, buffer de comandos, contrato API y estados mediante pruebas automatizadas.
+
+### 3.6.2. Validación de comunicación
+
+Se verifica health, creación de órdenes, autenticación cuando corresponde, idempotencia y polling mediante las pruebas del contrato y E2E.
+
+### 3.6.3. Validación de estados y *polling*
+
+Se verifica la transición `pending_confirmation` → `applied`/`rejected`, además del tratamiento de estados desconocidos y errores de transporte/protocolo.
+
+### 3.6.4. Validación de interfaz y entrada táctil
+
+La validación de software comprueba geometría, hit-testing y lógica de interacción. La respuesta real de pantalla y GT911 requiere un dispositivo conectado.
+
+### 3.6.5. Validación física del prototipo
+
+La carga correcta de `firmware.bin` no demuestra por sí sola el funcionamiento del panel. La validación física debe comprobar arranque, ST7701S, GT911, USB, alimentación, PSRAM y comunicación de red con un ESP32-S3 real.
+
+## 3.7. Síntesis de evidencia y trazabilidad técnica
+
+La trazabilidad del sistema se establece como:
+
+**documentación → implementación → prueba automatizada → GitHub Actions → validación física.**
+
+Cada nivel demuestra un alcance diferente. La documentación demuestra el diseño declarado; la implementación demuestra presencia de código y configuración; las pruebas muestran los casos ejecutados; CI demuestra lo que realmente ejecutan sus workflows; y la validación física demuestra el comportamiento del equipo conectado.
+
+Esta organización conserva la frontera entre **condición**, **diseño**, **implementación**, **evidencia** y **limitación**, que es la separación requerida para trasladar el contenido técnico del README a la estructura documental del Capítulo III.
+
 
 ### Arquitectura de compilación, transporte gráfico y artefactos
 
@@ -291,6 +364,8 @@ Construcción
 ```
 
 La construcción proporciona evidencia del artefacto generado; la validación física requiere evidencia adicional obtenida mediante la carga y ejecución real del dispositivo.
+
+
 
 ## Interfaz ESPHome + LVGL
 
@@ -643,7 +718,7 @@ Los componentes principales son:
 
 La documentación académica que utilice esta información debe conservar la lógica **condición → diseño → implementación → evidencia → limitación**, sin crear una numeración paralela dentro de este README.
 
-## Consolidación y comparación
+## 4. Consolidación y comparación
 
 Antes de modificar el destino se leyeron y compararon ambos README completos.
 
