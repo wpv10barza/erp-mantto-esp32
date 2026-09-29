@@ -44,6 +44,20 @@ jobs:
             exit 1
           fi
 
+          required_suites=(
+            "native:test_backend_command_buffer"
+            "native:test_command_text_viewport"
+            "native:test_virtual_keyboard"
+          )
+
+          for suite in "${required_suites[@]}"; do
+            if ! grep -Eq -- "native:${suite#native:}[[:space:]]+\[?PASSED\]?" native-test.log; then
+              echo "ERROR: Required native test suite did not report PASSED: ${suite}"
+              grep -E -- "native:${suite#native:}" native-test.log || true
+              exit 1
+            fi
+          done
+
       - name: Python contracts
         run: |
           python tests/test_panel_state_contract.py
