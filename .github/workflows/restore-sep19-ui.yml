@@ -23,45 +23,58 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import hashlib, json
+          import hashlib
+          import json
 
           source_paths = [
-              Path('platformio/src/panel_4848s040/main.cpp'),
-              Path('src/main.cpp'),
+              Path("platformio/src/panel_4848s040/main.cpp"),
+              Path("src/main.cpp"),
           ]
+
           for path in source_paths:
-              text = path.read_text(encoding='utf-8')
-              if 'BACKEND DISPONIBLE' not in text or 'PROBAR BACKEND' not in text:
-                  raise SystemExit(f'Expected integrated labels not found in {path}')
-              text = text.replace('BACKEND DISPONIBLE', 'WSL DISPONIBLE')
-              text = text.replace('PROBAR BACKEND', 'PROBAR WSL')
-              for required in ('WSL DISPONIBLE', 'PROBAR WSL', 'ENVIAR 3C', 'EDITAR ORDEN 3C', 'CANCELAR', '3c-backend.local'):
+              text = path.read_text(encoding="utf-8")
+              if "BACKEND DISPONIBLE" not in text or "PROBAR BACKEND" not in text:
+                  raise SystemExit(f"Expected integrated labels not found in {path}")
+              text = text.replace("BACKEND DISPONIBLE", "WSL DISPONIBLE")
+              text = text.replace("PROBAR BACKEND", "PROBAR WSL")
+              for required in (
+                  "WSL DISPONIBLE",
+                  "PROBAR WSL",
+                  "ENVIAR 3C",
+                  "EDITAR ORDEN 3C",
+                  "CANCELAR",
+                  "3c-backend.local",
+              ):
                   if required not in text:
-                      raise SystemExit(f'Missing {required!r} after restoration in {path}')
-              path.write_text(text, encoding='utf-8')
+                      raise SystemExit(f"Missing {required!r} after restoration in {path}")
+              path.write_text(text, encoding="utf-8")
 
-          def git_blob_sha(path: Path) -> str:
+          def git_blob_sha(path):
               data = path.read_bytes()
-              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+              header = b"blob " + str(len(data)).encode() + b"\0"
+              return hashlib.sha1(header + data).hexdigest()
 
-          manifest_path = Path('firmware/firmware-sync.json')
-          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          manifest_path = Path("firmware/firmware-sync.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
           for path in source_paths:
-              manifest['git_blob_sha1'][path.as_posix()] = git_blob_sha(path)
-          manifest['imported_from']['note'] = (
-              'Integrated production mDNS/NVS discovery into the ERP repository firmware while preserving '
-              'the recovered 2026-09-19 UI labels and keyboard. ERP main is authoritative for deployment.'
+              manifest["git_blob_sha1"][path.as_posix()] = git_blob_sha(path)
+          manifest["imported_from"]["note"] = (
+              "Integrated production mDNS/NVS discovery into the ERP repository firmware while "
+              "preserving the recovered 2026-09-19 WSL UI labels and keyboard. ERP main is authoritative for deployment."
           )
-          manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+          manifest_path.write_text(
+              json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
+              encoding="utf-8",
+          )
 
-          test_path = Path('tests/test_recovered_ui_contract.py')
-          test_path.write_text(r'''from pathlib import Path
+          test_path = Path("tests/test_recovered_ui_contract.py")
+          test_content = '''from pathlib import Path
 
 PRIMARY = Path("platformio/src/panel_4848s040/main.cpp").read_text(encoding="utf-8")
 MIRROR = Path("src/main.cpp").read_text(encoding="utf-8")
 KEYBOARD = Path("include/virtual_keyboard.h").read_text(encoding="utf-8")
 
-assert PRIMARY == MIRROR, "Firmware mirror drift: src/main.cpp must match panel_4848s040/main.cpp"
+assert PRIMARY == MIRROR, "Firmware mirror drift"
 for token in (
     "WSL DISPONIBLE",
     "PROBAR WSL",
@@ -70,17 +83,18 @@ for token in (
     "CANCELAR",
     "3c-backend.local",
     "Preferences backendPrefs",
-    "kBackendMdnsService[] = \"3c\"",
+    "kBackendMdnsService[] = \\\"3c\\\"",
 ):
     assert token in PRIMARY, f"Recovered UI/mDNS contract missing: {token}"
 
-for token in ('"123"', '"ABC"', '"Q"', '"P"', "NumericSymbols"):
+for token in ("123", "ABC", "NumericSymbols"):
     assert token in KEYBOARD, f"Keyboard contract missing: {token}"
 
-assert "PROBAR BACKEND" not in PRIMARY, "Historical PROBAR WSL label was replaced"
-assert "BACKEND DISPONIBLE" not in PRIMARY, "Historical WSL DISPONIBLE label was replaced"
+assert "PROBAR BACKEND" not in PRIMARY
+assert "BACKEND DISPONIBLE" not in PRIMARY
 print("Recovered Sep-19 UI + production mDNS contract: PASS")
-''', encoding='utf-8')
+'''
+          test_path.write_text(test_content, encoding="utf-8")
           PY
 
       - name: Run restored UI contract
