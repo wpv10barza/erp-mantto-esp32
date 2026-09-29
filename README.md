@@ -153,6 +153,145 @@ La secuencia completa se interpreta de la siguiente manera:
 
 La secuencia mantiene separadas la interpretación, la validación, la revisión y la persistencia. De esta forma, una instrucción de usuario puede atravesar todas las etapas sin que el componente probabilístico adquiera por sí mismo autoridad para aplicar cambios.
 
+### Arquitectura de compilación, transporte gráfico y artefactos
+
+#### I. Unidades de traducción y resolución de dependencias
+
+La construcción del firmware no se limita al archivo `src/main.cpp`. La unidad de entrada principal incorpora las cabeceras locales relacionadas con la configuración del dispositivo, el búfer de comandos, el cálculo del viewport de texto y el teclado virtual. Durante la construcción, estas dependencias se procesan como parte del conjunto de unidades de traducción que posteriormente son integradas por el enlazador.
+
+El entorno `panel_4848s040` incorpora además las bibliotecas proporcionadas por el framework Arduino para ESP32 y la dependencia gráfica declarada explícitamente en `platformio.ini`:
+
+```ini
+moononournation/GFX Library for Arduino@1.5.9
+```
+
+De esta manera, la arquitectura de dependencias puede representarse como:
+
+```text
+src/main.cpp
+     │
+     ├── app_config.h
+     ├── command_buffer.h
+     ├── command_text_viewport.h
+     └── virtual_keyboard.h
+     │
+     ├── Arduino / ESP32 framework
+     └── Arduino-GFX
+             │
+             ▼
+       unidades compiladas
+             │
+             ▼
+          enlazador
+```
+
+El GT911 no se documenta como una biblioteca gráfica independiente dentro de esta cadena. En la implementación vigente, el acceso al controlador táctil se realiza mediante `Wire` y funciones I²C implementadas en `platformio/src/panel_4848s040/main.cpp`.
+
+#### J. Integración temporal del subsistema RGB
+
+La configuración de `Arduino_ESP32RGBPanel` define no solamente la asignación de señales, sino también la temporización necesaria para generar el barrido RGB del panel.
+
+Para una resolución activa de 480 × 480 píxeles, la configuración vigente utiliza:
+
+```text
+Horizontal:
+active      = 480
+front porch = 10
+sync        = 8
+back porch  = 50
+
+Vertical:
+active      = 480
+front porch = 10
+sync        = 8
+back porch  = 20
+
+Pixel clock:
+12 MHz
+```
+
+Por tanto, los parámetros de sincronización deben interpretarse como parte de la interfaz temporal entre el ESP32-S3 y el controlador ST7701. Estos valores pertenecen al nivel de configuración del transporte gráfico y no deben confundirse con la lógica de presentación de la interfaz de usuario.
+
+#### K. Arquitectura mixta de comunicación con ST7701
+
+El enlace con el ST7701 se divide en dos caminos complementarios:
+
+```text
+                    ST7701
+                      │
+          ┌───────────┴───────────┐
+          │                       │
+          ▼                       ▼
+   SPI de comandos            RGB paralelo
+      9-bit                  transferencia
+          │                       │
+          ▼                       ▼
+ st7701_type9_init_       Arduino_ESP32RGBPanel
+ operations
+```
+
+El bus de comandos utiliza `Arduino_ESP32SPI` con `DC = GFX_NOT_DEFINED`, `CS = GPIO39`, `SCK = GPIO48` y `MOSI = GPIO47`. La configuración corresponde al modo SPI de 9 bits utilizado para la comunicación de comandos.
+
+La transferencia de imagen se realiza mediante el periférico RGB del ESP32-S3, cuya configuración incluye las señales de sincronización, el reloj de píxel y las líneas de datos RGB. La separación de ambos caminos permite distinguir el mecanismo utilizado para inicializar y controlar el controlador del mecanismo utilizado para transportar la imagen.
+
+En la implementación actual, la secuencia de inicialización asociada al controlador se referencia mediante `st7701_type9_init_operations`.
+
+#### L. Modelo de memoria y artefactos generados
+
+El entorno `panel_4848s040` especifica una Flash de 16 MB y PSRAM OPI:
+
+```ini
+board_build.flash_mode = qio
+board_build.flash_size = 16MB
+board_upload.flash_size = 16MB
+board_build.partitions = default_16MB.csv
+board_build.psram_type = opi
+board_build.arduino.memory_type = qio_opi
+```
+
+La Flash representa el almacenamiento persistente empleado por la imagen del firmware y su esquema de particiones. La PSRAM OPI constituye memoria adicional de ejecución y no debe interpretarse como el destino de enlace de todos los objetos generados durante la compilación.
+
+Para el objetivo `panel_4848s040`, una construcción satisfactoria genera los siguientes artefactos:
+
+```text
+.pio/build/panel_4848s040/bootloader.bin
+.pio/build/panel_4848s040/partitions.bin
+.pio/build/panel_4848s040/firmware.bin
+.pio/build/panel_4848s040/firmware.elf
+```
+
+El archivo `firmware.elf` representa el programa enlazado con la información correspondiente al ejecutable. Los archivos binarios constituyen las imágenes utilizadas posteriormente por el proceso de carga.
+
+#### M. Separación entre construcción y validación física
+
+La generación correcta de los artefactos demuestra que la cadena de construcción alcanzó la etapa correspondiente del objetivo `panel_4848s040`. Sin embargo, la existencia de `firmware.bin` no demuestra por sí misma el funcionamiento físico del panel.
+
+Por ello, la arquitectura documental debe conservar la siguiente frontera:
+
+```text
+Construcción
+   │
+   ├── preprocesamiento
+   ├── compilación
+   ├── enlazado
+   └── empaquetado
+            │
+            ▼
+       firmware.bin
+            │
+            ▼
+     validación física
+            │
+            ├── carga
+            ├── arranque
+            ├── ST7701
+            ├── GT911
+            ├── USB
+            └── comunicación de red
+```
+
+La construcción proporciona evidencia del artefacto generado; la validación física requiere evidencia adicional obtenida mediante la carga y ejecución real del dispositivo.
+
 ## Interfaz ESPHome + LVGL
 
 El archivo [src/main.yaml](src/main.yaml) configura el objetivo ESPHome con LVGL, traducciones, fuentes, widgets, OTA, Wi-Fi, GT911 y ST7701S.
