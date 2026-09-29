@@ -226,7 +226,7 @@ Cada nivel demuestra un alcance diferente. La documentación demuestra el diseñ
 Esta organización conserva la frontera entre **condición**, **diseño**, **implementación**, **evidencia** y **limitación**, que es la separación requerida para trasladar el contenido técnico del README a la estructura documental del Capítulo III.
 
 
-### Arquitectura de compilación, transporte gráfico y artefactos
+## Arquitectura de compilación, transporte gráfico y artefactos
 
 #### I. Unidades de traducción y resolución de dependencias
 
@@ -485,7 +485,7 @@ Las credenciales personales deben permanecer fuera del control de versiones. El 
 
 El fuente original define seis bloques para WSL/Ubuntu. Como este repositorio se ejecuta sobre el **destino** <code>erp-mantto-esp32</code>, se debe establecer <code>REPO_DIR</code> y utilizar la URL del destino en el Bloque 1.
 
-El flujo técnico de compilación, carga, monitorización y validación se documenta en el apartado **3.2.2. Diseño de software**, manteniendo separada la evidencia documental de la validación física.
+El flujo técnico de compilación, carga, monitorización y validación se documenta en el apartado **3.3.3. Diseño de software**, manteniendo separada la evidencia documental de la validación física.
 
 ### Block 1 — clone/update
 
@@ -569,7 +569,7 @@ lsusb
 
 La nota de recuperación histórica del fuente indica que una interrupción durante la sustitución de PlatformIO 6.1.19 se reanuda en el **Block 2**.
 
-## Pruebas y evidencia
+## 4. Pruebas y resultados
 
 El repositorio conserva pruebas Python, C++ y E2E:
 
@@ -598,9 +598,9 @@ El repositorio conserva pruebas Python, C++ y E2E:
 
 **Nota.** Elaboración propia. La clasificación separa la evidencia documental, de implementación, automatizada, de CI y física para evitar que un nivel de verificación sea interpretado como evidencia de otro.
 
-## GitHub Actions
+### GitHub Actions
 
-### CI
+#### CI
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) ejecuta sobre <code>ubuntu-latest</code>, usa Python 3.12 y comprueba:
 
@@ -609,7 +609,7 @@ El repositorio conserva pruebas Python, C++ y E2E:
 3. pruebas nativas PlatformIO;
 4. contratos Python.
 
-### Firmware CD
+#### Firmware CD
 
 [.github/workflows/firmware-cd.yml](.github/workflows/firmware-cd.yml) amplía la validación con:
 
@@ -625,7 +625,7 @@ El repositorio conserva pruebas Python, C++ y E2E:
 
 El manifiesto distingue explícitamente la evidencia de compilación de la validación física.
 
-### Validación física
+#### Validación física
 
 [.github/workflows/physical-validation.yml](.github/workflows/physical-validation.yml) es manual y requiere un runner:
 
@@ -652,7 +652,7 @@ Una ejecución de CI en GitHub-hosted runners **no demuestra** por sí sola que 
 La biblioteca del repositorio conserva los archivos gráficos de `doc/images/` y los activos de interfaz de `src/assets/images/`. Para la documentación por capítulos se mantienen únicamente dos referencias visibles en este README, una por capítulo, y ambas corresponden a PNG técnicos ya existentes en el árbol del repositorio.
 
 - `doc/images/capitulo-2-arquitectura-subsystems.png` → **Capítulo 2**, bases teóricas y arquitectura.
-- `doc/images/capitulo-3-diseno-electronico-gpio-panel.png` → **Capítulo 3**, apartado **3.2.1. Diseño electrónico**.
+- `doc/images/capitulo-3-diseno-electronico-gpio-panel.png` → **Capítulo 3**, apartado **3.3.2. Diseño electrónico**.
 
 Las dos copias documentales reutilizan mapas técnicos existentes del panel y se integran directamente en la ubicación del capítulo correspondiente. Las imágenes de la biblioteca que no cumplen este criterio permanecen como activos del proyecto y no se presentan como evidencia documental del capítulo.
 
