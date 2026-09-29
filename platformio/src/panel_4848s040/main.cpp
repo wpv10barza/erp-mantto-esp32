@@ -355,6 +355,7 @@ bool initializeAudio() {
   return true;
 }
 
+#if !defined(PANEL_PRODUCTION_BUILD) || !PANEL_PRODUCTION_BUILD
 void runDisplayDiagnostic() {
   if (!displayReady) return;
   Serial.println("DISPLAY DIAGNOSTIC: RED");
@@ -370,6 +371,7 @@ void runDisplayDiagnostic() {
   display->fillScreen(color565(255, 255, 255));
   delay(400);
 }
+#endif
 
 bool initializeDisplay() {
   Serial.println("DISPLAY: creating 9-bit SPI command bus");
@@ -403,7 +405,11 @@ bool initializeDisplay() {
   display->displayOn();
   Serial.println("DISPLAY: displayOn() OK");
   displayReady = true;
+#if !defined(PANEL_PRODUCTION_BUILD) || !PANEL_PRODUCTION_BUILD
   runDisplayDiagnostic();
+#else
+  Serial.println("DISPLAY: production build; startup RGB diagnostic disabled");
+#endif
   drawPanel();
   Serial.println("DISPLAY: first UI frame drawn");
   return true;

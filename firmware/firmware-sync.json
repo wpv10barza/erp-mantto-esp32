@@ -16,9 +16,16 @@
     "health_path": "/api/device/v1/health"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "1bc9eb1aa36f9808c2d7f42d312c3ea583b229d5",
-    "src/main.cpp": "1bc9eb1aa36f9808c2d7f42d312c3ea583b229d5",
+    "platformio/src/panel_4848s040/main.cpp": "8d48f2e036e81a672ea5e32d933fda4c34f13c83",
+    "src/main.cpp": "8d48f2e036e81a672ea5e32d933fda4c34f13c83",
     "include/app_config.h": "07e94706154dffbec2ee6d5f54a194f212faebdd",
     "contract/device-command-v1.json": "fe692401bb862e2aaf492f2f64f1bd272380cb13"
+  },
+  "production": {
+    "platformio_env": "panel_4848s040",
+    "build_type": "release",
+    "production_define": "PANEL_PRODUCTION_BUILD=1",
+    "startup_rgb_diagnostic": false,
+    "flash_target": "ESP32-S3-4848S040"
   }
 }

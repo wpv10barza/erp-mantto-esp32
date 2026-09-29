@@ -20,8 +20,8 @@ usage() {
 Uso: pcu-deploy.sh [--expected-main SHA] [--no-flash] [--start-backend]
 
 Sincroniza siempre wpv10barza/erp-mantto-esp32 main en un clon dedicado de WSL,
-verifica el manifiesto del firmware, sincroniza Asistente 3C, compila y flashea
-el ESP32-S3-4848S040. --start-backend inicia Asistente 3C despues de validarlo.
+verifica el manifiesto del firmware, sincroniza Asistente 3C, compila el firmware de producción
+y delega el flasheo físico a scripts/06_flash_monitor_guition.sh. --start-backend inicia Asistente 3C despues de validarlo.
 EOF
 }
 
@@ -178,7 +178,8 @@ echo "[6] DETECTAR PUERTO Y COMPILAR"
 
   echo
 echo "[7] FLASHEAR EL MISMO main VERIFICADO"
-  "$PIO" run -e panel_4848s040 -t upload --upload-port "$PORT_DEVICE"
+  REPO_DIR="$ERP_REPO" VENV_DIR="$VENV" PORT="$PORT_DEVICE" PIO_ENV="panel_4848s040" MONITOR="0" \
+    bash "$ERP_REPO/scripts/06_flash_monitor_guition.sh"
   echo "Flasheo completado: $ERP_SHA"
 
   echo

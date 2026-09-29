@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# BLOCK 5 — native tests + ESP32-S3 firmware build.
+# BLOCK 5 — native tests + production ESP32-S3 firmware build.
 REPO_DIR="${REPO_DIR:-${HOME}/project/ESP32-S3-4848S040}"
 VENV_DIR="${REPO_DIR}/.venv"
 
@@ -12,6 +12,7 @@ python tests/test_panel_state_contract.py
 python tests/test_wifi_source.py
 python tests/test_command_editor_integration.py
 python test/command_buffer_regression.py
+python tests/test_production_firmware.py
 
 native_test_log="${REPO_DIR}/native-test.log"
 
@@ -39,8 +40,10 @@ done
 
 pio run -e panel_4848s040
 
-[[ -f .pio/build/panel_4848s040/firmware.bin ]] || {
-  echo "[ERROR] firmware.bin not generated."; exit 2;
-}
+for artifact in firmware.bin bootloader.bin partitions.bin firmware.elf; do
+  [[ -f ".pio/build/panel_4848s040/$artifact" ]] || {
+    echo "[ERROR] production artifact not generated: $artifact"; exit 2;
+  }
+done
 
-printf '\n[OK] BLOCK 5 — tests + ESP32-S3 build passed.\n'
+printf '\n[OK] BLOCK 5 — tests + production ESP32-S3 build passed.\n'

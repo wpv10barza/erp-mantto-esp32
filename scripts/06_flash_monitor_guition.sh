@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# BLOCK 6 — flash and monitor physical ESP32-S3.
+# BLOCK 6 — verify and flash physical production ESP32-S3.
 REPO_DIR="${REPO_DIR:-${HOME}/project/ESP32-S3-4848S040}"
-VENV_DIR="${REPO_DIR}/.venv"
+VENV_DIR="${VENV_DIR:-${REPO_DIR}/.venv}"
 PIO_ENV="${PIO_ENV:-panel_4848s040}"
 PORT="${PORT:-}"
 BAUD="${BAUD:-115200}"
@@ -13,7 +13,7 @@ cd "${REPO_DIR}"
 source "${VENV_DIR}/bin/activate"
 
 echo "============================================================"
-echo " ESP32-S3-4848S040 | FLASH + MONITOR"
+echo " ESP32-S3-4848S040 | PRODUCTION FLASH + MONITOR"
 echo "============================================================"
 
 # Never allow a legacy PC serial node such as /dev/ttyS0 to be
@@ -58,6 +58,20 @@ if [[ -z "${PORT}" || ! -e "${PORT}" ]]; then
 fi
 
 echo "[OK] ESP32 serial port: ${PORT}"
+
+if [[ "${PIO_ENV}" != "panel_4848s040" ]]; then
+  echo "[ERROR] Production flash is restricted to panel_4848s040."
+  exit 21
+fi
+if ! grep -q "^build_type = release$" platformio.ini; then
+  echo "[ERROR] panel_4848s040 is not configured as a release build."
+  exit 22
+fi
+if ! grep -q "PANEL_PRODUCTION_BUILD=1" platformio.ini; then
+  echo "[ERROR] PANEL_PRODUCTION_BUILD=1 is missing."
+  exit 23
+fi
+echo "[OK] Production PlatformIO configuration verified."
 
 if [[ ! -f ".pio/build/${PIO_ENV}/firmware.bin" ]]; then
   echo "[ERROR] Firmware not found."
