@@ -35,7 +35,14 @@ jobs:
         run: REPO_DIR="${{ github.workspace }}" bash scripts/03_verify_guition.sh
 
       - name: PlatformIO native tests
-        run: pio test -e native
+        run: |
+          set -euo pipefail
+          pio test -e native 2>&1 | tee native-test.log
+          if grep -q '\[SKIPPED\]' native-test.log; then
+            echo "ERROR: PlatformIO reported skipped native tests."
+            grep '\[SKIPPED\]' native-test.log
+            exit 1
+          fi
 
       - name: Python contracts
         run: |

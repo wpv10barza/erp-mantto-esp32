@@ -1,4 +1,4 @@
-#include <cassert>
+#include <unity.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -6,51 +6,68 @@
 
 using command_text_viewport::Window;
 
+namespace {
+
+constexpr uint16_t kWidths[] = {0, 8, 18, 26, 36, 44, 54, 64, 72, 84, 96, 106, 118};
+constexpr int kViewport = 40;
+constexpr int kCursorWidth = 2;
+
+void test_initial_cursor_does_not_scroll() {
+  Window view = command_text_viewport::compute(kWidths, 12, 0, kViewport, kCursorWidth);
+  TEST_ASSERT_EQUAL_UINT(0, view.first);
+  TEST_ASSERT_EQUAL_INT(0, view.cursorX);
+  TEST_ASSERT_TRUE(view.textWidth <= kViewport - kCursorWidth);
+}
+
+void test_middle_cursor_scrolls_horizontally() {
+  Window view = command_text_viewport::compute(kWidths, 12, 5, kViewport, kCursorWidth);
+  TEST_ASSERT_TRUE(view.first > 0);
+  TEST_ASSERT_TRUE(view.first <= 5);
+  TEST_ASSERT_TRUE(view.cursorX >= 0);
+  TEST_ASSERT_TRUE(view.cursorX <= kViewport - kCursorWidth);
+  TEST_ASSERT_TRUE(kWidths[view.last] - kWidths[view.first] <=
+                   kViewport - kCursorWidth);
+}
+
+void test_end_cursor_keeps_insertion_point_visible() {
+  Window view = command_text_viewport::compute(kWidths, 12, 12, kViewport, kCursorWidth);
+  TEST_ASSERT_EQUAL_UINT(12, view.last);
+  TEST_ASSERT_TRUE(view.first > 0);
+  TEST_ASSERT_TRUE(view.cursorX <= kViewport - kCursorWidth);
+  TEST_ASSERT_TRUE(view.cursorX >= 0);
+}
+
+void test_short_text_does_not_scroll() {
+  Window view = command_text_viewport::compute(kWidths, 4, 4, 100, kCursorWidth);
+  TEST_ASSERT_EQUAL_UINT(0, view.first);
+  TEST_ASSERT_EQUAL_UINT(4, view.last);
+  TEST_ASSERT_EQUAL_INT(kWidths[4], view.cursorX);
+}
+
+void test_out_of_range_lengths_are_clamped() {
+  Window view =
+      command_text_viewport::compute(kWidths, 999, 999, kViewport, kCursorWidth);
+  TEST_ASSERT_TRUE(view.last <= 12);
+  TEST_ASSERT_TRUE(view.first <= view.last);
+  TEST_ASSERT_TRUE(view.cursorX <= kViewport - kCursorWidth);
+}
+
+void test_degenerate_viewport_returns_empty_window() {
+  Window view = command_text_viewport::compute(kWidths, 12, 4, 2, kCursorWidth);
+  TEST_ASSERT_EQUAL_UINT(0, view.first);
+  TEST_ASSERT_EQUAL_UINT(0, view.last);
+  TEST_ASSERT_EQUAL_INT(0, view.cursorX);
+}
+
+}  // namespace
+
 int main() {
-  // Synthetic measured widths: characters alternate between narrow and wide
-  // glyphs so the algorithm cannot accidentally depend on monospace text.
-  constexpr uint16_t widths[] = {0, 8, 18, 26, 36, 44, 54, 64, 72, 84, 96, 106, 118};
-  constexpr int viewport = 40;
-  constexpr int cursorWidth = 2;
-
-  Window view = command_text_viewport::compute(widths, 12, 0, viewport, cursorWidth);
-  assert(view.first == 0);
-  assert(view.cursorX == 0);
-  assert(view.textWidth <= viewport - cursorWidth);
-
-  // Moving the cursor into the command must shift the horizontal window
-  // instead of deleting the suffix just to make the text fit.
-  view = command_text_viewport::compute(widths, 12, 5, viewport, cursorWidth);
-  assert(view.first > 0);
-  assert(view.first <= 5);
-  assert(view.cursorX >= 0);
-  assert(view.cursorX <= viewport - cursorWidth);
-  assert(widths[view.last] - widths[view.first] <= viewport - cursorWidth);
-
-  // Cursor at the end shows the trailing characters and keeps the insertion
-  // point inside the field.
-  view = command_text_viewport::compute(widths, 12, 12, viewport, cursorWidth);
-  assert(view.last == 12);
-  assert(view.first > 0);
-  assert(view.cursorX == viewport - cursorWidth || view.cursorX < viewport - cursorWidth);
-  assert(view.cursorX <= viewport - cursorWidth);
-
-  // Short text does not scroll at all.
-  view = command_text_viewport::compute(widths, 4, 4, 100, cursorWidth);
-  assert(view.first == 0);
-  assert(view.last == 4);
-  assert(view.cursorX == widths[4]);
-
-  // Out-of-range cursor and text lengths are clamped without overrunning the
-  // measured-width array.
-  view = command_text_viewport::compute(widths, 999, 999, viewport, cursorWidth);
-  assert(view.last <= 12);
-  assert(view.first <= view.last);
-  assert(view.cursorX <= viewport - cursorWidth);
-
-  // Degenerate viewport leaves a safe empty result.
-  view = command_text_viewport::compute(widths, 12, 4, 2, cursorWidth);
-  assert(view.first == 0 && view.last == 0 && view.cursorX == 0);
-
-  return 0;
+  UNITY_BEGIN();
+  RUN_TEST(test_initial_cursor_does_not_scroll);
+  RUN_TEST(test_middle_cursor_scrolls_horizontally);
+  RUN_TEST(test_end_cursor_keeps_insertion_point_visible);
+  RUN_TEST(test_short_text_does_not_scroll);
+  RUN_TEST(test_out_of_range_lengths_are_clamped);
+  RUN_TEST(test_degenerate_viewport_returns_empty_window);
+  return UNITY_END();
 }
