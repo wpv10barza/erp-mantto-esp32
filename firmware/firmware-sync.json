@@ -6,7 +6,7 @@
   "imported_from": {
     "repository": "wpv10barza/esp32-firmware-backend-",
     "validated_commit": "16ee245677c0446fed89334c09b30f5a2ffe0c65",
-    "note": "Integrated production mDNS/NVS discovery into the ERP repository firmware while preserving the recovered 2026-09-19 WSL UI labels and keyboard. ERP main is authoritative for deployment."
+    "note": "Integrated production mDNS/NVS discovery while preserving recovered 2026-09-19 WSL UI labels and keyboard. ERP main is authoritative for deployment."
   },
   "backend": {
     "repository": "wpv10barza/asistente-3c",
