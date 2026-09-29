@@ -6,7 +6,7 @@
   "imported_from": {
     "repository": "wpv10barza/esp32-firmware-backend-",
     "validated_commit": "16ee245677c0446fed89334c09b30f5a2ffe0c65",
-    "note": "Integrated production mDNS/NVS discovery into the ERP repository firmware. ERP main is authoritative for deployment."
+    "note": "Integrated production mDNS/NVS discovery into the ERP repository firmware while preserving the recovered 2026-09-19 WSL UI labels and keyboard. ERP main is authoritative for deployment."
   },
   "backend": {
     "repository": "wpv10barza/asistente-3c",
@@ -16,8 +16,8 @@
     "health_path": "/api/device/v1/health"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "9e3628b19097e3f1f07077478835af2d5a4b6d84",
-    "src/main.cpp": "9e3628b19097e3f1f07077478835af2d5a4b6d84",
+    "platformio/src/panel_4848s040/main.cpp": "1bc9eb1aa36f9808c2d7f42d312c3ea583b229d5",
+    "src/main.cpp": "1bc9eb1aa36f9808c2d7f42d312c3ea583b229d5",
     "include/app_config.h": "07e94706154dffbec2ee6d5f54a194f212faebdd",
     "contract/device-command-v1.json": "fe692401bb862e2aaf492f2f64f1bd272380cb13"
   }
