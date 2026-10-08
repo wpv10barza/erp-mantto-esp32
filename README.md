@@ -1,5 +1,13 @@
 # ERP Mantto ESP32 — ESP32-S3-4848S040
 
+## Estado actual: integración directa con Databricks Apps
+
+El firmware PlatformIO del panel ESP32-S3-4848S040 está preparado para usar como backend de producción la app **asistente-cloud-erp** en Databricks Apps. La ruta productiva es **Wi-Fi → OAuth 2.0 M2M de Databricks → HTTPS Device API → revisión humana → Google Sheets**. El panel no depende de que WSL, Docker, Express u Ollama estén ejecutándose en el equipo local.
+
+Databricks Apps exige autenticación para clientes externos. Por ello, el firmware obtiene un token OAuth temporal mediante un **Databricks service principal**, lo conserva solo en RAM y lo renueva antes de expirar. Además mantiene el encabezado de aplicación **X-3C-Device-Token**. Los secretos permanecen únicamente en `include/local_config.h`, que está excluido de Git.
+
+La interfaz física usa las etiquetas **DATABRICKS LISTO** y **PROBAR CLOUD**. El descubrimiento mDNS `_3c._tcp` queda únicamente como fallback de desarrollo cuando `ASSISTANT_BASE_URL_VALUE` se configura vacío.
+
 Firmware para el panel **Guition ESP32-S3-4848S040**, con pantalla **480 × 480**, controlador **ST7701S**, táctil **GT911** y comunicación con el sistema Asistente 3C.
 
 El repositorio conserva dos objetivos funcionales separados:
@@ -39,7 +47,7 @@ El contrato de dispositivo parte de un ciclo de orden en el que la creación con
 
 ### 3.2.3. Condiciones iniciales del sistema de identificación y comunicación
 
-La comunicación se realiza mediante la Device API versionada sobre HTTP/LAN. La solicitud utiliza `device_id`, `request_id` y `text`; cuando está configurado, el cliente añade el encabezado de autenticación `X-3C-Device-Token`. El contrato define endpoints para health, creación de órdenes y consulta de estado.
+La comunicación de producción se realiza mediante la Device API versionada sobre HTTPS hacia Databricks Apps, con OAuth 2.0 M2M en el borde de Databricks y `X-3C-Device-Token` en la aplicación. La solicitud utiliza `device_id`, `request_id` y `text`; cuando está configurado, el cliente añade el encabezado de autenticación `X-3C-Device-Token`. El contrato define endpoints para health, creación de órdenes y consulta de estado.
 
 ### 3.2.4. Condiciones iniciales de alimentación y estabilidad
 
@@ -58,7 +66,7 @@ La aplicación del cambio no pertenece al panel. El diseño presupone un servici
 | Memoria | Flash de 16 MB y OPI PSRAM |
 | Firmware 3C | objetivo PlatformIO `panel_4848s040` |
 | Interfaz alternativa | objetivo ESPHome + LVGL |
-| Comunicación | Device API versionada por HTTP/LAN |
+| Comunicación | Device API HTTPS en Databricks Apps + OAuth M2M |
 | Estados | `pending_confirmation`, `applied`, `rejected` y error |
 | Identificación | `device_id`, `request_id` y `text` |
 | Control | confirmación humana antes de la aplicación |
@@ -125,7 +133,7 @@ El firmware 3C utiliza un `commandBuffer` de **240 caracteres** como fuente de t
 
 ### 3.3.6. Diseño del teclado virtual y la interacción táctil
 
-El teclado virtual incorpora modo `ABC/123`, letras, números, símbolos, espacio, backspace y enter. La interacción mantiene las zonas **PROBAR WSL** y **ENVIAR 3C**; la primera comprueba el endpoint y la segunda abre la edición de la orden. El hit-testing y la posición del cursor deben conservar correspondencia con las coordenadas reales del GT911.
+El teclado virtual incorpora modo `ABC/123`, letras, números, símbolos, espacio, backspace y enter. La interacción mantiene las zonas **PROBAR CLOUD** y **ENVIAR 3C**; la primera comprueba el endpoint y la segunda abre la edición de la orden. El hit-testing y la posición del cursor deben conservar correspondencia con las coordenadas reales del GT911.
 
 ### 3.3.7. Diseño de la Device API y el contrato de estados
 
@@ -396,7 +404,7 @@ La fuente de texto en tiempo de ejecución es <code>commandBuffer</code>, con ca
 
 El toque sobre el campo permite aproximar el cursor al carácter seleccionado. Al confirmar con Enter, el texto actual del <code>commandBuffer</code> es el que consume <code>send3CCommand()</code>. El comando por defecto únicamente inicializa el buffer y no reemplaza el contenido editado durante la ejecución.
 
-La interfaz del panel mantiene las zonas de interacción **PROBAR WSL** y **ENVIAR 3C**. La primera comprueba el endpoint; la segunda abre la edición de la orden.
+La interfaz del panel mantiene las zonas de interacción **PROBAR CLOUD** y **ENVIAR 3C**. La primera comprueba el endpoint; la segunda abre la edición de la orden.
 
 ## API del dispositivo
 
@@ -425,7 +433,7 @@ El firmware genera una petición con la estructura:
 
 Cuando hay token configurado, el cliente añade el encabezado <code>X-3C-Device-Token</code>.
 
-El contrato define el protocolo <code>1.0</code>, el transporte HTTP sobre LAN confiable, longitudes máximas para <code>device_id</code>, <code>request_id</code> y <code>text</code>, códigos aceptados de creación/estado, <code>pending_confirmation</code>, autenticación del estado, polling y confirmación humana obligatoria. La escritura directa en una hoja queda explícitamente fuera de este contrato.
+El contrato define el protocolo <code>1.1</code>, el transporte HTTPS hacia Databricks Apps con OAuth M2M, longitudes máximas para <code>device_id</code>, <code>request_id</code> y <code>text</code>, códigos aceptados de creación/estado, <code>pending_confirmation</code>, autenticación del estado, polling y confirmación humana obligatoria. La escritura directa en una hoja queda explícitamente fuera de este contrato.
 
 ### Flujo de estados
 

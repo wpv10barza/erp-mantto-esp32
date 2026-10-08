@@ -54,6 +54,9 @@ PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
 String lastBackendMessage = "Sin verificar";
 String lastCommandId;
+String databricksAccessToken;
+unsigned long databricksTokenAcquiredMs = 0;
+unsigned long databricksTokenLifetimeMs = 0;
 unsigned long lastWifiAttempt = 0;
 unsigned long lastHealthCheck = 0;
 unsigned long lastCommandPoll = 0;
@@ -123,7 +126,7 @@ const char* stateLabel(PanelState state) {
   switch (state) {
     case PanelState::Booting: return "INICIANDO";
     case PanelState::Offline: return "SIN CONEXION";
-    case PanelState::Ready: return "WSL DISPONIBLE";
+    case PanelState::Ready: return "DATABRICKS LISTO";
     case PanelState::Busy: return "PROCESANDO";
     case PanelState::Pending: return "PENDIENTE";
     case PanelState::Applied: return "APLICADO";
@@ -262,7 +265,7 @@ void drawPanel() {
     drawCentered(WiFi.localIP().toString(), 310, 1, color565(150, 205, 235));
   }
 
-  drawButton(20, 370, 210, 82, "PROBAR WSL", color565(15, 82, 135));
+  drawButton(20, 370, 210, 82, "PROBAR CLOUD", color565(15, 82, 135));
   drawButton(250, 370, 210, 82, "ENVIAR 3C", color565(18, 105, 73));
 }
 
@@ -569,11 +572,29 @@ bool discoverBackendEndpoint() {
   return false;
 }
 
-String endpoint(const String& path) {
-  if (!backendEndpoint.valid()) return "";
-  String base = backendEndpoint.baseUrl();
+bool cloudEndpointConfigured() {
+  return strlen(app_config::assistantBaseUrl) > 0;
+}
+
+bool databricksAppEndpoint() {
+  if (!cloudEndpointConfigured()) return false;
+  String base = app_config::assistantBaseUrl;
+  base.toLowerCase();
+  return base.indexOf(".databricksapps.com") >= 0;
+}
+
+String backendBaseUrl() {
+  String base = cloudEndpointConfigured()
+      ? String(app_config::assistantBaseUrl)
+      : backendEndpoint.baseUrl();
+  base.trim();
   while (base.endsWith("/")) base.remove(base.length() - 1);
-  return base + path;
+  return base;
+}
+
+String endpoint(const String& path) {
+  const String base = backendBaseUrl();
+  return base.length() ? base + path : String();
 }
 
 String jsonEscape(const String& input) {
@@ -586,6 +607,20 @@ String jsonEscape(const String& input) {
     else if (static_cast<uint8_t>(value) >= 0x20) output += value;
   }
   return output;
+}
+
+unsigned long jsonUnsignedLongValue(
+    const String& json, const char* key, unsigned long fallback) {
+  const String token = String("\"") + key + "\"";
+  int position = json.indexOf(token);
+  if (position < 0) return fallback;
+  position = json.indexOf(':', position + token.length());
+  if (position < 0) return fallback;
+  position++;
+  while (position < static_cast<int>(json.length()) && isspace(json[position])) position++;
+  String digits;
+  while (position < static_cast<int>(json.length()) && isdigit(json[position])) digits += json[position++];
+  return digits.length() ? static_cast<unsigned long>(digits.toInt()) : fallback;
 }
 
 String jsonStringValue(const String& json, const char* key) {
@@ -608,19 +643,96 @@ String jsonStringValue(const String& json, const char* key) {
   return value;
 }
 
-void addDeviceToken(HTTPClient& http) {
-  if (strlen(app_config::apiToken)) http.addHeader("X-3C-Device-Token", app_config::apiToken);
+void clearDatabricksAccessToken() {
+  databricksAccessToken = "";
+  databricksTokenAcquiredMs = 0;
+  databricksTokenLifetimeMs = 0;
 }
 
-bool checkBackendHealthOnce() {
-  if (!backendEndpoint.valid()) {
-    backendAvailable = false;
-    lastBackendMessage = "Sin endpoint descubierto";
-    updatePanel(PanelState::Error, "Endpoint no descubierto", true);
+bool databricksOAuthConfigured() {
+  return strlen(app_config::databricksWorkspaceUrl) > 0 &&
+         strlen(app_config::databricksClientId) > 0 &&
+         strlen(app_config::databricksClientSecret) > 0;
+}
+
+bool ensureDatabricksAccessToken() {
+  if (!databricksAppEndpoint()) return true;
+  if (!databricksOAuthConfigured()) {
+    lastBackendMessage = "Databricks OAuth M2M no configurado";
+    return false;
+  }
+  if (databricksAccessToken.length() &&
+      millis() - databricksTokenAcquiredMs < databricksTokenLifetimeMs) return true;
+
+  String workspace = app_config::databricksWorkspaceUrl;
+  workspace.trim();
+  while (workspace.endsWith("/")) workspace.remove(workspace.length() - 1);
+  const String tokenUrl = workspace + "/oidc/v1/token";
+
+  HTTPClient authHttp;
+  authHttp.setTimeout(app_config::httpTimeoutMs);
+  if (!authHttp.begin(tokenUrl)) {
+    lastBackendMessage = "No se pudo abrir OAuth Databricks";
+    return false;
+  }
+  authHttp.setAuthorization(app_config::databricksClientId, app_config::databricksClientSecret);
+  authHttp.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  const String form = String("grant_type=client_credentials&scope=") + app_config::databricksOauthScope;
+  const int code = authHttp.POST(form);
+  const String body = code > 0 ? authHttp.getString() : authHttp.errorToString(code);
+  authHttp.end();
+
+  if (code != 200) {
+    clearDatabricksAccessToken();
+    lastBackendMessage = String("OAuth Databricks HTTP ") + code;
+    Serial.printf("[ERROR] OAuth Databricks HTTP=%d (respuesta omitida)\n", code);
     return false;
   }
 
-  updatePanel(PanelState::Busy, "Verificando endpoint 3C");
+  const String token = jsonStringValue(body, "access_token");
+  const unsigned long expiresSeconds = jsonUnsignedLongValue(body, "expires_in", 3600UL);
+  if (!token.length()) {
+    clearDatabricksAccessToken();
+    lastBackendMessage = "OAuth Databricks sin access_token";
+    return false;
+  }
+
+  databricksAccessToken = token;
+  databricksTokenAcquiredMs = millis();
+  const unsigned long rawLifetimeMs = expiresSeconds * 1000UL;
+  databricksTokenLifetimeMs =
+      rawLifetimeMs > app_config::oauthRefreshSkewMs
+          ? rawLifetimeMs - app_config::oauthRefreshSkewMs
+          : rawLifetimeMs / 2UL;
+  lastBackendMessage = "OAuth Databricks renovado";
+  Serial.printf("DATABRICKS: OAuth M2M listo; expires_in=%lu s\n", expiresSeconds);
+  return true;
+}
+
+void addRequestAuth(HTTPClient& http) {
+  if (databricksAccessToken.length()) {
+    http.addHeader("Authorization", String("Bearer ") + databricksAccessToken);
+  }
+  if (strlen(app_config::apiToken)) {
+    http.addHeader("X-3C-Device-Token", app_config::apiToken);
+  }
+}
+
+bool checkBackendHealthOnce() {
+  if (!backendBaseUrl().length()) {
+    backendAvailable = false;
+    lastBackendMessage = "Sin endpoint configurado";
+    updatePanel(PanelState::Error, "Endpoint no configurado", true);
+    return false;
+  }
+  if (!ensureDatabricksAccessToken()) {
+    backendAvailable = false;
+    updatePanel(PanelState::Error, lastBackendMessage, true);
+    return false;
+  }
+
+  updatePanel(PanelState::Busy,
+    databricksAppEndpoint() ? "Verificando Databricks" : "Verificando endpoint 3C");
   HTTPClient http;
   http.setTimeout(app_config::httpTimeoutMs);
   const String url = endpoint("/api/device/v1/health");
@@ -633,20 +745,24 @@ bool checkBackendHealthOnce() {
     return false;
   }
 
+  addRequestAuth(http);
   const int code = http.GET();
   lastBackendMessage = code > 0 ? http.getString() : http.errorToString(code);
   http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
   backendAvailable = code == 200;
   updatePanel(
     backendAvailable ? PanelState::Ready : PanelState::Error,
-    backendAvailable ? "Endpoint 3C conectado" : String("Health HTTP ") + code,
+    backendAvailable
+      ? (databricksAppEndpoint() ? "Databricks conectado" : "Endpoint 3C conectado")
+      : String("Health HTTP ") + code,
     true);
   if (!backendAvailable) {
     Serial.printf("[ERROR] health HTTP=%d endpoint=%s detail=%s\n",
-      code, backendEndpoint.baseUrl().c_str(), lastBackendMessage.c_str());
+      code, backendBaseUrl().c_str(), lastBackendMessage.c_str());
   }
   Serial.printf("GET health -> %d %s endpoint=%s\n",
-    code, lastBackendMessage.c_str(), backendEndpoint.baseUrl().c_str());
+    code, lastBackendMessage.c_str(), backendBaseUrl().c_str());
   return backendAvailable;
 }
 
@@ -657,11 +773,12 @@ bool checkBackendHealth() {
     return false;
   }
 
-  if (!backendEndpoint.valid()) {
+  if (!cloudEndpointConfigured() && !backendEndpoint.valid()) {
     discoverBackendEndpoint();
   }
 
   if (checkBackendHealthOnce()) return true;
+  if (cloudEndpointConfigured()) return false;
 
   const BackendEndpoint failedEndpoint = backendEndpoint;
   Serial.printf("BACKEND: health failed; rediscovering _%s._%s\n",
@@ -690,13 +807,15 @@ int send3CCommand(const String& rawCommand) {
     return 503;
   }
 
-  updatePanel(PanelState::Busy, "Enviando vista previa", true);
-  if (!backendEndpoint.valid()) {
-    discoverBackendEndpoint();
-    if (!backendEndpoint.valid()) {
-      updatePanel(PanelState::Error, "Endpoint no descubierto", true);
-      return 503;
-    }
+  updatePanel(PanelState::Busy, "Enviando a Databricks", true);
+  if (!cloudEndpointConfigured() && !backendEndpoint.valid()) discoverBackendEndpoint();
+  if (!backendBaseUrl().length()) {
+    updatePanel(PanelState::Error, "Endpoint no configurado", true);
+    return 503;
+  }
+  if (!ensureDatabricksAccessToken()) {
+    updatePanel(PanelState::Error, lastBackendMessage, true);
+    return 503;
   }
 
   HTTPClient http;
@@ -706,7 +825,7 @@ int send3CCommand(const String& rawCommand) {
     return 503;
   }
   http.addHeader("Content-Type", "application/json");
-  addDeviceToken(http);
+  addRequestAuth(http);
 
   char randomPart[9];
   snprintf(randomPart, sizeof(randomPart), "%08lx", static_cast<unsigned long>(esp_random()));
@@ -717,6 +836,7 @@ int send3CCommand(const String& rawCommand) {
   const int code = http.POST(body);
   lastBackendMessage = code > 0 ? http.getString() : http.errorToString(code);
   http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
 
   if (code == 200 || code == 202) {
     backendAvailable = true;
@@ -737,18 +857,23 @@ int send3CCommand(const String& rawCommand) {
 
 void pollCommandStatus() {
   if (!lastCommandId.length() || WiFi.status() != WL_CONNECTED) return;
-  if (!backendEndpoint.valid()) return;
+  if (!backendBaseUrl().length()) return;
+  if (!ensureDatabricksAccessToken()) {
+    setProtocolError("OAUTH", lastBackendMessage);
+    return;
+  }
   HTTPClient http;
   http.setTimeout(app_config::httpTimeoutMs);
   if (!http.begin(endpoint("/api/device/v1/commands/" + lastCommandId))) {
     setTransportError("POLL", -1, "No se pudo abrir endpoint 3C", true);
     return;
   }
-  addDeviceToken(http);
+  addRequestAuth(http);
   const int code = http.GET();
   const String body = code > 0 ? http.getString() : http.errorToString(code);
   lastBackendMessage = body;
   http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
   if (code != 200) {
     setTransportError("POLL", code, body, true);
     return;
@@ -777,7 +902,7 @@ void pollCommandStatus() {
 const char controlPage[] PROGMEM = R"HTML(
 <!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{font-family:system-ui;max-width:680px;margin:auto;padding:24px;background:#eef3f7}section{background:white;padding:20px;border-radius:16px;box-shadow:0 5px 20px #0001}button,textarea{font:inherit}button{padding:13px 18px;border:0;border-radius:10px;background:#08784f;color:white}textarea{box-sizing:border-box;width:100%;min-height:120px;padding:12px;margin:8px 0 12px}.warn{color:#805500}</style>
-<h1>Panel ESP32-4848S040 3C</h1><section><p class="warn">La orden se envía al backend y queda pendiente de confirmación en la web. Google Sheets cambia solo después de la confirmación web.</p><textarea id="text" placeholder="Cambia la tarea J10 a mensual"></textarea><button onclick="send3c()">Enviar al asistente</button><button onclick="health()">Probar backend</button><pre id="result"></pre></section>
+<h1>Panel ESP32-4848S040 3C</h1><section><p class="warn">La orden se envía a Databricks Apps y queda pendiente de confirmación humana. Google Sheets cambia solo después de la confirmación web.</p><textarea id="text" placeholder="Cambia la tarea J10 a mensual"></textarea><button onclick="send3c()">Enviar al asistente</button><button onclick="health()">Probar Databricks</button><pre id="result"></pre></section>
 <script>async function send3c(){const b=new URLSearchParams({text:document.querySelector('#text').value});const r=await fetch('/api/3c',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});result.textContent=r.status+' '+await r.text()}async function health(){const r=await fetch('/api/backend-health',{method:'POST'});result.textContent=r.status+' '+await r.text()}</script></html>
 )HTML";
 
@@ -930,9 +1055,11 @@ void setup() {
   Wire.begin(pins::touchSda, pins::touchScl, 100000);
   audioReady = initializeAudio();
   commandBuffer.set(app_config::commandBuffer.c_str());
-  loadBackendEndpointFromNvs();
+  if (!cloudEndpointConfigured()) loadBackendEndpointFromNvs();
   updatePanel(PanelState::Booting,
-    backendEndpoint.valid() ? "Hardware inicializado; endpoint en cache" : "Hardware inicializado");
+    cloudEndpointConfigured()
+      ? "Hardware inicializado; Databricks Cloud"
+      : (backendEndpoint.valid() ? "Hardware inicializado; endpoint en cache" : "Hardware inicializado"));
   playTone(520, 60);
   connectWifi();
   configureWebServer();
@@ -947,7 +1074,7 @@ void loop() {
       wifiAnnounced = true;
       Serial.printf("Wi-Fi listo: http://%s/ gateway=%s rssi=%d\n",
         WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(), WiFi.RSSI());
-      startMdns();
+      if (!cloudEndpointConfigured()) startMdns();
       checkBackendHealth();
     }
     if (lastCommandId.length() && millis() - lastCommandPoll >= app_config::commandPollMs) {

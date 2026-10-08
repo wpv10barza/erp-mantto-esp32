@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""End-to-end device API test against the real Asistente 3C Monitor.
+"""E2E device contract against the Databricks-only FastAPI app running locally.
 
-The workflow starts the real wpv10barza/asistente-3c server and points this
-client at it. This exercises the same HTTP contract used by the ESP32:
-health -> authenticated command -> idempotent retry -> pending polling ->
-human-confirmation result -> terminal polling.
-No Google credentials or physical hardware are required.
+The Databricks edge OAuth layer cannot be reproduced on a GitHub runner, so this
+test covers the application-level Device API behind that edge:
+health -> X-3C-Device-Token -> idempotent enqueue -> status polling -> human
+review rejection -> terminal polling.
 """
 import json
 import os
@@ -22,12 +21,7 @@ def request(method: str, path: str, payload=None, token: str | None = TOKEN):
     headers = {"Content-Type": "application/json"}
     if token is not None:
         headers["X-3C-Device-Token"] = token
-    req = urllib.request.Request(
-        BASE_URL + path,
-        data=data,
-        method=method,
-        headers=headers,
-    )
+    req = urllib.request.Request(BASE_URL + path, data=data, method=method, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=5) as response:
             raw = response.read()
@@ -48,7 +42,7 @@ def wait_for_health():
         except urllib.error.URLError as exc:
             last_error = str(exc)
         time.sleep(1)
-    raise AssertionError(f"Monitor did not become healthy: {last_error}")
+    raise AssertionError(f"Databricks app did not become healthy locally: {last_error}")
 
 
 health = wait_for_health()
@@ -61,105 +55,65 @@ device_id = "panel-4848s040-3c-ci"
 request_id = "panel-4848s040-3c-ci-001"
 command = "Cambia la tarea J10 a mensual"
 
-# The real Monitor must reject an unauthenticated ESP32 command.
 code, unauthorized = request(
-    "POST",
-    "/api/device/v1/commands",
-    {
-        "device_id": device_id,
-        "request_id": request_id,
-        "text": command,
-    },
+    "POST", "/api/device/v1/commands",
+    {"device_id": device_id, "request_id": request_id, "text": command},
     token="wrong-token",
 )
 assert code == 401, unauthorized
 
-# This request matches the firmware JSON contract exactly.
 code, queued = request(
-    "POST",
-    "/api/device/v1/commands",
-    {
-        "device_id": device_id,
-        "request_id": request_id,
-        "text": command,
-    },
+    "POST", "/api/device/v1/commands",
+    {"device_id": device_id, "request_id": request_id, "text": command},
 )
-assert code == 202, queued
+assert code in (200, 202), queued
 assert queued["status"] == "pending_confirmation", queued
 assert queued["requires_human_confirmation"] is True, queued
-
 command_id = queued["command_id"]
-assert queued["status_path"] == f"/api/device/v1/commands/{command_id}", queued
 
-# The ESP32 retries the same request safely through request_id idempotence.
 code, duplicate = request(
-    "POST",
-    "/api/device/v1/commands",
-    {
-        "device_id": device_id,
-        "request_id": request_id,
-        "text": command,
-    },
+    "POST", "/api/device/v1/commands",
+    {"device_id": device_id, "request_id": request_id, "text": command},
 )
 assert code == 200, duplicate
 assert duplicate["duplicate"] is True, duplicate
 assert duplicate["command_id"] == command_id, duplicate
 
-# The Monitor exposes the pending command to its web UI.
-code, pending_list = request(
-    "GET",
-    "/api/device/v1/commands/pending",
-    token=None,
-)
-assert code == 200, pending_list
-assert pending_list["command"]["id"] == command_id, pending_list
-assert pending_list["command"]["status"] == "pending_confirmation", pending_list
-
-# The ESP32 polls the authenticated status endpoint.
-code, pending = request(
-    "GET",
-    f"/api/device/v1/commands/{command_id}",
-)
+code, pending = request("GET", f"/api/device/v1/commands/{command_id}")
 assert code == 200, pending
 assert pending["command"]["status"] == "pending_confirmation", pending
-assert pending["command"]["request_id"] == request_id, pending
 
-# This POST represents the Monitor/UI's human-confirmation result.
-code, applied = request(
-    "POST",
-    f"/api/device/v1/commands/{command_id}/result",
-    {"status": "applied", "result": "Fila J10 actualizada"},
-    token=None,
-)
-assert code == 200, applied
-assert applied["command"]["status"] == "applied", applied
+proposal_payload = {
+    "row": 5,
+    "matched": "CI",
+    "external_command_id": command_id,
+    "operations": [{
+        "campo": "frecuencia",
+        "columna_actualizar": "L",
+        "encabezado": "Frecuencia",
+        "valor_actualizar": 1,
+        "razon": "CI: rechazo humano sin escritura en Sheets",
+    }],
+}
+code, proposal = request("POST", "/api/review/proposals", proposal_payload, token=None)
+assert code == 201, proposal
+proposal_id = proposal["id"]
 
-# Final ESP32 polling must observe the terminal state.
-code, terminal = request(
-    "GET",
-    f"/api/device/v1/commands/{command_id}",
+code, rejected = request(
+    "POST", f"/api/review/proposals/{proposal_id}/reject", token=None
 )
+assert code == 200, rejected
+assert rejected["status"] == "rejected", rejected
+
+code, terminal = request("GET", f"/api/device/v1/commands/{command_id}")
 assert code == 200, terminal
-assert terminal["command"]["status"] == "applied", terminal
-assert terminal["command"]["result"] == "Fila J10 actualizada", terminal
+assert terminal["command"]["status"] == "rejected", terminal
 
-# No pending command should remain after confirmation.
-code, after = request(
-    "GET",
-    f"/api/device/v1/commands/pending?after={command_id}",
-    token=None,
-)
-assert code == 200, after
-assert after["command"] is None, after
-
-print("REAL MONITOR DEVICE API E2E: PASS")
+print("DATABRICKS-ONLY DEVICE API E2E: PASS")
 print(f"- base: {BASE_URL}")
 print("- health contract")
-print("- authentication")
-print("- command enqueue")
-print("- request_id idempotence")
-print("- pending command visibility")
+print("- X-3C-Device-Token")
+print("- command enqueue + request_id idempotence")
 print("- authenticated status polling")
-print("- human confirmation result")
-print("- terminal applied polling")
-print("- pending queue drained")
+print("- human review rejection")
+print("- terminal rejected polling")

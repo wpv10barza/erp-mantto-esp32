@@ -1,81 +1,89 @@
-# ESP32-S3-4848S040 Firmware + Backend Bridge
+# ESP32-S3-4848S040 → Databricks Apps
 
-Firmware reproducible para el panel cuadrado **ESP32-S3-4848S040 (480×480)** conectado al backend 3C que se ejecuta en Ubuntu/WSL.
+Firmware del panel **ESP32-S3-4848S040 (480×480)** conectado al backend cloud `asistente-cloud-erp` desplegado en Databricks Apps.
 
-## Alcance verificable
+## Arquitectura de producción
 
-- compila firmware para ESP32-S3 N16R8 con pantalla ST7701 y táctil GT911;
-- consume el contrato HTTP `/api/device/v1/health`, `POST /api/device/v1/commands` y `GET /api/device/v1/commands/{command_id}`;
-- muestra `pendiente`, `aplicado`, `rechazado` y `error` en la pantalla;
-- conserva la confirmación humana antes de modificar Google Sheets;
-- publica binarios y manifiesto SHA-256 desde GitHub Actions;
-- despliega un sitio de estado documental mediante GitHub Pages.
-
-GitHub Actions demuestra **compilación**, no carga ni validación física. La prueba física requiere el panel conectado por USB.
-
-## Uso directo en Ubuntu/WSL
-
-```bash
-git clone https://github.com/wpv10barza/esp32-firmware-backend-.git
-cd esp32-firmware-backend-
-cp include/local_config.example.h include/local_config.h
-nano include/local_config.h
-python3 -m pip install platformio==6.1.18
-pio run -e panel_4848s040
-./scripts/flash-panel.sh
+```text
+ESP32-S3-4848S040
+  │ Wi-Fi
+  │
+  ├─ OAuth 2.0 M2M (Databricks service principal)
+  │    POST <workspace>/oidc/v1/token
+  │    access_token en RAM, renovación antes de 1 h
+  │
+  └─ HTTPS + Authorization: Bearer <token>
+       + X-3C-Device-Token
+            │
+            ▼
+Databricks Apps / asistente-cloud-erp
+            │
+            ├─ GET  /api/device/v1/health
+            ├─ POST /api/device/v1/commands
+            └─ GET  /api/device/v1/commands/{command_id}
+            │
+            ▼
+Revisión humana → Google Sheets
 ```
 
-El script `scripts/flash-panel.sh` compila primero y después detecta automáticamente un único `/dev/ttyACM*` o `/dev/ttyUSB*`. También permite fijar el puerto:
+El ESP32 **no escribe directamente en Google Sheets**. La orden queda en `pending_confirmation` hasta que la revisión humana determine `applied` o `rejected`.
 
-```bash
-./scripts/flash-panel.sh --port /dev/ttyACM0
-./scripts/flash-panel.sh --port /dev/ttyUSB0
+## Cambio respecto al firmware WSL
+
+La URL de producción ya no se descubre mediante mDNS. `ASSISTANT_BASE_URL_VALUE` apunta a Databricks Apps y tiene prioridad. El mecanismo `_3c._tcp` se conserva únicamente como fallback de desarrollo cuando la URL cloud se deja vacía.
+
+La interfaz del panel muestra **DATABRICKS LISTO** y el botón **PROBAR CLOUD**.
+
+## Configuración local segura
+
+Copiar `include/local_config.example.h` a `include/local_config.h` y completar solo los valores privados:
+
+```cpp
+#define WIFI_SSID_VALUE "..."
+#define WIFI_PASSWORD_VALUE "..."
+#define ASSISTANT_BASE_URL_VALUE "https://asistente-cloud-erp-7474651957738908.aws.databricksapps.com"
+#define DATABRICKS_WORKSPACE_URL_VALUE "https://dbc-a1aca8aa-28bd.cloud.databricks.com"
+#define DATABRICKS_CLIENT_ID_VALUE "..."
+#define DATABRICKS_CLIENT_SECRET_VALUE "..."
+#define ESP32_API_TOKEN_VALUE "..."
 ```
 
-No es necesario crear ni activar `.venv` para este procedimiento. El comando `pio` funciona si PlatformIO está instalado en el entorno Python activo.
+`include/local_config.h` está ignorado por Git y nunca debe versionarse.
 
-### USB de ESP32 hacia WSL 2
+### Credenciales Databricks
 
-Si `pio device list` no muestra ningún puerto y no existen `/dev/ttyACM*` ni `/dev/ttyUSB*`, el problema está antes de PlatformIO: WSL no tiene acceso al USB del ESP32. En Windows, verifique el dispositivo con `usbipd list` y, desde una consola de Windows, adjúntelo a WSL con:
+La cuenta de servicio de Google usada por Sheets **no sirve** para autenticar al ESP32 contra Databricks. Para el panel se requiere un **Databricks service principal** con OAuth M2M:
 
-```powershell
-usbipd list
-usbipd attach --wsl --busid <BUSID>
-```
+1. crear el service principal en Databricks;
+2. asignarlo al workspace;
+3. generar un OAuth secret;
+4. otorgarle **CAN USE** sobre la app `asistente-cloud-erp`;
+5. copiar client ID y secret solamente a `include/local_config.h`.
 
-Después, dentro de WSL, compruebe:
+El firmware solicita un token en `<workspace>/oidc/v1/token` con `grant_type=client_credentials`, lo conserva solo en RAM y lo renueva antes de su expiración. Nunca imprime el token ni el client secret.
 
-```bash
-lsusb
-pio device list
-ls -l /dev/ttyACM* /dev/ttyUSB*
-```
+`ESP32_API_TOKEN_VALUE` es una segunda protección, propia del backend 3C, enviada en `X-3C-Device-Token`.
 
-El `BUSID` es el identificador mostrado por `usbipd list`. Si el dispositivo aparece en Windows pero no en WSL, no fuerce `/dev/ttyUSB0`: el ESP32-S3 puede exponerse como otro puerto serie, por ejemplo `/dev/ttyACM0`. `pio device list` es la referencia para seleccionar el puerto real. citeturn429716search3turn429716search0
+## Contrato del dispositivo
 
-En `local_config.h`, use la **IPv4 LAN de Windows** para el backend. Un ESP32 físico no puede acceder a `127.0.0.1` de WSL.
+| Operación | Endpoint |
+|---|---|
+| Health | `GET /api/device/v1/health` |
+| Crear orden | `POST /api/device/v1/commands` |
+| Estado | `GET /api/device/v1/commands/{command_id}` |
 
-> Seguridad: no versionar Wi-Fi, token, credenciales de Google ni identificadores privados. El ESP32 nunca escribe directamente en Sheets; solicita una vista previa al backend.
+Secuencia: Wi-Fi → OAuth M2M Databricks → health → POST orden → `pending_confirmation` → polling cada 2.5 s → `applied` / `rejected`.
 
-## E2E real contra Google Sheets en GitHub Actions
+## Build y evidencia
 
-Este repositorio separa dos niveles de validación:
+Compilar con `pio run -e panel_4848s040`.
 
-1. El workflow normal comprueba firmware, teclado virtual, viewport, `commandBuffer` y el contrato HTTP del Monitor.
-2. `.github/workflows/e2e-real-google-sheets.yml` ejecuta el **Monitor real** de `wpv10barza/asistente-3c`, crea un comando mediante la misma API que usa el ESP32, abre la interfaz web en modo E2E, obtiene la vista previa, confirma el cambio y verifica una escritura real en Google Sheets. Al finalizar restaura exactamente las columnas `L` y `M` modificadas por la prueba.
+GitHub Actions compila y prueba el contrato contra `wpv10barza/asistente-de-databricks--erp`. La CI demuestra compilación e integración de software; **no demuestra validación física**. La pantalla, touch, Wi-Fi real y comunicación real del panel deben comprobarse con el hardware.
 
-La CI no puede convertir un runner de GitHub en un ESP32 físico. Por ello, la prueba E2E reproduce exactamente el contrato HTTP que ejecuta `send3CCommand()` y `pollCommandStatus()`, mientras que Google Sheets sí es el servicio real.
+## Seguridad
 
-### Secretos requeridos
-
-Configurar en **Settings → Secrets and variables → Actions → Secrets** del repositorio:
-
-- `GOOGLE_SERVICE_ACCOUNT_JSON`: JSON completo de una cuenta de servicio de Google con acceso de edición a la hoja de prueba.
-- `E2E_SPREADSHEET_ID`: ID del spreadsheet usado exclusivamente para la prueba E2E.
-- `E2E_SHEET_NAME`: nombre real de la hoja dentro del spreadsheet.
-- `E2E_TASK_NAME`: valor **único** de la columna `F=Nombre` de una fila dedicada a CI.
-- `GEMINI_API_KEY`: clave utilizada por el Monitor para interpretar el comando real.
-
-La fila indicada por `E2E_TASK_NAME` debe ser una fila de prueba dedicada. La prueba verifica los encabezados `E=TareaId`, `F=Nombre`, `L=Frecuencia` y `M=UnidadTiempo`, guarda el estado original de `L:M`, ejecuta el comando `Cambia la tarea <E2E_TASK_NAME> a mensual`, comprueba `L=1` y `M=Mes`, verifica que `A:O` no cambió fuera de esas dos columnas y finalmente restaura los valores originales.
-
-La cuenta de servicio debe tener acceso directo al spreadsheet. No se copia la credencial al repositorio y el workflow nunca imprime su contenido.
+- no versionar Wi-Fi, OAuth client secret, access tokens ni `ESP32_API_TOKEN`;
+- el access token Databricks vive solo en RAM;
+- `ALLOW_SHEET_WRITE` pertenece al backend Databricks, no al ESP32;
+- el panel nunca recibe la credencial de Google Sheets;
+- si un dispositivo se pierde, rotar el OAuth secret del service principal y el token 3C.
