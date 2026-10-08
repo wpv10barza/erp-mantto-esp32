@@ -11,11 +11,13 @@ def require(text: str, needle: str, label: str) -> None:
         raise AssertionError(f"missing {label}: {needle}")
 
 
-# Wi-Fi must come from ignored local_config.h, never from tracked firmware.
-require(APP, '#include "local_config.h"', "local Wi-Fi config include")
+# Wi-Fi and private credentials must come from ignored local_config.h.
+require(APP, '#include "local_config.h"', "local config include")
 require(APP, "WIFI_SSID_VALUE", "Wi-Fi SSID macro")
 require(APP, "WIFI_PASSWORD_VALUE", "Wi-Fi password macro")
-require(APP, "ASSISTANT_BASE_URL_VALUE", "deprecated compatibility macro")
+require(APP, "ASSISTANT_BASE_URL_VALUE", "Databricks App URL macro")
+require(APP, "DATABRICKS_CLIENT_ID_VALUE", "Databricks M2M client id")
+require(APP, "DATABRICKS_CLIENT_SECRET_VALUE", "Databricks M2M client secret")
 
 # Firmware must use the configured credentials in STA mode.
 require(MAIN, "WiFi.persistent(false);", "non-persistent Wi-Fi configuration")
@@ -23,39 +25,40 @@ require(MAIN, "WiFi.setAutoReconnect(true);", "automatic reconnect")
 require(MAIN, "WiFi.mode(WIFI_STA);", "station mode")
 require(MAIN, "WiFi.begin(app_config::wifiSsid, app_config::wifiPassword);", "configured Wi-Fi credentials")
 require(MAIN, "WiFi.reconnect();", "Wi-Fi reconnect path")
-require(MAIN, "updatePanel(PanelState::Busy, \"Reconectando Wi-Fi\");", "reconnect state")
+require(MAIN, 'updatePanel(PanelState::Busy, "Reconectando Wi-Fi");', "reconnect state")
 require(MAIN, "WiFi.status() == WL_CONNECTED", "real Wi-Fi state check")
 
 if "WiFi.disconnect();" in MAIN:
-    raise AssertionError("reconnect path must use WiFi.reconnect(), not repeated WiFi.disconnect()+WiFi.begin()")
+    raise AssertionError("reconnect path must use WiFi.reconnect(), not repeated disconnect/begin")
 
-# Diagnostics must expose real connection status without printing credentials.
+# Diagnostics expose connectivity but not credentials.
 require(MAIN, "wifiStatusLabel", "Wi-Fi status diagnostic")
 require(MAIN, "WiFi.gatewayIP().toString()", "gateway diagnostic")
 require(MAIN, "WiFi.RSSI()", "RSSI diagnostic")
 require(MAIN, "GET health ->", "backend health diagnostic")
 require(MAIN, "Wi-Fi listo:", "Wi-Fi acquisition diagnostic")
 
-# Preserve the known-working Guition 86BOX ST7701 type9 initialization.
+# Preserve known-working Guition display initialization.
 require(MAIN, "st7701_type9_init_operations", "ST7701 type9 init sequence")
 require(MAIN, "kScreenWidth, kScreenHeight, rgbPanel, 1, true", "rotation/RGB display contract")
 if "tl040wvs03_init_operations" in MAIN:
     raise AssertionError("obsolete TL040WVS03 init sequence is still referenced")
 
-# Backend runtime must be discovered, not fixed to loopback/private IPv4.
-require(MAIN, 'kBackendLogicalHost[] = "3c-backend.local"', "production backend logical host")
-require(MAIN, "MDNS.queryService", "mDNS service discovery")
-require(MAIN, "MDNS.queryHost", "mDNS host resolution")
+# Production backend is Databricks Apps; mDNS is development fallback only.
+require(MAIN, "cloudEndpointConfigured()", "configured cloud endpoint")
+require(MAIN, "databricksAppEndpoint()", "Databricks app endpoint detection")
+require(MAIN, "ensureDatabricksAccessToken()", "Databricks OAuth M2M")
+require(MAIN, 'if (!cloudEndpointConfigured()) startMdns();', "mDNS fallback gate")
+require(MAIN, "MDNS.queryService", "mDNS fallback discovery")
 if "192.168." in MAIN or "192.168." in APP:
     raise AssertionError("tracked firmware must not contain a fixed private backend IPv4")
-if "assistantBaseUrl" in MAIN:
-    raise AssertionError("runtime firmware must not use the deprecated fixed assistantBaseUrl")
 
 require(PLATFORMIO, "[env:panel_4848s040]", "panel_4848s040 environment")
 
-print("Wi-Fi source contract: PASS")
+print("Wi-Fi/cloud source contract: PASS")
 print("- credentials sourced from ignored local_config.h")
 print("- STA mode + auto-reconnect + non-destructive reconnect present")
 print("- diagnostic exposes status/gateway/RSSI without credentials")
-print("- backend is discovered through production mDNS, not fixed IPv4")
+print("- Databricks Apps is production backend with OAuth M2M")
+print("- mDNS remains development fallback only")
 print("- ST7701 type9 Guition init preserved")
