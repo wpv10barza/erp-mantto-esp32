@@ -45,17 +45,23 @@ grep -Fq 'kScreenWidth, kScreenHeight, rgbPanel, 1, true' "$FIRMWARE"
 grep -Fq 'sample.x = rawX < kScreenWidth ? rawX' "$FIRMWARE"
 grep -Fq 'sample.y = rawY < kScreenHeight ? rawY' "$FIRMWARE"
 
-# Production Asistente 3C discovery contract.
+# Production Databricks Apps contract.
+grep -Fq 'bool cloudEndpointConfigured()' "$FIRMWARE"
+grep -Fq 'bool ensureDatabricksAccessToken()' "$FIRMWARE"
+grep -Fq 'workspace + "/oidc/v1/token"' "$FIRMWARE"
+grep -Fq 'grant_type=client_credentials&scope=' "$FIRMWARE"
+grep -Fq 'Authorization' "$FIRMWARE"
+grep -Fq 'X-3C-Device-Token' "$FIRMWARE"
+grep -Fq 'DATABRICKS_WORKSPACE_URL_VALUE' include/app_config.h
+grep -Fq 'DATABRICKS_CLIENT_ID_VALUE' include/app_config.h
+grep -Fq 'DATABRICKS_CLIENT_SECRET_VALUE' include/app_config.h
+grep -Fq '"transport": "HTTPS to Databricks Apps"' contract/device-command-v1.json
+grep -Fq '"mode": "service-principal M2M"' contract/device-command-v1.json
+
+# mDNS/NVS is retained only as a local-development fallback.
 grep -Fq '#include <Preferences.h>' "$FIRMWARE"
-grep -Fq 'kBackendLogicalHost[] = "3c-backend.local"' "$FIRMWARE"
-grep -Fq 'kBackendMdnsService[] = "3c"' "$FIRMWARE"
-grep -Fq 'kBackendMdnsProtocol[] = "tcp"' "$FIRMWARE"
 grep -Fq 'MDNS.queryService(kBackendMdnsService, kBackendMdnsProtocol)' "$FIRMWARE"
-grep -Fq 'MDNS.queryHost(kBackendLogicalHost)' "$FIRMWARE"
-grep -Fq 'backendPrefs.getString(kBackendAddressKey, "")' "$FIRMWARE"
-grep -Fq 'backendPrefs.putUShort(kBackendPortKey, endpointValue.port)' "$FIRMWARE"
-grep -Fq '"service_type": "_3c._tcp"' contract/device-command-v1.json
-grep -Fq '"logical_host": "3c-backend.local"' contract/device-command-v1.json
+grep -Fq 'if (!cloudEndpointConfigured()) startMdns();' "$FIRMWARE"
 
 # The documentation mirror may never drift from the compiled PlatformIO source.
 cmp -s "$FIRMWARE" src/main.cpp || {
@@ -67,4 +73,4 @@ cmp -s "$FIRMWARE" src/main.cpp || {
 ! grep -Fq 'github://alaltitov/esphome@dev' src/main.yaml
 ! grep -Fq 'lvgl/lvgl' platformio.ini
 
-printf '\n[OK] BLOCK 3 — LVGL + GT911 + ST7701S + 3C mDNS/NVS contracts valid.\n'
+printf '\n[OK] BLOCK 3 — LVGL + GT911 + ST7701S + Databricks Apps OAuth M2M contract valid.\n'
