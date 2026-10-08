@@ -12,6 +12,7 @@
 #endif
 
 // Production Databricks endpoints. URLs are not secrets.
+// The firmware never discovers or stores a LAN backend IP.
 #ifndef ASSISTANT_BASE_URL_VALUE
 #define ASSISTANT_BASE_URL_VALUE "https://asistente-cloud-erp-7474651957738908.aws.databricksapps.com"
 #endif

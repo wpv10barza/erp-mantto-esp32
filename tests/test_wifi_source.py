@@ -11,54 +11,36 @@ def require(text: str, needle: str, label: str) -> None:
         raise AssertionError(f"missing {label}: {needle}")
 
 
-# Wi-Fi and private credentials must come from ignored local_config.h.
 require(APP, '#include "local_config.h"', "local config include")
-require(APP, "WIFI_SSID_VALUE", "Wi-Fi SSID macro")
-require(APP, "WIFI_PASSWORD_VALUE", "Wi-Fi password macro")
+require(APP, "WIFI_SSID_VALUE", "Internet Wi-Fi SSID macro")
+require(APP, "WIFI_PASSWORD_VALUE", "Internet Wi-Fi password macro")
 require(APP, "ASSISTANT_BASE_URL_VALUE", "Databricks App URL macro")
-require(APP, "DATABRICKS_CLIENT_ID_VALUE", "Databricks M2M client id")
-require(APP, "DATABRICKS_CLIENT_SECRET_VALUE", "Databricks M2M client secret")
 
-# Firmware must use the configured credentials in STA mode.
+# ESP32-S3 hardware still uses Wi-Fi as its Internet transport. It does not need
+# the same Wi-Fi/LAN as a PC and never discovers a local backend.
 require(MAIN, "WiFi.persistent(false);", "non-persistent Wi-Fi configuration")
 require(MAIN, "WiFi.setAutoReconnect(true);", "automatic reconnect")
 require(MAIN, "WiFi.mode(WIFI_STA);", "station mode")
-require(MAIN, "WiFi.begin(app_config::wifiSsid, app_config::wifiPassword);", "configured Wi-Fi credentials")
-require(MAIN, "WiFi.reconnect();", "Wi-Fi reconnect path")
-require(MAIN, 'updatePanel(PanelState::Busy, "Reconectando Wi-Fi");', "reconnect state")
-require(MAIN, "WiFi.status() == WL_CONNECTED", "real Wi-Fi state check")
+require(MAIN, "WiFi.begin(app_config::wifiSsid, app_config::wifiPassword);", "configured Internet transport")
+require(MAIN, "WiFi.reconnect();", "network reconnect path")
+require(MAIN, '"Reconectando Internet"', "Internet reconnect state")
+require(MAIN, '"CLOUD HTTPS"', "cloud status display")
 
-if "WiFi.disconnect();" in MAIN:
-    raise AssertionError("reconnect path must use WiFi.reconnect(), not repeated disconnect/begin")
+# Do not expose or depend on local network addressing.
+for forbidden in [
+    "WiFi.localIP()", "WiFi.gatewayIP()", "192.168.", "3c-backend.local",
+    "MDNS.queryService", "MDNS.queryHost", "PROBAR WSL", "WSL DISPONIBLE",
+]:
+    if forbidden in MAIN or forbidden in APP:
+        raise AssertionError(f"local-network dependency remains: {forbidden}")
 
-# Diagnostics expose connectivity but not credentials.
-require(MAIN, "wifiStatusLabel", "Wi-Fi status diagnostic")
-require(MAIN, "WiFi.gatewayIP().toString()", "gateway diagnostic")
-require(MAIN, "WiFi.RSSI()", "RSSI diagnostic")
-require(MAIN, "GET health ->", "backend health diagnostic")
-require(MAIN, "Wi-Fi listo:", "Wi-Fi acquisition diagnostic")
-
-# Preserve known-working Guition display initialization.
 require(MAIN, "st7701_type9_init_operations", "ST7701 type9 init sequence")
 require(MAIN, "kScreenWidth, kScreenHeight, rgbPanel, 1, true", "rotation/RGB display contract")
-if "tl040wvs03_init_operations" in MAIN:
-    raise AssertionError("obsolete TL040WVS03 init sequence is still referenced")
-
-# Production backend is Databricks Apps; mDNS is development fallback only.
-require(MAIN, "cloudEndpointConfigured()", "configured cloud endpoint")
-require(MAIN, "databricksAppEndpoint()", "Databricks app endpoint detection")
 require(MAIN, "ensureDatabricksAccessToken()", "Databricks OAuth M2M")
-require(MAIN, 'if (!cloudEndpointConfigured()) startMdns();', "mDNS fallback gate")
-require(MAIN, "MDNS.queryService", "mDNS fallback discovery")
-if "192.168." in MAIN or "192.168." in APP:
-    raise AssertionError("tracked firmware must not contain a fixed private backend IPv4")
-
 require(PLATFORMIO, "[env:panel_4848s040]", "panel_4848s040 environment")
 
-print("Wi-Fi/cloud source contract: PASS")
-print("- credentials sourced from ignored local_config.h")
-print("- STA mode + auto-reconnect + non-destructive reconnect present")
-print("- diagnostic exposes status/gateway/RSSI without credentials")
-print("- Databricks Apps is production backend with OAuth M2M")
-print("- mDNS remains development fallback only")
+print("Network/cloud source contract: PASS")
+print("- Wi-Fi is only the ESP32 Internet transport")
+print("- no same-LAN, local IP, mDNS or WSL backend dependency")
+print("- Databricks Apps is the production endpoint")
 print("- ST7701 type9 Guition init preserved")

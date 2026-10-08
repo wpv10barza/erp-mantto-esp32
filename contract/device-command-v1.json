@@ -1,6 +1,7 @@
 {
   "protocol_version": "1.1",
   "transport": "HTTPS to Databricks Apps",
+  "network_requirement": "Any Internet connection available to the ESP32; no LAN/backend IP discovery",
   "platform_authentication": {
     "scheme": "OAuth 2.0 Bearer",
     "mode": "service-principal M2M",
@@ -13,12 +14,19 @@
   "command_path": "/api/device/v1/commands",
   "status_path": "/api/device/v1/commands/{command_id}",
   "request": {
-    "required": ["device_id", "request_id", "text"],
+    "required": [
+      "device_id",
+      "request_id",
+      "text"
+    ],
     "device_id_max_length": 64,
     "request_id_max_length": 96,
     "text_max_length": 1000
   },
-  "accepted_status_codes": [200, 202],
+  "accepted_status_codes": [
+    200,
+    202
+  ],
   "accepted_state": "pending_confirmation",
   "device_status_polling": true,
   "device_status_authentication": true,
@@ -27,6 +35,8 @@
   "backend": {
     "production_mode": "configured_https_url",
     "production_provider": "Databricks Apps",
-    "local_fallback": "mDNS _3c._tcp only when ASSISTANT_BASE_URL_VALUE is empty"
+    "local_ip_dependency": false,
+    "mdns_dependency": false,
+    "wsl_dependency": false
   }
 }

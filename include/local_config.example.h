@@ -1,6 +1,8 @@
 #pragma once
 // Copy to include/local_config.h. This file is ignored by Git.
-#define WIFI_SSID_VALUE "YOUR_WIFI_2_4_GHZ"
+// Network credentials are only for Internet transport. The ESP32 does not
+// need to share a LAN, IP range or Wi-Fi with a PC/backend.
+#define WIFI_SSID_VALUE "YOUR_INTERNET_WIFI_2_4_GHZ"
 #define WIFI_PASSWORD_VALUE "YOUR_WIFI_PASSWORD"
 #define ASSISTANT_BASE_URL_VALUE "https://asistente-cloud-erp-7474651957738908.aws.databricksapps.com"
 #define DATABRICKS_WORKSPACE_URL_VALUE "https://dbc-a1aca8aa-28bd.cloud.databricks.com"

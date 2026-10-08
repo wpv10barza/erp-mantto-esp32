@@ -30,7 +30,7 @@ El ESP32 **no escribe directamente en Google Sheets**. La orden queda en `pendin
 
 ## Cambio respecto al firmware WSL
 
-La URL de producción ya no se descubre mediante mDNS. `ASSISTANT_BASE_URL_VALUE` apunta a Databricks Apps y tiene prioridad. El mecanismo `_3c._tcp` se conserva únicamente como fallback de desarrollo cuando la URL cloud se deja vacía.
+`ASSISTANT_BASE_URL_VALUE` apunta directamente al hostname HTTPS de Databricks Apps. El firmware de producción no descubre backends por mDNS, no usa IP privada de WSL y no necesita compartir la LAN con un PC.
 
 La interfaz del panel muestra **DATABRICKS LISTO** y el botón **PROBAR CLOUD**.
 
@@ -52,7 +52,7 @@ Copiar `include/local_config.example.h` a `include/local_config.h` y completar s
 
 ### Credenciales Databricks
 
-La cuenta de servicio de Google usada por Sheets **no sirve** para autenticar al ESP32 contra Databricks. Para el panel se requiere un **Databricks service principal** con OAuth M2M:
+La cuenta de servicio de Google usada por Sheets **no sirve** para autenticar al ESP32 contra Databricks. El panel no depende de ninguna IP LAN del equipo ni de que el equipo esté encendido. Para el panel se requiere un **Databricks service principal** con OAuth M2M:
 
 1. crear el service principal en Databricks;
 2. asignarlo al workspace;
@@ -72,7 +72,7 @@ El firmware solicita un token en `<workspace>/oidc/v1/token` con `grant_type=cli
 | Crear orden | `POST /api/device/v1/commands` |
 | Estado | `GET /api/device/v1/commands/{command_id}` |
 
-Secuencia: Wi-Fi → OAuth M2M Databricks → health → POST orden → `pending_confirmation` → polling cada 2.5 s → `applied` / `rejected`.
+Secuencia: acceso a Internet del ESP32 → DNS/HTTPS → OAuth M2M Databricks → health → POST orden → `pending_confirmation` → polling cada 2.5 s → `applied` / `rejected`.
 
 ## Build y evidencia
 
@@ -82,7 +82,7 @@ GitHub Actions compila y prueba el contrato contra `wpv10barza/asistente-de-data
 
 ## Seguridad
 
-- no versionar Wi-Fi, OAuth client secret, access tokens ni `ESP32_API_TOKEN`;
+- no versionar credenciales de red, OAuth client secret, access tokens ni `ESP32_API_TOKEN`;
 - el access token Databricks vive solo en RAM;
 - `ALLOW_SHEET_WRITE` pertenece al backend Databricks, no al ESP32;
 - el panel nunca recibe la credencial de Google Sheets;

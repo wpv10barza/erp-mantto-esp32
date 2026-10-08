@@ -19,9 +19,9 @@ if MAIN != MIRROR:
     raise AssertionError("src/main.cpp and platformio panel firmware must be byte-identical")
 
 for source_name, source in [("main.cpp", MAIN), ("app_config.h", CONFIG)]:
-    private_ips = re.findall(r"192\.168\.\d+\.\d+", source)
+    private_ips = re.findall(r"(?:10|127|169\.254|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d+\.\d+", source)
     if private_ips:
-        raise AssertionError(f"fixed private backend IP remains in {source_name}: {private_ips}")
+        raise AssertionError(f"fixed/private backend IP remains in {source_name}: {private_ips}")
 
 require(CONFIG, "ASSISTANT_BASE_URL_VALUE", "Databricks app URL setting")
 require(CONFIG, "DATABRICKS_WORKSPACE_URL_VALUE", "Databricks workspace setting")
@@ -41,24 +41,32 @@ require(MAIN, 'endpoint("/api/device/v1/commands")', "command endpoint")
 require(MAIN, 'endpoint("/api/device/v1/commands/" + lastCommandId)', "poll endpoint")
 require(MAIN, '"DATABRICKS LISTO"', "cloud-ready UI state")
 require(MAIN, '"PROBAR CLOUD"', "cloud test button")
+require(MAIN, '"CLOUD HTTPS"', "cloud transport display")
 
-require(MAIN, "#include <ESPmDNS.h>", "mDNS fallback include")
-require(MAIN, "if (!cloudEndpointConfigured()) startMdns();", "mDNS fallback gate")
-require(MAIN, "if (!cloudEndpointConfigured() && !backendEndpoint.valid())", "discovery fallback gate")
+for forbidden in [
+    "ESPmDNS", "Preferences", "MDNS.queryService", "MDNS.queryHost",
+    "BackendEndpoint", "3c-backend.local", "_3c._tcp", "backendEndpoint",
+]:
+    if forbidden in MAIN:
+        raise AssertionError(f"local backend discovery must be removed: {forbidden}")
 
 if CONTRACT["transport"] != "HTTPS to Databricks Apps":
     raise AssertionError("production transport must be Databricks HTTPS")
-if CONTRACT["platform_authentication"]["mode"] != "service-principal M2M":
-    raise AssertionError("production auth must use Databricks service-principal M2M")
+if CONTRACT["backend"]["local_ip_dependency"] is not False:
+    raise AssertionError("production backend must not depend on LAN IPs")
+if CONTRACT["backend"]["mdns_dependency"] is not False:
+    raise AssertionError("production backend must not depend on mDNS")
+if CONTRACT["backend"]["wsl_dependency"] is not False:
+    raise AssertionError("production backend must not depend on WSL")
 if CONTRACT["direct_sheet_write"] is not False:
     raise AssertionError("ESP32 must never write Google Sheets directly")
 if CONTRACT["requires_human_confirmation"] is not True:
     raise AssertionError("human confirmation must remain mandatory")
 
-print("Databricks firmware transport contract: PASS")
+print("Databricks cloud-only firmware contract: PASS")
 print("- firmware mirror is byte-identical")
-print("- production endpoint is configured HTTPS Databricks Apps")
+print("- production endpoint is HTTPS Databricks Apps")
 print("- OAuth M2M token acquisition + refresh is implemented")
-print("- Authorization Bearer + X-3C-Device-Token are both applied")
-print("- mDNS remains local fallback only")
+print("- no LAN IP, mDNS or WSL backend dependency remains")
+print("- ESP32 still needs Internet transport, but not the PC/backend LAN")
 print("- direct Google Sheets writes remain forbidden")

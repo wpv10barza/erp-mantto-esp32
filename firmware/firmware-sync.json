@@ -1,13 +1,13 @@
 {
-  "schema": 2,
+  "schema": 3,
   "authoritative_repository": "wpv10barza/erp-mantto-esp32",
   "authoritative_branch": "main",
   "hardware": "ESP32-S3-4848S040",
   "migration": {
-    "from": "local WSL/Express discovery",
-    "to": "Databricks Apps HTTPS + OAuth 2.0 M2M",
+    "from": "local WSL/LAN backend discovery",
+    "to": "Databricks Apps cloud-only HTTPS + OAuth 2.0 M2M",
     "date": "2026-10-08",
-    "note": "Production firmware now prefers configured Databricks Apps URL; mDNS remains development fallback only."
+    "note": "Production firmware has no backend LAN IP, mDNS, NVS endpoint cache, WSL or local-PC runtime dependency. ESP32 still requires Internet transport."
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
@@ -15,15 +15,18 @@
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
+    "local_ip_dependency": false,
+    "mdns_dependency": false,
+    "wsl_dependency": false,
     "health_path": "/api/device/v1/health",
     "command_path": "/api/device/v1/commands",
     "status_path": "/api/device/v1/commands/{command_id}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "24100cbb5f59204df63a9fc85be5380a1b4676a5",
-    "src/main.cpp": "24100cbb5f59204df63a9fc85be5380a1b4676a5",
-    "include/app_config.h": "1104768b2f78add27c3ac6b27a657c84eadb9f80",
-    "contract/device-command-v1.json": "60b8ef31972c8de2463a12fc0a76aa036e03e805"
+    "platformio/src/panel_4848s040/main.cpp": "8696b4e8adbcf378a660c568066ef4f3e62de482",
+    "src/main.cpp": "8696b4e8adbcf378a660c568066ef4f3e62de482",
+    "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
+    "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b"
   },
   "production": {
     "platformio_env": "panel_4848s040",

@@ -58,10 +58,13 @@ grep -Fq 'DATABRICKS_CLIENT_SECRET_VALUE' include/app_config.h
 grep -Fq '"transport": "HTTPS to Databricks Apps"' contract/device-command-v1.json
 grep -Fq '"mode": "service-principal M2M"' contract/device-command-v1.json
 
-# mDNS/NVS is retained only as a local-development fallback.
-grep -Fq '#include <Preferences.h>' "$FIRMWARE"
-grep -Fq 'MDNS.queryService(kBackendMdnsService, kBackendMdnsProtocol)' "$FIRMWARE"
-grep -Fq 'if (!cloudEndpointConfigured()) startMdns();' "$FIRMWARE"
+# Local backend discovery is forbidden in the production firmware.
+! grep -Fq 'ESPmDNS' "$FIRMWARE"
+! grep -Fq 'MDNS.queryService' "$FIRMWARE"
+! grep -Fq '3c-backend.local' "$FIRMWARE"
+! grep -Fq 'backendEndpoint' "$FIRMWARE"
+! grep -Fq 'WiFi.localIP()' "$FIRMWARE"
+! grep -Fq 'WiFi.gatewayIP()' "$FIRMWARE"
 
 # The documentation mirror may never drift from the compiled PlatformIO source.
 cmp -s "$FIRMWARE" src/main.cpp || {
@@ -73,4 +76,4 @@ cmp -s "$FIRMWARE" src/main.cpp || {
 ! grep -Fq 'github://alaltitov/esphome@dev' src/main.yaml
 ! grep -Fq 'lvgl/lvgl' platformio.ini
 
-printf '\n[OK] BLOCK 3 — LVGL + GT911 + ST7701S + Databricks Apps OAuth M2M contract valid.\n'
+printf '\n[OK] BLOCK 3 — LVGL + GT911 + ST7701S + Databricks Apps cloud-only OAuth M2M contract valid.\n'

@@ -6,7 +6,7 @@ El firmware PlatformIO del panel ESP32-S3-4848S040 está preparado para usar com
 
 Databricks Apps exige autenticación para clientes externos. Por ello, el firmware obtiene un token OAuth temporal mediante un **Databricks service principal**, lo conserva solo en RAM y lo renueva antes de expirar. Además mantiene el encabezado de aplicación **X-3C-Device-Token**. Los secretos permanecen únicamente en `include/local_config.h`, que está excluido de Git.
 
-La interfaz física usa las etiquetas **DATABRICKS LISTO** y **PROBAR CLOUD**. El descubrimiento mDNS `_3c._tcp` queda únicamente como fallback de desarrollo cuando `ASSISTANT_BASE_URL_VALUE` se configura vacío.
+La interfaz física usa las etiquetas **DATABRICKS LISTO** y **PROBAR CLOUD**. El firmware productivo no usa mDNS, IP privada, loopback ni descubrimiento de un backend local. Solo resuelve por DNS el hostname HTTPS de Databricks Apps.
 
 Firmware para el panel **Guition ESP32-S3-4848S040**, con pantalla **480 × 480**, controlador **ST7701S**, táctil **GT911** y comunicación con el sistema Asistente 3C.
 
@@ -47,7 +47,7 @@ El contrato de dispositivo parte de un ciclo de orden en el que la creación con
 
 ### 3.2.3. Condiciones iniciales del sistema de identificación y comunicación
 
-La comunicación de producción se realiza mediante la Device API versionada sobre HTTPS hacia Databricks Apps, con OAuth 2.0 M2M en el borde de Databricks y `X-3C-Device-Token` en la aplicación. La solicitud utiliza `device_id`, `request_id` y `text`; cuando está configurado, el cliente añade el encabezado de autenticación `X-3C-Device-Token`. El contrato define endpoints para health, creación de órdenes y consulta de estado.
+La comunicación de producción se realiza mediante la Device API versionada sobre HTTPS hacia Databricks Apps, con OAuth 2.0 M2M en el borde de Databricks y `X-3C-Device-Token` en la aplicación. El ESP32 puede usar cualquier red que le dé salida a Internet; no necesita estar en la misma Wi-Fi o subred que una PC. La solicitud utiliza `device_id`, `request_id` y `text`; cuando está configurado, el cliente añade el encabezado de autenticación `X-3C-Device-Token`. El contrato define endpoints para health, creación de órdenes y consulta de estado.
 
 ### 3.2.4. Condiciones iniciales de alimentación y estabilidad
 

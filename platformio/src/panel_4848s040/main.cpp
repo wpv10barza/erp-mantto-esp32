@@ -2,9 +2,7 @@
 
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
-#include <ESPmDNS.h>
 #include <HTTPClient.h>
-#include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -66,45 +64,6 @@ bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
 
-struct BackendEndpoint {
-  String logicalHost;
-  String address;
-  uint16_t port = 0;
-
-  bool valid() const {
-    return logicalHost.length() > 0 && address.length() > 0 && port > 0;
-  }
-
-  String baseUrl() const {
-    return valid() ? String("http://") + address + ":" + String(port) : String();
-  }
-
-  void clear() {
-    logicalHost = "";
-    address = "";
-    port = 0;
-  }
-
-  bool operator==(const BackendEndpoint& other) const {
-    return logicalHost == other.logicalHost &&
-           address == other.address &&
-           port == other.port;
-  }
-
-  bool operator!=(const BackendEndpoint& other) const {
-    return !(*this == other);
-  }
-};
-
-Preferences backendPrefs;
-BackendEndpoint backendEndpoint;
-constexpr char kBackendPrefsNamespace[] = "backend";
-constexpr char kBackendLogicalHost[] = "3c-backend.local";
-constexpr char kBackendHostKey[] = "host";
-constexpr char kBackendAddressKey[] = "addr";
-constexpr char kBackendPortKey[] = "port";
-constexpr char kBackendMdnsService[] = "3c";
-constexpr char kBackendMdnsProtocol[] = "tcp";
 bool touchDown = false;
 constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
@@ -262,7 +221,7 @@ void drawPanel() {
   if (detail.length() > 52) detail = detail.substring(0, 49) + "...";
   drawCentered(detail, 286, 1, color565(210, 225, 235));
   if (WiFi.status() == WL_CONNECTED) {
-    drawCentered(WiFi.localIP().toString(), 310, 1, color565(150, 205, 235));
+    drawCentered("CLOUD HTTPS", 310, 1, color565(150, 205, 235));
   }
 
   drawButton(20, 370, 210, 82, "PROBAR CLOUD", color565(15, 82, 135));
@@ -457,121 +416,6 @@ TouchSample readTouch() {
   return sample;
 }
 
-void loadBackendEndpointFromNvs() {
-  backendEndpoint.clear();
-  if (!backendPrefs.begin(kBackendPrefsNamespace, true)) {
-    Serial.println("BACKEND: NVS cache unavailable; mDNS discovery required");
-    return;
-  }
-
-  backendEndpoint.logicalHost = backendPrefs.getString(
-    kBackendHostKey, kBackendLogicalHost);
-  backendEndpoint.address = backendPrefs.getString(kBackendAddressKey, "");
-  backendEndpoint.port = backendPrefs.getUShort(kBackendPortKey, 0);
-  backendPrefs.end();
-
-  if (backendEndpoint.valid() &&
-      backendEndpoint.logicalHost.equalsIgnoreCase(kBackendLogicalHost)) {
-    Serial.printf("BACKEND: cached endpoint loaded %s -> %s:%u\n",
-      backendEndpoint.logicalHost.c_str(),
-      backendEndpoint.address.c_str(),
-      backendEndpoint.port);
-  } else {
-    backendEndpoint.clear();
-    Serial.println("BACKEND: no valid cached endpoint; mDNS discovery required");
-  }
-}
-
-void saveBackendEndpointToNvs(const BackendEndpoint& endpointValue) {
-  if (!endpointValue.valid()) return;
-  if (!backendPrefs.begin(kBackendPrefsNamespace, false)) {
-    Serial.println("BACKEND: unable to open NVS cache for write");
-    return;
-  }
-  backendPrefs.putString(kBackendHostKey, endpointValue.logicalHost);
-  backendPrefs.putString(kBackendAddressKey, endpointValue.address);
-  backendPrefs.putUShort(kBackendPortKey, endpointValue.port);
-  backendPrefs.end();
-  Serial.printf("BACKEND: cached endpoint saved %s -> %s:%u\n",
-    endpointValue.logicalHost.c_str(),
-    endpointValue.address.c_str(),
-    endpointValue.port);
-}
-
-bool startMdns() {
-  if (mdnsReady) return true;
-  mdnsReady = MDNS.begin("esp32-panel-3c");
-  if (!mdnsReady) {
-    Serial.println("BACKEND: mDNS responder/query interface initialization FAILED");
-    return false;
-  }
-  MDNS.addService("http", "tcp", 80);
-  Serial.println("BACKEND: mDNS responder initialized");
-  return true;
-}
-
-bool discoverBackendEndpoint() {
-  if (WiFi.status() != WL_CONNECTED) return false;
-  if (!startMdns()) return false;
-
-  Serial.printf("BACKEND: querying mDNS _%s._%s\n",
-    kBackendMdnsService, kBackendMdnsProtocol);
-  const int services = MDNS.queryService(kBackendMdnsService, kBackendMdnsProtocol);
-  if (services <= 0) {
-    Serial.printf("BACKEND: mDNS _%s._%s found no services\n",
-      kBackendMdnsService, kBackendMdnsProtocol);
-    return false;
-  }
-
-  for (int index = 0; index < services; ++index) {
-    String logicalHost = MDNS.hostname(index);
-    logicalHost.trim();
-    while (logicalHost.endsWith(".")) logicalHost.remove(logicalHost.length() - 1);
-    if (!logicalHost.endsWith(".local")) logicalHost += ".local";
-
-    const uint16_t port = MDNS.port(index);
-    if (port == 0) continue;
-
-    if (!logicalHost.equalsIgnoreCase(kBackendLogicalHost)) {
-      continue;
-    }
-
-    const IPAddress address = MDNS.queryHost(kBackendLogicalHost);
-    if (address == IPAddress()) {
-      Serial.printf(
-        "BACKEND: mDNS host %s did not resolve to an IPv4 address\n",
-        kBackendLogicalHost);
-      continue;
-    }
-
-    Serial.printf(
-      "BACKEND: mDNS candidate host=%s address=%s port=%u\n",
-      logicalHost.c_str(), address.toString().c_str(), port);
-
-    BackendEndpoint discovered;
-    discovered.logicalHost = kBackendLogicalHost;
-    discovered.address = address.toString();
-    discovered.port = port;
-    if (!discovered.valid()) continue;
-
-    const bool changed = discovered != backendEndpoint;
-    backendEndpoint = discovered;
-    if (changed) saveBackendEndpointToNvs(backendEndpoint);
-
-    Serial.printf("BACKEND: mDNS discovered %s -> %s:%u%s\n",
-      backendEndpoint.logicalHost.c_str(),
-      backendEndpoint.address.c_str(),
-      backendEndpoint.port,
-      changed ? " (cache updated)" : " (cache unchanged)");
-    return true;
-  }
-
-  Serial.printf(
-    "BACKEND: mDNS _%s._%s did not return logical host %s\n",
-    kBackendMdnsService, kBackendMdnsProtocol, kBackendLogicalHost);
-  return false;
-}
-
 bool cloudEndpointConfigured() {
   return strlen(app_config::assistantBaseUrl) > 0;
 }
@@ -584,9 +428,7 @@ bool databricksAppEndpoint() {
 }
 
 String backendBaseUrl() {
-  String base = cloudEndpointConfigured()
-      ? String(app_config::assistantBaseUrl)
-      : backendEndpoint.baseUrl();
+  String base = app_config::assistantBaseUrl;
   base.trim();
   while (base.endsWith("/")) base.remove(base.length() - 1);
   return base;
@@ -769,28 +611,8 @@ bool checkBackendHealthOnce() {
 bool checkBackendHealth() {
   if (WiFi.status() != WL_CONNECTED) {
     backendAvailable = false;
-    updatePanel(PanelState::Offline, "Wi-Fi desconectado", true);
+    updatePanel(PanelState::Offline, "Sin acceso a Internet", true);
     return false;
-  }
-
-  if (!cloudEndpointConfigured() && !backendEndpoint.valid()) {
-    discoverBackendEndpoint();
-  }
-
-  if (checkBackendHealthOnce()) return true;
-  if (cloudEndpointConfigured()) return false;
-
-  const BackendEndpoint failedEndpoint = backendEndpoint;
-  Serial.printf("BACKEND: health failed; rediscovering _%s._%s\n",
-    kBackendMdnsService, kBackendMdnsProtocol);
-  if (!discoverBackendEndpoint()) return false;
-
-  if (backendEndpoint == failedEndpoint) {
-    Serial.printf("BACKEND: mDNS returned the same endpoint %s; retrying once\n",
-      backendEndpoint.baseUrl().c_str());
-  } else {
-    Serial.printf("BACKEND: endpoint changed after health failure: %s -> %s\n",
-      failedEndpoint.baseUrl().c_str(), backendEndpoint.baseUrl().c_str());
   }
   return checkBackendHealthOnce();
 }
@@ -803,12 +625,11 @@ int send3CCommand(const String& rawCommand) {
     return 400;
   }
   if (WiFi.status() != WL_CONNECTED) {
-    updatePanel(PanelState::Offline, "Wi-Fi desconectado", true);
+    updatePanel(PanelState::Offline, "Sin acceso a Internet", true);
     return 503;
   }
 
   updatePanel(PanelState::Busy, "Enviando a Databricks", true);
-  if (!cloudEndpointConfigured() && !backendEndpoint.valid()) discoverBackendEndpoint();
   if (!backendBaseUrl().length()) {
     updatePanel(PanelState::Error, "Endpoint no configurado", true);
     return 503;
@@ -913,7 +734,7 @@ void configureWebServer() {
       (WiFi.status() == WL_CONNECTED ? "true" : "false") +
       ",\"backend\":" + (backendAvailable ? "true" : "false") +
       ",\"pending\":" + (lastCommandId.length() ? "true" : "false") +
-      ",\"ip\":\"" + WiFi.localIP().toString() + "\"}";
+      ",\"transport\":\"internet\"}";
     web.send(200, "application/json", body);
   });
   web.on("/api/backend-health", HTTP_POST, [] {
@@ -1055,11 +876,7 @@ void setup() {
   Wire.begin(pins::touchSda, pins::touchScl, 100000);
   audioReady = initializeAudio();
   commandBuffer.set(app_config::commandBuffer.c_str());
-  if (!cloudEndpointConfigured()) loadBackendEndpointFromNvs();
-  updatePanel(PanelState::Booting,
-    cloudEndpointConfigured()
-      ? "Hardware inicializado; Databricks Cloud"
-      : (backendEndpoint.valid() ? "Hardware inicializado; endpoint en cache" : "Hardware inicializado"));
+  updatePanel(PanelState::Booting, "Hardware inicializado; Databricks Cloud");
   playTone(520, 60);
   connectWifi();
   configureWebServer();
@@ -1072,9 +889,7 @@ void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     if (!wifiAnnounced) {
       wifiAnnounced = true;
-      Serial.printf("Wi-Fi listo: http://%s/ gateway=%s rssi=%d\n",
-        WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(), WiFi.RSSI());
-      if (!cloudEndpointConfigured()) startMdns();
+      Serial.printf("Red con Internet lista; Wi-Fi RSSI=%d dBm\n", WiFi.RSSI());
       checkBackendHealth();
     }
     if (lastCommandId.length() && millis() - lastCommandPoll >= app_config::commandPollMs) {
@@ -1090,10 +905,10 @@ void loop() {
     if (strlen(app_config::wifiSsid) && millis() - lastWifiAttempt >= app_config::wifiRetryMs) {
       lastWifiAttempt = millis();
       const wl_status_t status = WiFi.status();
-      Serial.printf("Wi-Fi no conectado: status=%d (%s); reintentando con WiFi.reconnect()\n",
+      Serial.printf("Red sin acceso: status=%d (%s); reintentando enlace\n",
         static_cast<int>(status), wifiStatusLabel(status));
       WiFi.reconnect();
-      updatePanel(PanelState::Busy, "Reconectando Wi-Fi");
+      updatePanel(PanelState::Busy, "Reconectando Internet");
     }
   }
   delay(5);
