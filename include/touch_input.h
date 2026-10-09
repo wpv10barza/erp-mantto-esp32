@@ -18,22 +18,26 @@ constexpr bool kMirrorX = false;
 constexpr bool kMirrorY = false;
 
 struct Point {
-  int16_t x = 0;
-  int16_t y = 0;
-  bool valid = false;
+  int16_t x;
+  int16_t y;
+  bool valid;
+
+  constexpr Point() : x(0), y(0), valid(false) {}
+  constexpr Point(int16_t xValue, int16_t yValue, bool validValue)
+      : x(xValue), y(yValue), valid(validValue) {}
 };
 
 constexpr int clampInt(int value, int low, int high) {
   return value < low ? low : (value > high ? high : value);
 }
 
-constexpr int scaleAxis(int raw, int rawMin, int rawMax, int screenSize) {
+inline int scaleAxis(int raw, int rawMin, int rawMax, int screenSize) {
   const int clamped = clampInt(raw, rawMin, rawMax);
   const int span = rawMax - rawMin;
   return span <= 0 ? 0 : ((clamped - rawMin) * (screenSize - 1) + span / 2) / span;
 }
 
-constexpr Point mapRaw(int rawX, int rawY) {
+inline Point mapRaw(int rawX, int rawY) {
   int x = scaleAxis(rawX, kRawXMin, kRawXMax, kScreenWidth);
   int y = scaleAxis(rawY, kRawYMin, kRawYMax, kScreenHeight);
 

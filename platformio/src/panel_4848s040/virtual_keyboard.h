@@ -95,8 +95,8 @@ constexpr uint8_t visibleRowCount(KeyboardMode mode) {
 }
 
 constexpr int keyboardHeight(KeyboardMode mode) {
-  const int rows = visibleRowCount(mode);
-  return rows * kKeyHeight + (rows - 1) * kRowGap;
+  return static_cast<int>(visibleRowCount(mode)) * kKeyHeight +
+      (static_cast<int>(visibleRowCount(mode)) - 1) * kRowGap;
 }
 
 constexpr int keyboardY(KeyboardMode mode) {

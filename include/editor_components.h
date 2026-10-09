@@ -69,7 +69,7 @@ class ToolbarComponent {
     }};
   }
 
-  static constexpr ToolbarAction hitTest(int x, int y) {
+  static inline ToolbarAction hitTest(int x, int y) {
     const auto list = buttons();
     for (const auto& button : list) {
       const Rect active{

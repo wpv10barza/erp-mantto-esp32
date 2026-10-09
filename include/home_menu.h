@@ -60,7 +60,7 @@ constexpr std::array<Target, 10> targets() {
   }};
 }
 
-constexpr Action hitTest(int x, int y, bool detailsExpanded) {
+inline Action hitTest(int x, int y, bool detailsExpanded) {
   for (const auto& target : targets()) {
     if (detailsExpanded &&
         (target.action == Action::Wifi ||
