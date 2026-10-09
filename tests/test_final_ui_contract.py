@@ -28,9 +28,11 @@ for needle, label in [
     ('"PROBAR CLOUD"', "cloud action"),
     ('"ENVIAR 3C"', "3C action"),
     ("drawExpandedPanel()", "expandable detail renderer"),
+    ('"INICIO"', "editor return-to-main control"),
+    ("drawEditorTextField()", "partial editor redraw"),
     ("checkCloudStack()", "cloud plus Sheets verifier"),
     ('endpoint("/api/sheet/verify")', "read-only Sheets verification"),
-    ('kFirmwareVersion[] = "2.1.0-final-ui"', "final firmware identity"),
+    ('kFirmwareVersion[] = "2.2.0-editor-ui"', "final firmware identity"),
 ]:
     require(needle, label)
 
