@@ -56,7 +56,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.3.1-touch-gpio";
+constexpr char kFirmwareVersion[] = "2.4.0-touch-router";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -74,9 +74,7 @@ bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
 
-bool touchDown = false;
-unsigned long lastAcceptedTouchMs = 0;
-constexpr unsigned long kTouchDebounceMs = 140;
+touch_input::TapTracker touchTracker;
 constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
 virtual_keyboard::KeyboardMode keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
@@ -1054,16 +1052,12 @@ void connectWifi() {
 void handleTouch() {
   const TouchSample sample = readTouch();
   if (!sample.ready) return;
-  if (sample.touched && !touchDown) {
-    const unsigned long now = millis();
-    if (now - lastAcceptedTouchMs < kTouchDebounceMs) {
-      touchDown = true;
-      return;
-    }
-    lastAcceptedTouchMs = now;
+  touch_input::Point tap{};
+  if (!touchTracker.update(sample.touched, tap.x, tap.y, &tap)) return;
+  {
     if (commandEditorOpen) {
       virtual_keyboard::Key key{};
-      if (virtual_keyboard::hitTest(keyboardMode, sample.x, sample.y, &key)) {
+      if (virtual_keyboard::hitTest(keyboardMode, tap.x, tap.y, &key)) {
         using virtual_keyboard::KeyKind;
         switch (key.definition.kind) {
           case KeyKind::Character:
@@ -1083,7 +1077,6 @@ void handleTouch() {
             commandEditorOpen = false;
             drawPanel();
             send3CCommand(app_config::commandBuffer);
-            touchDown = sample.touched;
             return;
           case KeyKind::ToggleAlphaNumeric:
             keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
@@ -1093,7 +1086,7 @@ void handleTouch() {
             break;
         }
       } else {
-        const auto action = editor_ui::ToolbarComponent::hitTest(sample.x, sample.y);
+        const auto action = editor_ui::ToolbarComponent::hitTest(tap.x, tap.y);
         switch (action) {
           case editor_ui::ToolbarAction::Home:
             commandEditorOpen = false;
@@ -1117,7 +1110,7 @@ void handleTouch() {
             drawEditorTextField();
             break;
           case editor_ui::ToolbarAction::None:
-            if (editor_ui::EditorLayout::inTextField(sample.x, sample.y)) {
+            if (editor_ui::EditorLayout::inTextField(tap.x, tap.y)) {
               String text(commandBuffer.c_str());
               if (text.length()) {
                 display->setTextSize(2);
@@ -1128,7 +1121,7 @@ void handleTouch() {
                   int16_t x1 = 0, y1 = 0; uint16_t w = 0, h = 0;
                   display->getTextBounds(text.substring(0, i), 0, 0, &x1, &y1, &w, &h);
                   const uint16_t distance = static_cast<uint16_t>(
-                    abs(static_cast<int>(field.left + 10 + w) - static_cast<int>(sample.x)));
+                    abs(static_cast<int>(field.left + 10 + w) - static_cast<int>(tap.x)));
                   if (distance < bestDistance) { bestDistance = distance; best = i; }
                 }
                 commandBuffer.setCursor(best);
@@ -1145,7 +1138,7 @@ void handleTouch() {
       };
 
       const auto action = home_ui::hitTest(
-          sample.x, sample.y, homePanel != HomePanel::None);
+          tap.x, tap.y, homePanel != HomePanel::None);
 
       switch (action) {
         case home_ui::Action::TestCloud:
@@ -1184,8 +1177,8 @@ void handleTouch() {
           break;
         case home_ui::Action::None:
           if (homePanel != HomePanel::None &&
-              sample.x >= 14 && sample.x < 466 &&
-              sample.y >= 268 && sample.y < 416) {
+              tap.x >= 14 && tap.x < 466 &&
+              tap.y >= 268 && tap.y < 416) {
             homePanel = HomePanel::None;
             drawPanel();
           }
@@ -1193,7 +1186,6 @@ void handleTouch() {
       }
     }
   }
-  touchDown = sample.touched;
 }
 }  // namespace
 
@@ -1208,10 +1200,10 @@ void setup() {
   Serial.printf("GPIO MAP: BL=%d LCD_CS=%d LCD_CLK=%d LCD_MOSI=%d TOUCH_SDA=%d TOUCH_SCL=%d DE=%d VSYNC=%d HSYNC=%d PCLK=%d\n",
                 pins::backlight, pins::lcdCs, pins::lcdClock, pins::lcdMosi,
                 pins::touchSda, pins::touchScl, pins::de, pins::vsync, pins::hsync, pins::pclk);
-  Wire.begin(pins::touchSda, pins::touchScl, 100000);
+  Wire.begin(pins::touchSda, pins::touchScl, 400000);
   Wire.beginTransmission(kTouchAddress);
   const uint8_t touchProbe = Wire.endTransmission();
-  Serial.printf("GT911 I2C probe addr=0x%02X result=%u\n", kTouchAddress, touchProbe);
+  Serial.printf("GT911 I2C probe addr=0x%02X result=%u bus=400kHz\n", kTouchAddress, touchProbe);
   audioReady = initializeAudio();
   commandBuffer.set(app_config::commandBuffer.c_str());
   updatePanel(PanelState::Booting, "Hardware inicializado; Databricks Cloud");
