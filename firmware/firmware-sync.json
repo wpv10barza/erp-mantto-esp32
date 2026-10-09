@@ -23,8 +23,8 @@
     "status_path": "/api/device/v1/commands/{command_id}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "bbf7d4df14c3de264a50a3577813f81d5f4653b3",
-    "src/main.cpp": "bbf7d4df14c3de264a50a3577813f81d5f4653b3",
+    "platformio/src/panel_4848s040/main.cpp": "d8d21e3050e6cf9dcdda7dd7b14e00fbb05481b4",
+    "src/main.cpp": "d8d21e3050e6cf9dcdda7dd7b14e00fbb05481b4",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -42,9 +42,9 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.4.0-touch-router",
+    "version": "2.5.0-white-async",
     "role": "final_principal_interface_with_release_confirmed_touch_and_modular_editor",
-    "style": "component-isolated editor inspired by web grid/flex separation",
+    "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
       "toolbar",
@@ -68,6 +68,9 @@
       "toolbar_hitbox_inset_px": 3,
       "exact_visual_hitboxes": true
     },
-    "gpio_audit": "complete C++11-compatible compile-time unique ownership map across display, touch and audio"
+    "gpio_audit": "complete C++11-compatible compile-time unique ownership map across display, touch and audio",
+    "non_blocking_network": true,
+    "network_worker": "FreeRTOS task: OAuth, Databricks API, Google Sheets verify, 3C POST/status polling",
+    "touch_idle_release_ms": 80
   }
 }

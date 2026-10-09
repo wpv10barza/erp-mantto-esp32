@@ -8,6 +8,10 @@
 #include <Wire.h>
 #include <driver/i2s.h>
 #include <esp_system.h>
+#include <atomic>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
 #include "app_config.h"
 #include "command_buffer.h"
@@ -56,7 +60,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.4.0-touch-router";
+constexpr char kFirmwareVersion[] = "2.5.0-white-async";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -68,11 +72,30 @@ unsigned long databricksTokenLifetimeMs = 0;
 unsigned long lastWifiAttempt = 0;
 unsigned long lastHealthCheck = 0;
 unsigned long lastCommandPoll = 0;
-bool backendAvailable = false;
+std::atomic<bool> backendAvailable{false};
 bool displayReady = false;
 bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
+
+enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C };
+struct NetworkRequest {
+  NetworkAction action;
+  char command[241];
+};
+struct UiNotification {
+  PanelState state;
+  char detail[160];
+  bool sound;
+};
+QueueHandle_t networkQueue = nullptr;
+QueueHandle_t uiQueue = nullptr;
+TaskHandle_t networkTaskHandle = nullptr;
+std::atomic<bool> pendingCommand{false};
+unsigned long lastTouchActivityMs = 0;
+unsigned long lastHandledTapMs = 0;
+constexpr unsigned long kMissingReleaseMs = 80;
+constexpr unsigned long kTouchDebounceMs = 200;
 
 touch_input::TapTracker touchTracker;
 constexpr size_t kCommandCapacity = 240;
@@ -137,34 +160,33 @@ void drawCentered(const String& text, int y, uint8_t size, uint16_t color) {
 void drawButton(int x, int y, int width, int height, const char* label, uint16_t fill) {
   if (!displayReady) return;
   display->fillRoundRect(x, y, width, height, 16, fill);
-  display->drawRoundRect(x, y, width, height, 16, color565(185, 210, 230));
+  display->drawRoundRect(x, y, width, height, 16, BLACK);
   display->setTextSize(2);
   int16_t x1 = 0;
   int16_t y1 = 0;
   uint16_t textWidth = 0;
   uint16_t textHeight = 0;
   display->getTextBounds(label, 0, 0, &x1, &y1, &textWidth, &textHeight);
-  display->setTextColor(WHITE);
+  display->setTextColor(BLACK);
   display->setCursor(x + (width - textWidth) / 2, y + (height - textHeight) / 2);
   display->print(label);
 }
 
 void drawEditorFrame() {
   if (!displayReady) return;
-  display->fillScreen(color565(60, 8, 22));
-  display->fillRect(0, 0, kScreenWidth, 42, color565(92, 19, 38));
-  drawCentered("EDITAR ORDEN 3C", 11, 2, color565(242, 232, 238));
+  display->fillScreen(WHITE);
+  display->fillRect(0, 0, kScreenWidth, 42, WHITE);
+  drawCentered("EDITAR ORDEN 3C", 11, 2, BLACK);
 }
 
 void drawEditorTextField() {
   if (!displayReady) return;
   const auto field = editor_ui::EditorLayout::textField();
   display->fillRoundRect(field.left, field.top, field.width(), field.height(), 10,
-                         color565(93, 24, 42));
-  display->drawRoundRect(field.left, field.top, field.width(), field.height(), 10,
-                         color565(220, 151, 165));
+                         WHITE);
+  display->drawRoundRect(field.left, field.top, field.width(), field.height(), 10, BLACK);
   display->setTextSize(2);
-  display->setTextColor(WHITE);
+  display->setTextColor(BLACK);
 
   uint16_t prefixWidths[kCommandCapacity + 1] = {};
   String full(commandBuffer.c_str());
@@ -179,7 +201,7 @@ void drawEditorTextField() {
   display->setCursor(field.left + 10, field.top + 34);
   display->print(visible);
   const int cursorX = field.left + 10 + window.cursorX;
-  display->drawFastVLine(cursorX, field.top + 24, 28, color565(80, 240, 170));
+  display->drawFastVLine(cursorX, field.top + 24, 28, BLACK);
 }
 
 void drawEditorToolbar() {
@@ -187,14 +209,13 @@ void drawEditorToolbar() {
   for (const auto& button : editor_ui::ToolbarComponent::buttons()) {
     const bool home = button.action == editor_ui::ToolbarAction::Home;
     const bool destructive = button.action == editor_ui::ToolbarAction::Clear;
-    const uint16_t fill = home ? color565(40, 78, 118)
-        : destructive ? color565(116, 46, 42) : color565(72, 34, 60);
+    const uint16_t fill = home ? WHITE
+        : destructive ? WHITE : WHITE;
     display->fillRoundRect(button.rect.left, button.rect.top,
                            button.rect.width(), button.rect.height(), 9, fill);
     display->drawRoundRect(button.rect.left, button.rect.top,
-                           button.rect.width(), button.rect.height(), 9,
-                           color565(205, 160, 176));
-    display->setTextColor(WHITE);
+                           button.rect.width(), button.rect.height(), 9, BLACK);
+    display->setTextColor(BLACK);
     display->setTextSize(strlen(button.label) > 3 ? 1 : 2);
     int16_t x1 = 0, y1 = 0; uint16_t w = 0, h = 0;
     display->getTextBounds(button.label, 0, 0, &x1, &y1, &w, &h);
@@ -208,29 +229,28 @@ void drawEditorKeyboard() {
   if (!displayReady) return;
   const int top = virtual_keyboard::KeyboardLayout::top(keyboardMode);
   const int bottom = virtual_keyboard::KeyboardLayout::bottom(keyboardMode);
-  display->fillRect(0, 216, kScreenWidth, kScreenHeight - 216, color565(60, 8, 22));
-  display->fillRoundRect(5, top - 6, 470, bottom - top + 12, 12, color565(47, 13, 28));
+  display->fillRect(0, 216, kScreenWidth, kScreenHeight - 216, WHITE);
+  display->fillRoundRect(5, top - 6, 470, bottom - top + 12, 12, WHITE);
 
   virtual_keyboard::Key keys[50]{};
   const size_t count = virtual_keyboard::buildKeys(keyboardMode, keys, 50);
   for (size_t i = 0; i < count; ++i) {
     const auto& key = keys[i];
-    uint16_t fill = color565(74, 31, 54);
-    if (key.definition.kind == virtual_keyboard::KeyKind::Enter) fill = color565(60, 87, 69);
-    if (key.definition.kind == virtual_keyboard::KeyKind::ToggleAlphaNumeric) fill = color565(70, 51, 94);
-    if (key.definition.kind == virtual_keyboard::KeyKind::Space) fill = color565(67, 35, 58);
+    uint16_t fill = WHITE;
+    if (key.definition.kind == virtual_keyboard::KeyKind::Enter) fill = WHITE;
+    if (key.definition.kind == virtual_keyboard::KeyKind::ToggleAlphaNumeric) fill = WHITE;
+    if (key.definition.kind == virtual_keyboard::KeyKind::Space) fill = WHITE;
 
     display->fillRoundRect(key.rect.left, key.rect.top,
                            key.rect.right - key.rect.left,
                            key.rect.bottom - key.rect.top, 7, fill);
     display->drawRoundRect(key.rect.left, key.rect.top,
                            key.rect.right - key.rect.left,
-                           key.rect.bottom - key.rect.top, 7,
-                           color565(176, 118, 145));
+                           key.rect.bottom - key.rect.top, 7, BLACK);
     display->setTextSize(strlen(key.definition.label) > 2 ? 1 : 2);
     int16_t x1 = 0, y1 = 0; uint16_t w = 0, h = 0;
     display->getTextBounds(key.definition.label, 0, 0, &x1, &y1, &w, &h);
-    display->setTextColor(WHITE);
+    display->setTextColor(BLACK);
     display->setCursor(key.rect.left + ((key.rect.right - key.rect.left) - w) / 2,
                        key.rect.top + ((key.rect.bottom - key.rect.top) - h) / 2);
     display->print(key.definition.label);
@@ -247,7 +267,7 @@ void drawEditor() {
 
 void drawChevron(int x, int y, bool down) {
   if (!displayReady) return;
-  const uint16_t c = color565(235, 240, 245);
+  const uint16_t c = BLACK;
   if (down) {
     display->drawLine(x - 6, y - 3, x, y + 3, c);
     display->drawLine(x, y + 3, x + 6, y - 3, c);
@@ -259,15 +279,7 @@ void drawChevron(int x, int y, bool down) {
 
 void drawHomeBackground() {
   if (!displayReady) return;
-  // Low-cost warm gradient for the 480x480 RGB panel.
-  constexpr int bands = 12;
-  for (int i = 0; i < bands; ++i) {
-    const uint8_t red = static_cast<uint8_t>(72 + i * 10);
-    const uint8_t green = static_cast<uint8_t>(8 + i * 2);
-    const uint8_t blue = static_cast<uint8_t>(28 + (bands - i) * 2);
-    display->fillRect(0, i * 40, kScreenWidth, 40, color565(red, green, blue));
-  }
-  display->fillRoundRect(300, -55, 245, 145, 70, color565(214, 50, 18));
+  display->fillScreen(WHITE);
 }
 
 void drawHomeRow(
@@ -278,13 +290,13 @@ void drawHomeRow(
     bool expanded = false,
     int height = 45) {
   if (!displayReady) return;
-  const uint16_t card = color565(84, 20, 38);
-  const uint16_t border = expanded ? color565(255, 176, 120) : color565(158, 74, 92);
+  const uint16_t card = WHITE;
+  const uint16_t border = BLACK;
   display->fillRoundRect(14, y, 452, height, 12, card);
   display->drawRoundRect(14, y, 452, height, 12, border);
 
-  display->fillRoundRect(24, y + 7, 42, height - 14, 9, color565(132, 39, 63));
-  display->setTextColor(WHITE);
+  display->fillRoundRect(24, y + 7, 42, height - 14, 9, WHITE);
+  display->setTextColor(BLACK);
   display->setTextSize(1);
   display->setCursor(35, y + 18);
   display->print(tag);
@@ -295,7 +307,7 @@ void drawHomeRow(
 
   if (subtitle && strlen(subtitle)) {
     display->setTextSize(1);
-    display->setTextColor(color565(226, 210, 218));
+    display->setTextColor(BLACK);
     display->setCursor(78, y + 28);
     display->print(subtitle);
   }
@@ -320,16 +332,16 @@ const char* homePanelTitle(HomePanel panel) {
 
 void drawExpandedPanel() {
   if (!displayReady || homePanel == HomePanel::None) return;
-  display->fillRoundRect(14, 268, 452, 148, 14, color565(48, 14, 30));
-  display->drawRoundRect(14, 268, 452, 148, 14, color565(241, 132, 88));
-  display->setTextColor(WHITE);
+  display->fillRoundRect(14, 268, 452, 148, 14, WHITE);
+  display->drawRoundRect(14, 268, 452, 148, 14, BLACK);
+  display->setTextColor(BLACK);
   display->setTextSize(2);
   display->setCursor(28, 282);
   display->print(homePanelTitle(homePanel));
   drawChevron(446, 292, true);
 
   display->setTextSize(1);
-  display->setTextColor(color565(228, 220, 224));
+  display->setTextColor(BLACK);
 
   if (homePanel == HomePanel::Backend) {
     display->setCursor(28, 316);
@@ -414,21 +426,16 @@ void drawPanel() {
 
   drawHomeBackground();
 
-  display->setTextColor(WHITE);
+  display->setTextColor(BLACK);
   display->setTextSize(3);
   display->setCursor(18, 14);
   display->print("Interfaz Portatil");
   display->setTextSize(1);
-  display->setTextColor(color565(238, 220, 226));
+  display->setTextColor(BLACK);
   display->setCursor(20, 44);
   display->print("Opciones del sistema");
 
-  const uint16_t statusColor =
-      panelState == PanelState::Ready || panelState == PanelState::Applied
-          ? color565(76, 220, 130)
-          : (panelState == PanelState::Error || panelState == PanelState::Rejected
-              ? color565(255, 112, 96)
-              : color565(255, 199, 96));
+  const uint16_t statusColor = BLACK;
   display->fillCircle(438, 48, 5, statusColor);
 
   drawHomeRow(62, "DB", "Conexion al backend",
@@ -449,8 +456,8 @@ void drawPanel() {
     drawExpandedPanel();
   }
 
-  drawButton(14, 426, 220, 42, "PROBAR CLOUD", color565(111, 37, 191));
-  drawButton(246, 426, 220, 42, "ENVIAR 3C", color565(207, 89, 18));
+  drawButton(14, 426, 220, 42, "PROBAR CLOUD", WHITE);
+  drawButton(246, 426, 220, 42, "ENVIAR 3C", WHITE);
 }
 
 void playTone(uint16_t frequency, uint16_t durationMs) {
@@ -477,10 +484,21 @@ void playTone(uint16_t frequency, uint16_t durationMs) {
 }
 
 void updatePanel(PanelState state, const String& detail, bool sound = false) {
+  // The FreeRTOS network task must NEVER touch the RGB framebuffer.
+  if (networkTaskHandle && xTaskGetCurrentTaskHandle() == networkTaskHandle) {
+    if (uiQueue) {
+      UiNotification notice{};
+      notice.state = state;
+      detail.toCharArray(notice.detail, sizeof(notice.detail));
+      notice.sound = sound;
+      xQueueOverwrite(uiQueue, &notice);
+    }
+    return;
+  }
   const bool changed = state != panelState;
   panelState = state;
   panelDetail = detail;
-  drawPanel();
+  if (!commandEditorOpen) drawPanel();
   Serial.printf("PANEL STATE -> %s | %s\n", stateLabel(panelState), panelDetail.c_str());
   if (!sound || !changed) return;
   if (state == PanelState::Applied || state == PanelState::Ready) playTone(880, 70);
@@ -496,7 +514,7 @@ String normalizedStatus(String status) {
 
 void setTransportError(const char* phase, int code, const String& detail, bool clearCommand) {
   backendAvailable = false;
-  if (clearCommand) lastCommandId = "";
+  if (clearCommand) { lastCommandId = ""; pendingCommand = false; }
   const String message = String(phase) + " HTTP " + code;
   updatePanel(PanelState::Error, message, true);
   Serial.printf("[ERROR] transport phase=%s code=%d detail=%s\n", phase, code, detail.c_str());
@@ -505,6 +523,7 @@ void setTransportError(const char* phase, int code, const String& detail, bool c
 void setProtocolError(const char* phase, const String& detail) {
   backendAvailable = false;
   lastCommandId = "";
+  pendingCommand = false;
   const String message = String(phase) + ": " + (detail.length() ? detail : "respuesta invalida");
   updatePanel(PanelState::Error, message, true);
   Serial.printf("[ERROR] protocol phase=%s detail=%s\n", phase, detail.c_str());
@@ -636,8 +655,10 @@ TouchSample readTouch() {
         sample.x = static_cast<uint16_t>(mapped.x);
         sample.y = static_cast<uint16_t>(mapped.y);
         sample.touched = true;
-        Serial.printf("TOUCH raw=(%u,%u) mapped=(%u,%u)\n",
-                      rawX, rawY, sample.x, sample.y);
+        if (!touchTracker.active()) {
+          Serial.printf("TOUCH raw=(%u,%u) mapped=(%u,%u)\n",
+                        rawX, rawY, sample.x, sample.y);
+        }
       }
     }
   }
@@ -933,6 +954,7 @@ int send3CCommand(const String& rawCommand) {
       return code;
     }
     lastCommandPoll = millis();
+    pendingCommand = true;
     updatePanel(PanelState::Pending, "CONFIRMACIÓN REQUERIDA EN WEB", true);
   } else {
     setTransportError("POST", code, lastBackendMessage, true);
@@ -972,9 +994,11 @@ void pollCommandStatus() {
   if (status == "applied") {
     updatePanel(PanelState::Applied, result.length() ? result : "Confirmado en backend 3C", true);
     lastCommandId = "";
+    pendingCommand = false;
   } else if (status == "rejected") {
     updatePanel(PanelState::Rejected, result.length() ? result : "Rechazado en backend 3C", true);
     lastCommandId = "";
+    pendingCommand = false;
   } else if (status == "error" || status == "failed" || status == "fallido") {
     setProtocolError("POLL", result.length() ? result : "Error reportado por backend 3C");
   } else if (status == "pending_confirmation" || status == "pending" || status == "pendiente") {
@@ -982,6 +1006,81 @@ void pollCommandStatus() {
     updatePanel(PanelState::Pending, "CONFIRMACIÓN REQUERIDA EN WEB");
   } else {
     setProtocolError("POLL", status.length() ? String("estado desconocido '") + status + "'" : "falta status");
+  }
+}
+
+
+bool queueNetworkRequest(NetworkAction action, const String& command = String()) {
+  if (!networkQueue) {
+    updatePanel(PanelState::Error, "Red no inicializada");
+    return false;
+  }
+  NetworkRequest request{};
+  request.action = action;
+  if (action == NetworkAction::Send3C) {
+    if (!command.length() || command.length() >= sizeof(request.command)) {
+      updatePanel(PanelState::Error, "Orden 3C vacia o muy larga");
+      return false;
+    }
+    command.toCharArray(request.command, sizeof(request.command));
+  }
+  if (xQueueSend(networkQueue, &request, 0) != pdTRUE) {
+    updatePanel(PanelState::Error, "Solicitudes en espera; intente nuevamente");
+    return false;
+  }
+  updatePanel(PanelState::Busy,
+              action == NetworkAction::Send3C ? "Orden 3C en cola" : "Consulta cloud en cola");
+  return true;
+}
+
+void processNetworkUiUpdates() {
+  if (!uiQueue) return;
+  UiNotification notice{};
+  if (xQueueReceive(uiQueue, &notice, 0) == pdTRUE) {
+    updatePanel(notice.state, String(notice.detail), notice.sound);
+  }
+}
+
+void networkWorker(void* parameter) {
+  (void)parameter;
+  // Owns OAuth, Databricks HTTPS, Sheets verification and 3C status polling.
+  bool sawWifi = false;
+  for (;;) {
+    NetworkRequest request{};
+    if (xQueueReceive(networkQueue, &request, pdMS_TO_TICKS(40)) == pdTRUE) {
+      switch (request.action) {
+        case NetworkAction::Health:
+          checkBackendHealth();
+          break;
+        case NetworkAction::CloudAndSheets:
+          checkCloudStack();
+          break;
+        case NetworkAction::Send3C:
+          send3CCommand(String(request.command));
+          break;
+      }
+      lastHealthCheck = millis();
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+      sawWifi = false;
+      vTaskDelay(pdMS_TO_TICKS(50));
+      continue;
+    }
+    if (!sawWifi) {
+      sawWifi = true;
+      lastHealthCheck = millis();
+      checkBackendHealth();
+      continue;
+    }
+    if (lastCommandId.length() &&
+        millis() - lastCommandPoll >= app_config::commandPollMs) {
+      lastCommandPoll = millis();
+      pollCommandStatus();
+    } else if (!lastCommandId.length() &&
+               millis() - lastHealthCheck >= app_config::healthCheckMs) {
+      lastHealthCheck = millis();
+      checkBackendHealth();
+    }
   }
 }
 
@@ -998,17 +1097,20 @@ void configureWebServer() {
     const String body = String("{\"ok\":true,\"board\":\"ESP32-4848S040\",\"wifi\":") +
       (WiFi.status() == WL_CONNECTED ? "true" : "false") +
       ",\"backend\":" + (backendAvailable ? "true" : "false") +
-      ",\"pending\":" + (lastCommandId.length() ? "true" : "false") +
+      ",\"pending\":" + (pendingCommand ? "true" : "false") +
       ",\"transport\":\"internet\"}";
     web.send(200, "application/json", body);
   });
   web.on("/api/backend-health", HTTP_POST, [] {
-    web.send(checkBackendHealth() ? 200 : 502, "application/json", lastBackendMessage);
+        const bool queued = queueNetworkRequest(NetworkAction::Health);
+    web.send(queued ? 202 : 503, "application/json",
+             queued ? "{\"status\":\"queued\"}" : "{\"error\":\"queue_full\"}");
   });
   web.on("/api/3c", HTTP_POST, [] {
     app_config::commandBuffer = web.arg("text");
-    const int code = send3CCommand(app_config::commandBuffer);
-    web.send(code == 200 || code == 202 ? 202 : 502, "application/json", lastBackendMessage);
+    const bool queued = queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);
+    web.send(queued ? 202 : 503, "application/json",
+             queued ? "{\"status\":\"queued\"}" : "{\"error\":\"queue_full\"}");
   });
   web.onNotFound([] { web.send(404, "application/json", "{\"error\":\"not found\"}"); });
   web.begin();
@@ -1051,9 +1153,17 @@ void connectWifi() {
 
 void handleTouch() {
   const TouchSample sample = readTouch();
-  if (!sample.ready) return;
   touch_input::Point tap{};
-  if (!touchTracker.update(sample.touched, sample.x, sample.y, &tap)) return;
+  if (sample.ready) {
+    if (sample.touched) lastTouchActivityMs = millis();
+    if (!touchTracker.update(sample.touched, sample.x, sample.y, &tap)) return;
+  } else {
+    // GT911 may omit the release frame; synthesize after its stream goes idle.
+    if (!touchTracker.active() || millis() - lastTouchActivityMs < kMissingReleaseMs) return;
+    if (!touchTracker.update(false, 0, 0, &tap)) return;
+  }
+  if (millis() - lastHandledTapMs < kTouchDebounceMs) return;
+  lastHandledTapMs = millis();
   {
     if (commandEditorOpen) {
       virtual_keyboard::Key key{};
@@ -1076,7 +1186,7 @@ void handleTouch() {
             app_config::commandBuffer = commandBuffer.c_str();
             commandEditorOpen = false;
             drawPanel();
-            send3CCommand(app_config::commandBuffer);
+            queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);
             return;
           case KeyKind::ToggleAlphaNumeric:
             keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
@@ -1143,7 +1253,7 @@ void handleTouch() {
       switch (action) {
         case home_ui::Action::TestCloud:
           homePanel = HomePanel::None;
-          checkCloudStack();
+          queueNetworkRequest(NetworkAction::CloudAndSheets);
           break;
         case home_ui::Action::Send3C:
           homePanel = HomePanel::None;
@@ -1206,6 +1316,14 @@ void setup() {
   Serial.printf("GT911 I2C probe addr=0x%02X result=%u bus=400kHz\n", kTouchAddress, touchProbe);
   audioReady = initializeAudio();
   commandBuffer.set(app_config::commandBuffer.c_str());
+  networkQueue = xQueueCreate(4, sizeof(NetworkRequest));
+  uiQueue = xQueueCreate(1, sizeof(UiNotification));
+  if (!networkQueue || !uiQueue ||
+      xTaskCreatePinnedToCore(networkWorker, "3c_network", 16384, nullptr, 1,
+                              &networkTaskHandle, 0) != pdPASS) {
+    Serial.println("[ERROR] no se pudo iniciar task HTTPS");
+    updatePanel(PanelState::Error, "Task HTTPS no disponible");
+  }
   updatePanel(PanelState::Booting, "Hardware inicializado; Databricks Cloud");
   playTone(520, 60);
   connectWifi();
@@ -1213,30 +1331,25 @@ void setup() {
 }
 
 void loop() {
+  processNetworkUiUpdates();
   web.handleClient();
   handleTouch();
+  processNetworkUiUpdates();
 
+  // Touch and display must not await OAuth, DNS, Databricks or Google Sheets.
   if (WiFi.status() == WL_CONNECTED) {
     if (!wifiAnnounced) {
       wifiAnnounced = true;
       Serial.printf("Red con Internet lista; Wi-Fi RSSI=%d dBm\n", WiFi.RSSI());
-      checkBackendHealth();
-    }
-    if (lastCommandId.length() && millis() - lastCommandPoll >= app_config::commandPollMs) {
-      lastCommandPoll = millis();
-      pollCommandStatus();
-    }
-    if (!lastCommandId.length() && millis() - lastHealthCheck >= app_config::healthCheckMs) {
-      lastHealthCheck = millis();
-      checkBackendHealth();
     }
   } else {
     wifiAnnounced = false;
-    if (strlen(app_config::wifiSsid) && millis() - lastWifiAttempt >= app_config::wifiRetryMs) {
+    if (strlen(app_config::wifiSsid) &&
+        millis() - lastWifiAttempt >= app_config::wifiRetryMs) {
       lastWifiAttempt = millis();
       const wl_status_t status = WiFi.status();
       Serial.printf("Red sin acceso: status=%d (%s); reintentando enlace\n",
-        static_cast<int>(status), wifiStatusLabel(status));
+                    static_cast<int>(status), wifiStatusLabel(status));
       WiFi.reconnect();
       updatePanel(PanelState::Busy, "Reconectando Internet");
     }
