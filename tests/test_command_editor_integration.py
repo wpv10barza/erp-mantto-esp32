@@ -44,7 +44,7 @@ for needle, label in [
     ('commandBuffer.moveRight()', "cursor right"),
     ('commandBuffer.deleteForward()', "delete forward"),
     ('commandBuffer.clear()', "clear"),
-    ('send3CCommand(app_config::commandBuffer)', "send edited command"),
+    ('queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer)', "send edited command"),
 ]:
     require(MAIN, needle, label)
 
