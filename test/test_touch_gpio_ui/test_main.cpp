@@ -14,17 +14,26 @@ void test_touch_calibration_corners_and_center() {
   const auto a = touch_input::mapRaw(0, 0);
   TEST_ASSERT_TRUE(a.valid);
   TEST_ASSERT_EQUAL_INT(0, a.x);
-  TEST_ASSERT_EQUAL_INT(0, a.y);
+  TEST_ASSERT_EQUAL_INT(479, a.y);
 
   const auto b = touch_input::mapRaw(480, 480);
   TEST_ASSERT_TRUE(b.valid);
   TEST_ASSERT_EQUAL_INT(479, b.x);
-  TEST_ASSERT_EQUAL_INT(479, b.y);
+  TEST_ASSERT_EQUAL_INT(0, b.y);
 
   const auto c = touch_input::mapRaw(240, 240);
   TEST_ASSERT_TRUE(c.valid);
   TEST_ASSERT_INT_WITHIN(1, 240, c.x);
-  TEST_ASSERT_INT_WITHIN(1, 240, c.y);
+  TEST_ASSERT_INT_WITHIN(1, 239, c.y);
+
+  // Real panel trace: raw=(34,316) had been misrouted to Nube Databricks.
+  // The Arduino-GFX rotation=1 maps this physical bottom-right touch to ENVIAR 3C.
+  const auto send = touch_input::mapRaw(34, 316);
+  TEST_ASSERT_TRUE(send.valid);
+  TEST_ASSERT_INT_WITHIN(1, 315, send.x);
+  TEST_ASSERT_INT_WITHIN(1, 445, send.y);
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::Send3C),
+                        static_cast<int>(home_ui::hitTest(send.x, send.y, false)));
 }
 
 void test_home_menu_gaps_do_not_trigger_adjacent_rows() {

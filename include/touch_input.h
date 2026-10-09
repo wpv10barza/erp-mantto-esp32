@@ -8,14 +8,16 @@ constexpr int kScreenWidth = 480;
 constexpr int kScreenHeight = 480;
 
 // The repository's ESPHome reference for this exact panel uses GT911
-// calibration 0..480 with mirror_x=false and mirror_y=false.
+// calibration 0..480; Arduino-GFX rotation=1 requires swap XY + mirror Y.
+// Observed GT911 raw=(34,316) must hit ENVIAR 3C at mapped=(315,445),
+// not Nube Databricks at (34,315).
 constexpr int kRawXMin = 0;
 constexpr int kRawXMax = 480;
 constexpr int kRawYMin = 0;
 constexpr int kRawYMax = 480;
-constexpr bool kSwapXY = false;
+constexpr bool kSwapXY = true;
 constexpr bool kMirrorX = false;
-constexpr bool kMirrorY = false;
+constexpr bool kMirrorY = true;
 
 struct Point {
   int16_t x;

@@ -48,9 +48,9 @@ for needle in [
     "kRawXMax = 480",
     "kRawYMin = 0",
     "kRawYMax = 480",
-    "kSwapXY = false",
+    "kSwapXY = true",
     "kMirrorX = false",
-    "kMirrorY = false",
+    "kMirrorY = true",
     "kTapSlopPx = 18",
     "class TapTracker",
 ]:
