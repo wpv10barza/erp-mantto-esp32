@@ -56,7 +56,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.3.0-touch-gpio";
+constexpr char kFirmwareVersion[] = "2.3.1-touch-gpio";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";

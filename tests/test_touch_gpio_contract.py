@@ -23,7 +23,7 @@ required_main = [
     "kTouchDebounceMs = 140",
     '"GT911 I2C probe addr=0x%02X result=%u',
     '"GPIO MAP: BL=%d LCD_CS=%d',
-    'kFirmwareVersion[] = "2.3.0-touch-gpio"',
+    'kFirmwareVersion[] = "2.3.1-touch-gpio"',
 ]
 for needle in required_main:
     if needle not in MAIN:
@@ -37,6 +37,8 @@ for needle in [
     "constexpr int lcdCs = 39;",
     "constexpr int backlight = 38;",
     "static_assert(unique(rgb)",
+    "constexpr std::array<int, 29> allUsed",
+    "static_assert(unique(allUsed)",
 ]:
     if needle not in GPIO:
         raise AssertionError(f"missing GPIO contract: {needle}")
