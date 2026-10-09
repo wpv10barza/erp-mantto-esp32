@@ -37,7 +37,7 @@ void assertHorizontalBoundaryIsExclusive(KeyboardMode mode) {
   TEST_ASSERT_EQUAL_INT(first.rect.top, second.rect.top);
   TEST_ASSERT_TRUE(first.rect.right < second.rect.left);
 
-  const int y = first.rect.top + 1;
+  const int y = first.rect.top + virtual_keyboard::kHitInsetPx;
   TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, first.rect.left, y));
   TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, first.rect.right - 1, y));
   TEST_ASSERT_EQUAL_INT(0, virtual_keyboard::hitTestIndex(
@@ -59,7 +59,7 @@ void assertVerticalBoundaryIsExclusive(KeyboardMode mode) {
   TEST_ASSERT_EQUAL_INT(row0.rect.left, row1.rect.left);
   TEST_ASSERT_TRUE(row0.rect.bottom < row1.rect.top);
 
-  const int x = row0.rect.left + 1;
+  const int x = row0.rect.left + virtual_keyboard::kHitInsetPx;
   TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, x, row0.rect.bottom - 1));
   TEST_ASSERT_EQUAL_INT(0, virtual_keyboard::hitTestIndex(
       mode, x, row0.rect.bottom - 1 - virtual_keyboard::kHitInsetPx));
