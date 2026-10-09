@@ -13,19 +13,13 @@
 #include "command_buffer.h"
 #include "command_text_viewport.h"
 #include "editor_components.h"
+#include "touch_input.h"
+#include "panel_gpio.h"
+#include "home_menu.h"
 #include "virtual_keyboard.h"
 
-namespace pins {
-constexpr int backlight = 38;
-constexpr int lcdCs = 39;
-constexpr int lcdClock = 48;
-constexpr int lcdMosi = 47;
-constexpr int touchSda = 19;
-constexpr int touchScl = 45;
-constexpr int audioBclk = 1;
-constexpr int audioLrclk = 2;
-constexpr int audioData = 40;
-}  // namespace pins
+namespace pins = panel_gpio;
+
 
 namespace {
 constexpr uint8_t kTouchAddress = 0x5D;
@@ -62,7 +56,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.2.0-editor-ui";
+constexpr char kFirmwareVersion[] = "2.3.0-touch-gpio";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -81,6 +75,8 @@ bool mdnsReady = false;
 bool wifiAnnounced = false;
 
 bool touchDown = false;
+unsigned long lastAcceptedTouchMs = 0;
+constexpr unsigned long kTouchDebounceMs = 140;
 constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
 virtual_keyboard::KeyboardMode keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
@@ -572,10 +568,10 @@ bool initializeDisplay() {
     GFX_NOT_DEFINED, pins::lcdCs, pins::lcdClock, pins::lcdMosi, GFX_NOT_DEFINED);
   Serial.println("DISPLAY: creating RGB panel 480x480");
   auto* rgbPanel = new Arduino_ESP32RGBPanel(
-    18, 17, 16, 21,
-    11, 12, 13, 14, 0,
-    8, 20, 3, 46, 9, 10,
-    4, 5, 6, 7, 15,
+    pins::de, pins::vsync, pins::hsync, pins::pclk,
+    pins::red[0], pins::red[1], pins::red[2], pins::red[3], pins::red[4],
+    pins::green[0], pins::green[1], pins::green[2], pins::green[3], pins::green[4], pins::green[5],
+    pins::blue[0], pins::blue[1], pins::blue[2], pins::blue[3], pins::blue[4],
     1, 10, 8, 50,
     1, 10, 8, 20,
     0, 12000000, false, 0, 0, 0);
@@ -637,10 +633,14 @@ TouchSample readTouch() {
     if (i2cRead(kTouchPointRegister, data, sizeof(data))) {
       const uint16_t rawX = data[1] | (static_cast<uint16_t>(data[2]) << 8);
       const uint16_t rawY = data[3] | (static_cast<uint16_t>(data[4]) << 8);
-      // Guition reference uses mirror_x=false / mirror_y=false.
-      sample.x = rawX < kScreenWidth ? rawX : kScreenWidth - 1;
-      sample.y = rawY < kScreenHeight ? rawY : kScreenHeight - 1;
-      sample.touched = true;
+      const auto mapped = touch_input::mapRaw(rawX, rawY);
+      if (mapped.valid) {
+        sample.x = static_cast<uint16_t>(mapped.x);
+        sample.y = static_cast<uint16_t>(mapped.y);
+        sample.touched = true;
+        Serial.printf("TOUCH raw=(%u,%u) mapped=(%u,%u)\n",
+                      rawX, rawY, sample.x, sample.y);
+      }
     }
   }
   i2cWriteByte(kTouchStatusRegister, 0);
@@ -1055,6 +1055,12 @@ void handleTouch() {
   const TouchSample sample = readTouch();
   if (!sample.ready) return;
   if (sample.touched && !touchDown) {
+    const unsigned long now = millis();
+    if (now - lastAcceptedTouchMs < kTouchDebounceMs) {
+      touchDown = true;
+      return;
+    }
+    lastAcceptedTouchMs = now;
     if (commandEditorOpen) {
       virtual_keyboard::Key key{};
       if (virtual_keyboard::hitTest(keyboardMode, sample.x, sample.y, &key)) {
@@ -1138,35 +1144,52 @@ void handleTouch() {
         drawPanel();
       };
 
-      if (sample.y >= 426) {
-        if (sample.x < 240) {
+      const auto action = home_ui::hitTest(
+          sample.x, sample.y, homePanel != HomePanel::None);
+
+      switch (action) {
+        case home_ui::Action::TestCloud:
           homePanel = HomePanel::None;
           checkCloudStack();
-        } else {
+          break;
+        case home_ui::Action::Send3C:
           homePanel = HomePanel::None;
           commandEditorOpen = true;
           keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
           drawEditor();
-        }
-      } else if (sample.y >= 62 && sample.y < 107) {
-        togglePanel(HomePanel::Backend);
-      } else if (sample.y >= 111 && sample.y < 156) {
-        togglePanel(HomePanel::Sheets);
-      } else if (sample.y >= 160 && sample.y < 205) {
-        togglePanel(HomePanel::Github);
-      } else if (sample.y >= 209 && sample.y < 254) {
-        togglePanel(HomePanel::Firmware);
-      } else if (homePanel == HomePanel::None && sample.y >= 266 && sample.y < 300) {
-        togglePanel(HomePanel::Wifi);
-      } else if (homePanel == HomePanel::None && sample.y >= 302 && sample.y < 336) {
-        togglePanel(HomePanel::Databricks);
-      } else if (homePanel == HomePanel::None && sample.y >= 338 && sample.y < 372) {
-        togglePanel(HomePanel::Diagnostics);
-      } else if (homePanel == HomePanel::None && sample.y >= 374 && sample.y < 408) {
-        togglePanel(HomePanel::Device);
-      } else if (homePanel != HomePanel::None && sample.y >= 268 && sample.y < 416) {
-        homePanel = HomePanel::None;
-        drawPanel();
+          break;
+        case home_ui::Action::Backend:
+          togglePanel(HomePanel::Backend);
+          break;
+        case home_ui::Action::Sheets:
+          togglePanel(HomePanel::Sheets);
+          break;
+        case home_ui::Action::Github:
+          togglePanel(HomePanel::Github);
+          break;
+        case home_ui::Action::Firmware:
+          togglePanel(HomePanel::Firmware);
+          break;
+        case home_ui::Action::Wifi:
+          togglePanel(HomePanel::Wifi);
+          break;
+        case home_ui::Action::Databricks:
+          togglePanel(HomePanel::Databricks);
+          break;
+        case home_ui::Action::Diagnostics:
+          togglePanel(HomePanel::Diagnostics);
+          break;
+        case home_ui::Action::Device:
+          togglePanel(HomePanel::Device);
+          break;
+        case home_ui::Action::None:
+          if (homePanel != HomePanel::None &&
+              sample.x >= 14 && sample.x < 466 &&
+              sample.y >= 268 && sample.y < 416) {
+            homePanel = HomePanel::None;
+            drawPanel();
+          }
+          break;
       }
     }
   }
@@ -1182,7 +1205,13 @@ void setup() {
 
   displayReady = initializeDisplay();
   if (!displayReady) Serial.println("No se pudo inicializar la pantalla ST7701.");
+  Serial.printf("GPIO MAP: BL=%d LCD_CS=%d LCD_CLK=%d LCD_MOSI=%d TOUCH_SDA=%d TOUCH_SCL=%d DE=%d VSYNC=%d HSYNC=%d PCLK=%d\n",
+                pins::backlight, pins::lcdCs, pins::lcdClock, pins::lcdMosi,
+                pins::touchSda, pins::touchScl, pins::de, pins::vsync, pins::hsync, pins::pclk);
   Wire.begin(pins::touchSda, pins::touchScl, 100000);
+  Wire.beginTransmission(kTouchAddress);
+  const uint8_t touchProbe = Wire.endTransmission();
+  Serial.printf("GT911 I2C probe addr=0x%02X result=%u\n", kTouchAddress, touchProbe);
   audioReady = initializeAudio();
   commandBuffer.set(app_config::commandBuffer.c_str());
   updatePanel(PanelState::Booting, "Hardware inicializado; Databricks Cloud");
