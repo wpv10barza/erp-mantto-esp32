@@ -1,0 +1,56 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+
+namespace panel_gpio {
+
+// Authoritative Guition ESP32-S3-4848S040 pin map.
+constexpr int backlight = 38;
+constexpr int lcdCs = 39;
+constexpr int lcdClock = 48;
+constexpr int lcdMosi = 47;
+constexpr int touchSda = 19;
+constexpr int touchScl = 45;
+
+constexpr int de = 18;
+constexpr int vsync = 17;
+constexpr int hsync = 16;
+constexpr int pclk = 21;
+
+constexpr std::array<int, 5> red = {{11, 12, 13, 14, 0}};
+constexpr std::array<int, 6> green = {{8, 20, 3, 46, 9, 10}};
+constexpr std::array<int, 5> blue = {{4, 5, 6, 7, 15}};
+
+// On-board I2S/L1-L3 lines. They are not part of touch or display buses.
+constexpr int audioBclk = 1;
+constexpr int audioLrclk = 2;
+constexpr int audioData = 40;
+
+template <size_t N>
+constexpr bool unique(const std::array<int, N>& pins) {
+  for (size_t i = 0; i < N; ++i) {
+    for (size_t j = i + 1; j < N; ++j) {
+      if (pins[i] == pins[j]) return false;
+    }
+  }
+  return true;
+}
+
+constexpr std::array<int, 16> rgb = {{
+    11, 12, 13, 14, 0,
+    8, 20, 3, 46, 9, 10,
+    4, 5, 6, 7, 15
+}};
+
+static_assert(unique(rgb), "RGB data pins must be unique");
+static_assert(touchSda != touchScl, "GT911 SDA/SCL must be distinct");
+static_assert(lcdClock != lcdMosi && lcdClock != lcdCs && lcdMosi != lcdCs,
+              "LCD control SPI pins must be distinct");
+static_assert(backlight != lcdCs && backlight != touchSda && backlight != touchScl,
+              "Backlight must not overlap LCD CS or GT911 I2C");
+static_assert(de != vsync && de != hsync && de != pclk &&
+              vsync != hsync && vsync != pclk && hsync != pclk,
+              "RGB timing pins must be distinct");
+
+}  // namespace panel_gpio
