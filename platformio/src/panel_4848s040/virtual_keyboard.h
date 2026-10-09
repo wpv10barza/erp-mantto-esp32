@@ -11,21 +11,22 @@ constexpr int kScreenHeight = 480;
 
 // Geometry is based on a 10-column grid. The keyboard may occupy the
 // lower portion of the 480x480 panel while editing mode is active.
-constexpr int kKeyboardX = 5;
-constexpr int kKeyboardY = 216;
-constexpr int kKeyboardWidth = 474;
-constexpr int kKeyboardHeight = 256;
+constexpr int kKeyboardAreaTop = 224;
+constexpr int kKeyboardAreaBottom = 468;
 constexpr int kColumns = 10;
 constexpr int kRows = 5;
 constexpr int kColumnGap = 4;
 constexpr int kRowGap = 4;
 constexpr int kKeyWidth = 43;
-constexpr int kKeyHeight = 48;
+constexpr int kKeyHeight = 44;
+constexpr int kKeyboardWidth = kColumns * kKeyWidth + (kColumns - 1) * kColumnGap;
+constexpr int kKeyboardX = (kScreenWidth - kKeyboardWidth) / 2;
 
-static_assert(kKeyboardX + kKeyboardWidth == kScreenWidth - 1,
+static_assert(kKeyboardX >= 0, "keyboard must start inside the screen");
+static_assert(kKeyboardX + kKeyboardWidth <= kScreenWidth,
               "keyboard must stay inside 480px screen");
-static_assert(kKeyboardY + kKeyboardHeight <= kScreenHeight,
-              "keyboard must stay inside 480px screen");
+static_assert(kKeyboardAreaTop >= 0 && kKeyboardAreaBottom <= kScreenHeight,
+              "keyboard area must stay inside 480px screen");
 
 // Coordinates use half-open rectangles: [left, right) x [top, bottom).
 // This gives every pixel to exactly one key at a shared boundary.
@@ -83,19 +84,34 @@ constexpr int columnOrigin(uint8_t column) {
   return kKeyboardX + static_cast<int>(column) * (kKeyWidth + kColumnGap);
 }
 
-constexpr int rowOrigin(uint8_t row) {
-  return kKeyboardY + static_cast<int>(row) * (kKeyHeight + kRowGap);
+constexpr uint8_t visibleRowCount(KeyboardMode mode) {
+  return mode == KeyboardMode::Alpha ? 4 : 5;
 }
 
-constexpr KeyRect makeRect(const KeyDefinition& definition, uint8_t row) {
+constexpr int keyboardHeight(KeyboardMode mode) {
+  const int rows = visibleRowCount(mode);
+  return rows * kKeyHeight + (rows - 1) * kRowGap;
+}
+
+constexpr int keyboardY(KeyboardMode mode) {
+  return kKeyboardAreaTop +
+      (kKeyboardAreaBottom - kKeyboardAreaTop - keyboardHeight(mode)) / 2;
+}
+
+constexpr int rowOrigin(KeyboardMode mode, uint8_t row) {
+  return keyboardY(mode) + static_cast<int>(row) * (kKeyHeight + kRowGap);
+}
+
+constexpr KeyRect makeRect(
+    const KeyDefinition& definition, uint8_t row, KeyboardMode mode) {
   return KeyRect(
       static_cast<int16_t>(columnOrigin(definition.startColumn)),
-      static_cast<int16_t>(rowOrigin(row)),
+      static_cast<int16_t>(rowOrigin(mode, row)),
       static_cast<int16_t>(
           columnOrigin(definition.startColumn) +
           static_cast<int>(definition.spanColumns) * kKeyWidth +
           static_cast<int>(definition.spanColumns - 1) * kColumnGap),
-      static_cast<int16_t>(rowOrigin(row) + kKeyHeight));
+      static_cast<int16_t>(rowOrigin(mode, row) + kKeyHeight));
 }
 
 namespace detail {
@@ -241,6 +257,19 @@ inline size_t keyCount(KeyboardMode mode) {
   return total;
 }
 
+class KeyboardLayout {
+ public:
+  static constexpr int left() { return kKeyboardX; }
+  static constexpr int width() { return kKeyboardWidth; }
+  static constexpr int top(KeyboardMode mode) { return keyboardY(mode); }
+  static constexpr int height(KeyboardMode mode) { return keyboardHeight(mode); }
+  static constexpr int bottom(KeyboardMode mode) { return top(mode) + height(mode); }
+  static constexpr bool containsY(KeyboardMode mode, int y) {
+    return y >= top(mode) && y < bottom(mode);
+  }
+};
+
+
 inline size_t buildKeys(KeyboardMode mode, Key* out, size_t capacity) {
   size_t written = 0;
   for (uint8_t row = 0; row < kRows; ++row) {
@@ -248,7 +277,7 @@ inline size_t buildKeys(KeyboardMode mode, Key* out, size_t capacity) {
     for (size_t index = 0; index < definitions.count; ++index) {
       if (written >= capacity) return written;
       const KeyDefinition& definition = definitions.definitions[index];
-      out[written++] = Key{definition, makeRect(definition, row)};
+      out[written++] = Key{definition, makeRect(definition, row, mode)};
     }
   }
   return written;
