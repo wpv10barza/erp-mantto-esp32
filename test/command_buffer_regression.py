@@ -13,7 +13,7 @@ def test_command_buffer_is_runtime_source():
 def test_panel_send_path_consumes_runtime_buffer_directly():
     assert "commandBuffer.set(app_config::commandBuffer.c_str());" in MAIN
     assert "app_config::commandBuffer = commandBuffer.c_str();" in MAIN
-    assert "send3CCommand(app_config::commandBuffer);" in MAIN
+    assert "queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);" in MAIN
     assert "send3CCommand(app_config::defaultCommand);" not in MAIN
     assert 'send3CCommand("Cambia la tarea J10 a mensual");' not in MAIN
 
