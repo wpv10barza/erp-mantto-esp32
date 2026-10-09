@@ -28,6 +28,7 @@ required_suites=(
   "native:test_backend_command_buffer"
   "native:test_command_text_viewport"
   "native:test_virtual_keyboard"
+  "native:test_editor_components"
 )
 
 for suite in "${required_suites[@]}"; do
