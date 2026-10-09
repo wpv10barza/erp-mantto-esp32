@@ -12,6 +12,7 @@
 #include "app_config.h"
 #include "command_buffer.h"
 #include "command_text_viewport.h"
+#include "editor_components.h"
 #include "virtual_keyboard.h"
 
 namespace pins {
@@ -61,7 +62,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.1.0-final-ui";
+constexpr char kFirmwareVersion[] = "2.2.0-editor-ui";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -154,11 +155,20 @@ void drawButton(int x, int y, int width, int height, const char* label, uint16_t
   display->print(label);
 }
 
-void drawEditor() {
+void drawEditorFrame() {
   if (!displayReady) return;
-  display->fillScreen(color565(8, 18, 30));
-  drawCentered("EDITAR ORDEN 3C", 10, 2, color565(170, 220, 255));
-  display->drawRect(8, 42, 464, 72, color565(185, 210, 230));
+  display->fillScreen(color565(60, 8, 22));
+  display->fillRect(0, 0, kScreenWidth, 42, color565(92, 19, 38));
+  drawCentered("EDITAR ORDEN 3C", 11, 2, color565(242, 232, 238));
+}
+
+void drawEditorTextField() {
+  if (!displayReady) return;
+  const auto field = editor_ui::EditorLayout::textField();
+  display->fillRoundRect(field.left, field.top, field.width(), field.height(), 10,
+                         color565(93, 24, 42));
+  display->drawRoundRect(field.left, field.top, field.width(), field.height(), 10,
+                         color565(220, 151, 165));
   display->setTextSize(2);
   display->setTextColor(WHITE);
 
@@ -170,37 +180,75 @@ void drawEditor() {
     prefixWidths[i + 1] = w;
   }
   const auto window = command_text_viewport::compute(
-      prefixWidths, commandBuffer.length(), commandBuffer.cursor(), 450, 3);
+      prefixWidths, commandBuffer.length(), commandBuffer.cursor(), field.width() - 22, 3);
   const String visible = full.substring(window.first, window.last);
-  display->setCursor(15, 68);
+  display->setCursor(field.left + 10, field.top + 34);
   display->print(visible);
-  const int cursorX = 15 + window.cursorX;
-  display->drawFastVLine(cursorX, 57, 28, color565(80, 220, 160));
+  const int cursorX = field.left + 10 + window.cursorX;
+  display->drawFastVLine(cursorX, field.top + 24, 28, color565(80, 240, 170));
+}
+
+void drawEditorToolbar() {
+  if (!displayReady) return;
+  for (const auto& button : editor_ui::ToolbarComponent::buttons()) {
+    const bool home = button.action == editor_ui::ToolbarAction::Home;
+    const bool destructive = button.action == editor_ui::ToolbarAction::Clear;
+    const uint16_t fill = home ? color565(40, 78, 118)
+        : destructive ? color565(116, 46, 42) : color565(72, 34, 60);
+    display->fillRoundRect(button.rect.left, button.rect.top,
+                           button.rect.width(), button.rect.height(), 9, fill);
+    display->drawRoundRect(button.rect.left, button.rect.top,
+                           button.rect.width(), button.rect.height(), 9,
+                           color565(205, 160, 176));
+    display->setTextColor(WHITE);
+    display->setTextSize(strlen(button.label) > 3 ? 1 : 2);
+    int16_t x1 = 0, y1 = 0; uint16_t w = 0, h = 0;
+    display->getTextBounds(button.label, 0, 0, &x1, &y1, &w, &h);
+    display->setCursor(button.rect.left + (button.rect.width() - w) / 2,
+                       button.rect.top + (button.rect.height() - h) / 2);
+    display->print(button.label);
+  }
+}
+
+void drawEditorKeyboard() {
+  if (!displayReady) return;
+  const int top = virtual_keyboard::KeyboardLayout::top(keyboardMode);
+  const int bottom = virtual_keyboard::KeyboardLayout::bottom(keyboardMode);
+  display->fillRect(0, 216, kScreenWidth, kScreenHeight - 216, color565(60, 8, 22));
+  display->fillRoundRect(5, top - 6, 470, bottom - top + 12, 12, color565(47, 13, 28));
 
   virtual_keyboard::Key keys[50]{};
   const size_t count = virtual_keyboard::buildKeys(keyboardMode, keys, 50);
   for (size_t i = 0; i < count; ++i) {
     const auto& key = keys[i];
-    const auto fill = key.definition.kind == virtual_keyboard::KeyKind::Enter
-        ? color565(18, 105, 73) : color565(25, 45, 65);
-    display->fillRoundRect(key.rect.left, key.rect.top, key.rect.right - key.rect.left,
+    uint16_t fill = color565(74, 31, 54);
+    if (key.definition.kind == virtual_keyboard::KeyKind::Enter) fill = color565(60, 87, 69);
+    if (key.definition.kind == virtual_keyboard::KeyKind::ToggleAlphaNumeric) fill = color565(70, 51, 94);
+    if (key.definition.kind == virtual_keyboard::KeyKind::Space) fill = color565(67, 35, 58);
+
+    display->fillRoundRect(key.rect.left, key.rect.top,
+                           key.rect.right - key.rect.left,
                            key.rect.bottom - key.rect.top, 7, fill);
-    display->drawRoundRect(key.rect.left, key.rect.top, key.rect.right - key.rect.left,
-                           key.rect.bottom - key.rect.top, 7, color565(130, 160, 180));
-    display->setTextSize(key.definition.label[0] && strlen(key.definition.label) > 2 ? 1 : 2);
+    display->drawRoundRect(key.rect.left, key.rect.top,
+                           key.rect.right - key.rect.left,
+                           key.rect.bottom - key.rect.top, 7,
+                           color565(176, 118, 145));
+    display->setTextSize(strlen(key.definition.label) > 2 ? 1 : 2);
     int16_t x1 = 0, y1 = 0; uint16_t w = 0, h = 0;
     display->getTextBounds(key.definition.label, 0, 0, &x1, &y1, &w, &h);
     display->setTextColor(WHITE);
-    display->setCursor(key.rect.left + ((key.rect.right-key.rect.left)-w)/2,
-                       key.rect.top + ((key.rect.bottom-key.rect.top)-h)/2);
+    display->setCursor(key.rect.left + ((key.rect.right - key.rect.left) - w) / 2,
+                       key.rect.top + ((key.rect.bottom - key.rect.top) - h) / 2);
     display->print(key.definition.label);
   }
-  drawButton(8, 172, 100, 36, "CANCELAR", color565(80, 35, 35));
-  drawButton(112, 172, 72, 36, "<", color565(42, 67, 90));
-  drawButton(192, 172, 72, 36, "DEL", color565(105, 72, 40));
-  drawButton(272, 172, 115, 36,
-             keyboardMode == virtual_keyboard::KeyboardMode::Alpha ? "123" : "ABC",
-             color565(45, 70, 100));
+}
+
+void drawEditor() {
+  if (!displayReady) return;
+  drawEditorFrame();
+  drawEditorTextField();
+  drawEditorToolbar();
+  drawEditorKeyboard();
 }
 
 void drawChevron(int x, int y, bool down) {
@@ -1007,66 +1055,80 @@ void handleTouch() {
   if (!sample.ready) return;
   if (sample.touched && !touchDown) {
     if (commandEditorOpen) {
-      if (sample.y >= 216) {
-        virtual_keyboard::Key key{};
-        if (virtual_keyboard::hitTest(keyboardMode, sample.x, sample.y, &key)) {
-          using virtual_keyboard::KeyKind;
-          switch (key.definition.kind) {
-            case KeyKind::Character:
-              commandBuffer.insert(key.definition.label);
-              break;
-            case KeyKind::Backspace:
-              commandBuffer.backspace();
-              break;
-            case KeyKind::Space:
-              commandBuffer.insert(' ');
-              break;
-            case KeyKind::Enter:
-              app_config::commandBuffer = commandBuffer.c_str();
-              commandEditorOpen = false;
-              drawPanel();
-              send3CCommand(app_config::commandBuffer);
-              touchDown = sample.touched;
-              return;
-            case KeyKind::ToggleAlphaNumeric:
-              keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
-                  ? virtual_keyboard::KeyboardMode::NumericSymbols
-                  : virtual_keyboard::KeyboardMode::Alpha;
-              break;
-          }
-          drawEditor();
+      virtual_keyboard::Key key{};
+      if (virtual_keyboard::hitTest(keyboardMode, sample.x, sample.y, &key)) {
+        using virtual_keyboard::KeyKind;
+        switch (key.definition.kind) {
+          case KeyKind::Character:
+            commandBuffer.insert(key.definition.label);
+            drawEditorTextField();
+            break;
+          case KeyKind::Backspace:
+            commandBuffer.backspace();
+            drawEditorTextField();
+            break;
+          case KeyKind::Space:
+            commandBuffer.insert(' ');
+            drawEditorTextField();
+            break;
+          case KeyKind::Enter:
+            app_config::commandBuffer = commandBuffer.c_str();
+            commandEditorOpen = false;
+            drawPanel();
+            send3CCommand(app_config::commandBuffer);
+            touchDown = sample.touched;
+            return;
+          case KeyKind::ToggleAlphaNumeric:
+            keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
+                ? virtual_keyboard::KeyboardMode::NumericSymbols
+                : virtual_keyboard::KeyboardMode::Alpha;
+            drawEditorKeyboard();
+            break;
         }
-      } else if (sample.y >= 160 && sample.y < 215) {
-        if (sample.x < 110) {
-          commandEditorOpen = false;
-          drawPanel();
-        } else if (sample.x < 190) {
-          commandBuffer.moveLeft();
-          drawEditor();
-        } else if (sample.x < 270) {
-          commandBuffer.deleteForward();
-          drawEditor();
-        } else if (sample.x < 395) {
-          keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
-              ? virtual_keyboard::KeyboardMode::NumericSymbols
-              : virtual_keyboard::KeyboardMode::Alpha;
-          drawEditor();
-        }
-      } else if (sample.y >= 42 && sample.y < 114) {
-        String text(commandBuffer.c_str());
-        if (text.length()) {
-          display->setTextSize(2);
-          size_t best = 0;
-          uint16_t bestDistance = UINT16_MAX;
-          for (size_t i = 0; i <= text.length() && i <= kCommandCapacity; ++i) {
-            int16_t x1=0,y1=0; uint16_t w=0,h=0;
-            display->getTextBounds(text.substring(0, i), 0, 0, &x1, &y1, &w, &h);
-            const uint16_t distance = static_cast<uint16_t>(
-              abs(static_cast<int>(15 + w) - static_cast<int>(sample.x)));
-            if (distance < bestDistance) { bestDistance = distance; best = i; }
-          }
-          commandBuffer.setCursor(best);
-          drawEditor();
+      } else {
+        const auto action = editor_ui::ToolbarComponent::hitTest(sample.x, sample.y);
+        switch (action) {
+          case editor_ui::ToolbarAction::Home:
+            commandEditorOpen = false;
+            homePanel = HomePanel::None;
+            drawPanel();
+            break;
+          case editor_ui::ToolbarAction::MoveLeft:
+            commandBuffer.moveLeft();
+            drawEditorTextField();
+            break;
+          case editor_ui::ToolbarAction::MoveRight:
+            commandBuffer.moveRight();
+            drawEditorTextField();
+            break;
+          case editor_ui::ToolbarAction::DeleteForward:
+            commandBuffer.deleteForward();
+            drawEditorTextField();
+            break;
+          case editor_ui::ToolbarAction::Clear:
+            commandBuffer.clear();
+            drawEditorTextField();
+            break;
+          case editor_ui::ToolbarAction::None:
+            if (editor_ui::EditorLayout::inTextField(sample.x, sample.y)) {
+              String text(commandBuffer.c_str());
+              if (text.length()) {
+                display->setTextSize(2);
+                size_t best = 0;
+                uint16_t bestDistance = UINT16_MAX;
+                const auto field = editor_ui::EditorLayout::textField();
+                for (size_t i = 0; i <= text.length() && i <= kCommandCapacity; ++i) {
+                  int16_t x1 = 0, y1 = 0; uint16_t w = 0, h = 0;
+                  display->getTextBounds(text.substring(0, i), 0, 0, &x1, &y1, &w, &h);
+                  const uint16_t distance = static_cast<uint16_t>(
+                    abs(static_cast<int>(field.left + 10 + w) - static_cast<int>(sample.x)));
+                  if (distance < bestDistance) { bestDistance = distance; best = i; }
+                }
+                commandBuffer.setCursor(best);
+                drawEditorTextField();
+              }
+            }
+            break;
         }
       }
     } else {
