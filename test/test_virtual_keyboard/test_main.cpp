@@ -38,11 +38,15 @@ void assertHorizontalBoundaryIsExclusive(KeyboardMode mode) {
   TEST_ASSERT_TRUE(first.rect.right < second.rect.left);
 
   const int y = first.rect.top + 1;
-  TEST_ASSERT_EQUAL_INT(0, virtual_keyboard::hitTestIndex(mode, first.rect.left, y));
-  TEST_ASSERT_EQUAL_INT(0, virtual_keyboard::hitTestIndex(mode, first.rect.right - 1, y));
+  TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, first.rect.left, y));
+  TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, first.rect.right - 1, y));
+  TEST_ASSERT_EQUAL_INT(0, virtual_keyboard::hitTestIndex(
+      mode, first.rect.left + virtual_keyboard::kHitInsetPx, y));
   TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, first.rect.right, y));
   TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, second.rect.left - 1, y));
-  TEST_ASSERT_EQUAL_INT(1, virtual_keyboard::hitTestIndex(mode, second.rect.left, y));
+  TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, second.rect.left, y));
+  TEST_ASSERT_EQUAL_INT(1, virtual_keyboard::hitTestIndex(
+      mode, second.rect.left + virtual_keyboard::kHitInsetPx, y));
 }
 
 void assertVerticalBoundaryIsExclusive(KeyboardMode mode) {
@@ -56,10 +60,14 @@ void assertVerticalBoundaryIsExclusive(KeyboardMode mode) {
   TEST_ASSERT_TRUE(row0.rect.bottom < row1.rect.top);
 
   const int x = row0.rect.left + 1;
-  TEST_ASSERT_EQUAL_INT(0, virtual_keyboard::hitTestIndex(mode, x, row0.rect.bottom - 1));
+  TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, x, row0.rect.bottom - 1));
+  TEST_ASSERT_EQUAL_INT(0, virtual_keyboard::hitTestIndex(
+      mode, x, row0.rect.bottom - 1 - virtual_keyboard::kHitInsetPx));
   TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, x, row0.rect.bottom));
   TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, x, row1.rect.top - 1));
-  TEST_ASSERT_EQUAL_INT(10, virtual_keyboard::hitTestIndex(mode, x, row1.rect.top));
+  TEST_ASSERT_EQUAL_INT(-1, virtual_keyboard::hitTestIndex(mode, x, row1.rect.top));
+  TEST_ASSERT_EQUAL_INT(10, virtual_keyboard::hitTestIndex(
+      mode, x, row1.rect.top + virtual_keyboard::kHitInsetPx));
 }
 
 void assertOutsideKeyboardIsRejected(KeyboardMode mode) {
