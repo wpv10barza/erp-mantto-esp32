@@ -1,5 +1,13 @@
 # ERP Mantto ESP32 — ESP32-S3-4848S040
 
+## Interfaz principal final — v2.1.0
+
+La interfaz principal del objetivo PlatformIO `panel_4848s040` adopta un menú compacto tipo aplicación móvil. La pantalla inicial evita mostrar datos técnicos innecesarios: presenta **Conexión al backend**, **Google Sheets**, **GitHub Actions** y **Actualizar firmware** como opciones principales y mantiene **Wi‑Fi 2.4 GHz**, **Nube Databricks**, **Diagnóstico** y **Estado del dispositivo** como paneles desplegables.
+
+Las acciones permanentes son **PROBAR CLOUD** y **ENVIAR 3C**. La primera verifica la Device API de Databricks y, a continuación, `/api/sheet/verify`; la segunda conserva el editor táctil de órdenes y el ciclo de confirmación humana. La contraseña Wi‑Fi nunca se dibuja en pantalla ni se versiona: permanece únicamente en `include/local_config.h`, excluido de Git.
+
+La identidad de esta versión es `2.1.0-final-ui`. GitHub Actions valida el contrato de la interfaz, la paridad de los dos archivos `main.cpp`, los tests nativos y la compilación del firmware. La compilación remota no sustituye el flasheo ni la validación física del panel.
+
 ## Estado actual: integración directa con Databricks Apps
 
 El firmware PlatformIO del panel ESP32-S3-4848S040 está preparado para usar como backend de producción la app **asistente-cloud-erp** en Databricks Apps. La ruta productiva es **Wi-Fi → OAuth 2.0 M2M de Databricks → HTTPS Device API → revisión humana → Google Sheets**. El panel no depende de que WSL, Docker, Express u Ollama estén ejecutándose en el equipo local.

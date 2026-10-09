@@ -48,6 +48,21 @@ enum class PanelState {
   Error,
 };
 
+enum class HomePanel {
+  None,
+  Backend,
+  Sheets,
+  Github,
+  Firmware,
+  Wifi,
+  Databricks,
+  Diagnostics,
+  Device,
+};
+
+HomePanel homePanel = HomePanel::None;
+constexpr char kFirmwareVersion[] = "2.1.0-final-ui";
+
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
 String lastBackendMessage = "Sin verificar";
@@ -188,44 +203,211 @@ void drawEditor() {
              color565(45, 70, 100));
 }
 
-void drawPanel() {
-  if (commandEditorOpen) { drawEditor(); return; }
+void drawChevron(int x, int y, bool down) {
   if (!displayReady) return;
-  const uint16_t background = stateBackground(panelState);
-  const uint16_t eye = panelState == PanelState::Offline ? color565(125, 135, 145) : WHITE;
-  display->fillScreen(background);
-  drawCentered("Interfaz Portátil", 18, 2, color565(170, 220, 255));
-
-  if (panelState == PanelState::Error || panelState == PanelState::Rejected) {
-    display->drawLine(112, 105, 172, 165, eye);
-    display->drawLine(172, 105, 112, 165, eye);
-    display->drawLine(308, 105, 368, 165, eye);
-    display->drawLine(368, 105, 308, 165, eye);
-  } else if (panelState == PanelState::Applied) {
-    display->fillRoundRect(105, 102, 75, 76, 22, eye);
-    display->fillRoundRect(300, 102, 75, 76, 22, eye);
-    display->fillCircle(143, 141, 13, background);
-    display->fillCircle(338, 141, 13, background);
-    display->drawLine(205, 205, 225, 218, eye);
-    display->drawLine(225, 218, 255, 218, eye);
-    display->drawLine(255, 218, 275, 205, eye);
+  const uint16_t c = color565(235, 240, 245);
+  if (down) {
+    display->drawLine(x - 6, y - 3, x, y + 3, c);
+    display->drawLine(x, y + 3, x + 6, y - 3, c);
   } else {
-    display->fillRoundRect(105, 102, 75, 76, 22, eye);
-    display->fillRoundRect(300, 102, 75, 76, 22, eye);
-    display->fillCircle(143, 141, 13, background);
-    display->fillCircle(338, 141, 13, background);
+    display->drawLine(x - 3, y - 6, x + 3, y, c);
+    display->drawLine(x + 3, y, x - 3, y + 6, c);
+  }
+}
+
+void drawHomeBackground() {
+  if (!displayReady) return;
+  // Low-cost warm gradient for the 480x480 RGB panel.
+  constexpr int bands = 12;
+  for (int i = 0; i < bands; ++i) {
+    const uint8_t red = static_cast<uint8_t>(72 + i * 10);
+    const uint8_t green = static_cast<uint8_t>(8 + i * 2);
+    const uint8_t blue = static_cast<uint8_t>(28 + (bands - i) * 2);
+    display->fillRect(0, i * 40, kScreenWidth, 40, color565(red, green, blue));
+  }
+  display->fillRoundRect(300, -55, 245, 145, 70, color565(214, 50, 18));
+}
+
+void drawHomeRow(
+    int y,
+    const char* tag,
+    const char* title,
+    const char* subtitle,
+    bool expanded = false,
+    int height = 45) {
+  if (!displayReady) return;
+  const uint16_t card = color565(84, 20, 38);
+  const uint16_t border = expanded ? color565(255, 176, 120) : color565(158, 74, 92);
+  display->fillRoundRect(14, y, 452, height, 12, card);
+  display->drawRoundRect(14, y, 452, height, 12, border);
+
+  display->fillRoundRect(24, y + 7, 42, height - 14, 9, color565(132, 39, 63));
+  display->setTextColor(WHITE);
+  display->setTextSize(1);
+  display->setCursor(35, y + 18);
+  display->print(tag);
+
+  display->setTextSize(2);
+  display->setCursor(78, y + 7);
+  display->print(title);
+
+  if (subtitle && strlen(subtitle)) {
+    display->setTextSize(1);
+    display->setTextColor(color565(226, 210, 218));
+    display->setCursor(78, y + 28);
+    display->print(subtitle);
   }
 
-  drawCentered(stateLabel(panelState), 250, 2, WHITE);
-  String detail = panelDetail;
-  if (detail.length() > 52) detail = detail.substring(0, 49) + "...";
-  drawCentered(detail, 286, 1, color565(210, 225, 235));
-  if (WiFi.status() == WL_CONNECTED) {
-    drawCentered("CLOUD HTTPS", 310, 1, color565(150, 205, 235));
+  drawChevron(446, y + height / 2, expanded);
+}
+
+const char* homePanelTitle(HomePanel panel) {
+  switch (panel) {
+    case HomePanel::Backend: return "Conexion al backend";
+    case HomePanel::Sheets: return "Google Sheets";
+    case HomePanel::Github: return "GitHub Actions";
+    case HomePanel::Firmware: return "Actualizar firmware";
+    case HomePanel::Wifi: return "Wi-Fi 2.4 GHz";
+    case HomePanel::Databricks: return "Nube Databricks";
+    case HomePanel::Diagnostics: return "Diagnostico";
+    case HomePanel::Device: return "Estado del dispositivo";
+    case HomePanel::None: return "";
+  }
+  return "";
+}
+
+void drawExpandedPanel() {
+  if (!displayReady || homePanel == HomePanel::None) return;
+  display->fillRoundRect(14, 268, 452, 148, 14, color565(48, 14, 30));
+  display->drawRoundRect(14, 268, 452, 148, 14, color565(241, 132, 88));
+  display->setTextColor(WHITE);
+  display->setTextSize(2);
+  display->setCursor(28, 282);
+  display->print(homePanelTitle(homePanel));
+  drawChevron(446, 292, true);
+
+  display->setTextSize(1);
+  display->setTextColor(color565(228, 220, 224));
+
+  if (homePanel == HomePanel::Backend) {
+    display->setCursor(28, 316);
+    display->print("HTTPS hacia Databricks Apps");
+    display->setCursor(28, 336);
+    display->print("OAuth M2M + token del dispositivo");
+    display->setCursor(28, 356);
+    display->print("Usa PROBAR CLOUD para validar extremo a extremo.");
+  } else if (homePanel == HomePanel::Sheets) {
+    display->setCursor(28, 316);
+    display->print("Lectura y control mediante backend Databricks.");
+    display->setCursor(28, 336);
+    display->print("Cambios sujetos a revision humana.");
+    display->setCursor(28, 356);
+    display->print("El ESP32 nunca escribe Sheets directamente.");
+  } else if (homePanel == HomePanel::Github) {
+    display->setCursor(28, 316);
+    display->print("GitHub Actions valida contratos y compilacion.");
+    display->setCursor(28, 336);
+    display->print("El firmware final se publica como artefacto.");
+  } else if (homePanel == HomePanel::Firmware) {
+    display->setCursor(28, 316);
+    display->print("Version: ");
+    display->print(kFirmwareVersion);
+    display->setCursor(28, 336);
+    display->print("Build reproducible desde GitHub Actions.");
+    display->setCursor(28, 356);
+    display->print("Flasheo fisico requiere dispositivo conectado.");
+  } else if (homePanel == HomePanel::Wifi) {
+    display->setCursor(28, 316);
+    display->print("SSID: ");
+    display->print(strlen(app_config::wifiSsid) ? app_config::wifiSsid : "No configurado");
+    display->setCursor(28, 336);
+    display->print("Estado: ");
+    display->print(WiFi.status() == WL_CONNECTED ? "Conectado" : "Desconectado");
+    display->setCursor(28, 356);
+    display->print("IP: ");
+    display->print(WiFi.localIP().toString());
+    display->setCursor(28, 376);
+    display->print("RSSI: ");
+    display->print(WiFi.RSSI());
+    display->print(" dBm");
+  } else if (homePanel == HomePanel::Databricks) {
+    display->setCursor(28, 316);
+    display->print("Backend: asistente-cloud-erp");
+    display->setCursor(28, 336);
+    display->print("Estado: ");
+    display->print(backendAvailable ? "Conectado" : "Sin verificar");
+    display->setCursor(28, 356);
+    display->print("Transporte: HTTPS + OAuth 2.0 M2M");
+  } else if (homePanel == HomePanel::Diagnostics) {
+    display->setCursor(28, 316);
+    display->print("PSRAM: ");
+    display->print(psramFound() ? "OK" : "NO");
+    display->setCursor(28, 336);
+    display->print("Heap libre: ");
+    display->print(ESP.getFreeHeap());
+    display->setCursor(28, 356);
+    display->print("Uptime: ");
+    display->print(millis() / 1000UL);
+    display->print(" s");
+  } else if (homePanel == HomePanel::Device) {
+    display->setCursor(28, 316);
+    display->print("ID: ");
+    display->print(app_config::deviceId);
+    display->setCursor(28, 336);
+    display->print("Firmware: ");
+    display->print(kFirmwareVersion);
+    display->setCursor(28, 356);
+    display->print("Estado: ");
+    display->print(stateLabel(panelState));
+  }
+}
+
+void drawPanel() {
+  if (commandEditorOpen) {
+    drawEditor();
+    return;
+  }
+  if (!displayReady) return;
+
+  drawHomeBackground();
+
+  display->setTextColor(WHITE);
+  display->setTextSize(3);
+  display->setCursor(18, 14);
+  display->print("Interfaz Portatil");
+  display->setTextSize(1);
+  display->setTextColor(color565(238, 220, 226));
+  display->setCursor(20, 44);
+  display->print("Opciones del sistema");
+
+  const uint16_t statusColor =
+      panelState == PanelState::Ready || panelState == PanelState::Applied
+          ? color565(76, 220, 130)
+          : (panelState == PanelState::Error || panelState == PanelState::Rejected
+              ? color565(255, 112, 96)
+              : color565(255, 199, 96));
+  display->fillCircle(438, 48, 5, statusColor);
+
+  drawHomeRow(62, "DB", "Conexion al backend",
+              "Conectar y validar el sistema", homePanel == HomePanel::Backend);
+  drawHomeRow(111, "GS", "Google Sheets",
+              "Control y revision de cambios", homePanel == HomePanel::Sheets);
+  drawHomeRow(160, "CI", "GitHub Actions",
+              "Probar flujo y firmware", homePanel == HomePanel::Github);
+  drawHomeRow(209, "FW", "Actualizar firmware",
+              "Desplegar nueva version", homePanel == HomePanel::Firmware);
+
+  if (homePanel == HomePanel::None) {
+    drawHomeRow(266, "WF", "Wi-Fi 2.4 GHz", "", false, 34);
+    drawHomeRow(302, "DB", "Nube Databricks", "", false, 34);
+    drawHomeRow(338, "DX", "Diagnostico", "", false, 34);
+    drawHomeRow(374, "ID", "Estado del dispositivo", "", false, 34);
+  } else {
+    drawExpandedPanel();
   }
 
-  drawButton(20, 370, 210, 82, "PROBAR CLOUD", color565(15, 82, 135));
-  drawButton(250, 370, 210, 82, "ENVIAR 3C", color565(18, 105, 73));
+  drawButton(14, 426, 220, 42, "PROBAR CLOUD", color565(111, 37, 191));
+  drawButton(246, 426, 220, 42, "ENVIAR 3C", color565(207, 89, 18));
 }
 
 void playTone(uint16_t frequency, uint16_t durationMs) {
@@ -617,6 +799,42 @@ bool checkBackendHealth() {
   return checkBackendHealthOnce();
 }
 
+bool checkGoogleSheetsVerify() {
+  if (WiFi.status() != WL_CONNECTED) {
+    updatePanel(PanelState::Offline, "Wi-Fi desconectado", true);
+    return false;
+  }
+  if (!backendBaseUrl().length() || !ensureDatabricksAccessToken()) {
+    updatePanel(PanelState::Error, "Backend no disponible", true);
+    return false;
+  }
+
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  if (!http.begin(endpoint("/api/sheet/verify"))) {
+    updatePanel(PanelState::Error, "No se pudo verificar Sheets", true);
+    return false;
+  }
+  addRequestAuth(http);
+  const int code = http.GET();
+  lastBackendMessage = code > 0 ? http.getString() : http.errorToString(code);
+  http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+
+  if (code == 200) {
+    backendAvailable = true;
+    updatePanel(PanelState::Ready, "Cloud + Google Sheets OK", true);
+    return true;
+  }
+  updatePanel(PanelState::Error, String("Sheets HTTP ") + code, true);
+  return false;
+}
+
+bool checkCloudStack() {
+  if (!checkBackendHealth()) return false;
+  return checkGoogleSheetsVerify();
+}
+
 int send3CCommand(const String& rawCommand) {
   String command = rawCommand;
   command.trim();
@@ -851,13 +1069,41 @@ void handleTouch() {
           drawEditor();
         }
       }
-    } else if (sample.y >= 350) {
-      if (sample.x < 240) {
-        checkBackendHealth();
-      } else {
-        commandEditorOpen = true;
-        keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
-        drawEditor();
+    } else {
+      auto togglePanel = [](HomePanel requested) {
+        homePanel = homePanel == requested ? HomePanel::None : requested;
+        drawPanel();
+      };
+
+      if (sample.y >= 426) {
+        if (sample.x < 240) {
+          homePanel = HomePanel::None;
+          checkCloudStack();
+        } else {
+          homePanel = HomePanel::None;
+          commandEditorOpen = true;
+          keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
+          drawEditor();
+        }
+      } else if (sample.y >= 62 && sample.y < 107) {
+        togglePanel(HomePanel::Backend);
+      } else if (sample.y >= 111 && sample.y < 156) {
+        togglePanel(HomePanel::Sheets);
+      } else if (sample.y >= 160 && sample.y < 205) {
+        togglePanel(HomePanel::Github);
+      } else if (sample.y >= 209 && sample.y < 254) {
+        togglePanel(HomePanel::Firmware);
+      } else if (homePanel == HomePanel::None && sample.y >= 266 && sample.y < 300) {
+        togglePanel(HomePanel::Wifi);
+      } else if (homePanel == HomePanel::None && sample.y >= 302 && sample.y < 336) {
+        togglePanel(HomePanel::Databricks);
+      } else if (homePanel == HomePanel::None && sample.y >= 338 && sample.y < 372) {
+        togglePanel(HomePanel::Diagnostics);
+      } else if (homePanel == HomePanel::None && sample.y >= 374 && sample.y < 408) {
+        togglePanel(HomePanel::Device);
+      } else if (homePanel != HomePanel::None && sample.y >= 268 && sample.y < 416) {
+        homePanel = HomePanel::None;
+        drawPanel();
       }
     }
   }

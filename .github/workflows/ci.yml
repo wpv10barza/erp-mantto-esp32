@@ -61,6 +61,7 @@ jobs:
       - name: Python contracts
         run: |
           python tests/test_panel_state_contract.py
+          python tests/test_final_ui_contract.py
           python tests/test_wifi_source.py
           python tests/test_command_editor_integration.py
           python test/command_buffer_regression.py
