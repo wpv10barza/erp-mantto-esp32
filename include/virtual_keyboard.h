@@ -19,6 +19,7 @@ constexpr int kColumnGap = 4;
 constexpr int kRowGap = 4;
 constexpr int kKeyWidth = 43;
 constexpr int kKeyHeight = 44;
+constexpr int kHitInsetPx = 2;
 constexpr int kKeyboardWidth = kColumns * kKeyWidth + (kColumns - 1) * kColumnGap;
 constexpr int kKeyboardX = (kScreenWidth - kKeyboardWidth) / 2;
 
@@ -42,6 +43,11 @@ struct KeyRect {
 
   constexpr bool contains(int x, int y) const {
     return x >= left && x < right && y >= top && y < bottom;
+  }
+
+  constexpr bool containsInset(int x, int y, int inset) const {
+    return x >= left + inset && x < right - inset &&
+           y >= top + inset && y < bottom - inset;
   }
 };
 
@@ -291,7 +297,9 @@ inline int hitTestIndex(KeyboardMode mode, int x, int y) {
   std::array<Key, 50> keys{};
   const size_t count = buildKeys(mode, keys.data(), keys.size());
   for (size_t index = 0; index < count; ++index) {
-    if (keys[index].rect.contains(x, y)) return static_cast<int>(index);
+    if (keys[index].rect.containsInset(x, y, kHitInsetPx)) {
+      return static_cast<int>(index);
+    }
   }
   return -1;
 }
