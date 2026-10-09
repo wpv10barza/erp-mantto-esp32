@@ -11,6 +11,7 @@ source "${VENV_DIR}/bin/activate"
 python tests/test_panel_state_contract.py
 python tests/test_wifi_source.py
 python tests/test_command_editor_integration.py
+python tests/test_touch_gpio_contract.py
 python test/command_buffer_regression.py
 python tests/test_production_firmware.py
 
@@ -29,6 +30,7 @@ required_suites=(
   "native:test_command_text_viewport"
   "native:test_virtual_keyboard"
   "native:test_editor_components"
+  "native:test_touch_gpio_ui"
 )
 
 for suite in "${required_suites[@]}"; do
