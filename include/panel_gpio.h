@@ -30,13 +30,17 @@ constexpr int audioLrclk = 2;
 constexpr int audioData = 40;
 
 template <size_t N>
-inline bool unique(const std::array<int, N>& pins) {
-  for (size_t i = 0; i < N; ++i) {
-    for (size_t j = i + 1; j < N; ++j) {
-      if (pins[i] == pins[j]) return false;
-    }
-  }
-  return true;
+constexpr bool uniqueFrom(const std::array<int, N>& pins, size_t i, size_t j) {
+  return i >= N
+      ? true
+      : (j >= N
+          ? uniqueFrom(pins, i + 1, i + 2)
+          : (pins[i] != pins[j] && uniqueFrom(pins, i, j + 1)));
+}
+
+template <size_t N>
+constexpr bool unique(const std::array<int, N>& pins) {
+  return N < 2 ? true : uniqueFrom(pins, 0, 1);
 }
 
 constexpr std::array<int, 16> rgb = {{
@@ -59,6 +63,8 @@ constexpr std::array<int, 29> allUsed = {{
     audioBclk, audioLrclk, audioData
 }};
 
+static_assert(unique(rgb), "RGB data pins must be unique");
+static_assert(unique(allUsed), "No two production subsystems may own the same GPIO");
 static_assert(touchSda != touchScl, "GT911 SDA/SCL must be distinct");
 static_assert(lcdClock != lcdMosi && lcdClock != lcdCs && lcdMosi != lcdCs,
               "LCD control SPI pins must be distinct");

@@ -27,12 +27,12 @@
     "src/main.cpp": "bbf7d4df14c3de264a50a3577813f81d5f4653b3",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
-    "include/virtual_keyboard.h": "d791c83d29054510666e3f2c9db44377e28bf057",
-    "include/editor_components.h": "b49cf1d24ce5b2fff503010cdea1cf066d8690e8",
-    "include/panel_gpio.h": "44df401d6f28d9c2f8881c0e4969d073bed2edd6",
-    "include/touch_input.h": "b3943c8d19c5a01efc6235c42e1a49d11bee999e",
-    "include/home_menu.h": "a5e16377aa06940ac899bd49f1d30889c0b38211",
-    "platformio/src/panel_4848s040/virtual_keyboard.h": "d791c83d29054510666e3f2c9db44377e28bf057"
+    "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
+    "include/editor_components.h": "020f12663522ddf1eed0ecb28ab2a5e36eda9f54",
+    "include/panel_gpio.h": "5439ae00de14e9b3e3cb407a913f9e417f5546b8",
+    "include/touch_input.h": "1cccf5ae06a2d532cb198a64a4a6aa277ce29e97",
+    "include/home_menu.h": "177c6d8028bc26badd888bfa8b2dd0c6bca87a3e",
+    "platformio/src/panel_4848s040/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b"
   },
   "production": {
     "platformio_env": "panel_4848s040",
@@ -68,6 +68,6 @@
       "toolbar_hitbox_inset_px": 3,
       "exact_visual_hitboxes": true
     },
-    "gpio_audit": "complete compile-time unique ownership map across display, touch and audio"
+    "gpio_audit": "complete C++11-compatible compile-time unique ownership map across display, touch and audio"
   }
 }
