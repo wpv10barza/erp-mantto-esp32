@@ -30,7 +30,7 @@
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
     "include/editor_components.h": "020f12663522ddf1eed0ecb28ab2a5e36eda9f54",
     "include/panel_gpio.h": "5439ae00de14e9b3e3cb407a913f9e417f5546b8",
-    "include/touch_input.h": "1cccf5ae06a2d532cb198a64a4a6aa277ce29e97",
+    "include/touch_input.h": "859e2ee6d4f3e17d34c4909ae385a69c8ebdcfc2",
     "include/home_menu.h": "177c6d8028bc26badd888bfa8b2dd0c6bca87a3e",
     "platformio/src/panel_4848s040/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b"
   },
@@ -57,10 +57,10 @@
     "touch": {
       "controller": "GT911",
       "i2c_hz": 400000,
-      "calibration": "0..480 -> 0..479",
-      "swap_xy": false,
+      "calibration": "GT911 0..480 -> ST7701 rotation=1: swap XY + mirror Y",
+      "swap_xy": true,
       "mirror_x": false,
-      "mirror_y": false,
+      "mirror_y": true,
       "dispatch": "release-confirmed tap",
       "tap_slop_px": 18,
       "menu_hitbox_inset_px": 5,
