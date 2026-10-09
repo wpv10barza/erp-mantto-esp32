@@ -6,6 +6,8 @@
 namespace panel_gpio {
 
 // Authoritative Guition ESP32-S3-4848S040 pin map.
+// ESPHome src/main.yaml parity: BL38, SPI 48/47 + CS39, I2C 19/45,
+// RGB timing 18/17/16/21 and the 16 data lines below.
 constexpr int backlight = 38;
 constexpr int lcdCs = 39;
 constexpr int lcdClock = 48;
@@ -43,7 +45,20 @@ constexpr std::array<int, 16> rgb = {{
     4, 5, 6, 7, 15
 }};
 
+// Complete GPIO ownership map used by the production PlatformIO target.
+// A duplicate here means two firmware subsystems are trying to own one line.
+constexpr std::array<int, 29> allUsed = {{
+    backlight, lcdCs, lcdClock, lcdMosi,
+    touchSda, touchScl,
+    de, vsync, hsync, pclk,
+    11, 12, 13, 14, 0,
+    8, 20, 3, 46, 9, 10,
+    4, 5, 6, 7, 15,
+    audioBclk, audioLrclk, audioData
+}};
+
 static_assert(unique(rgb), "RGB data pins must be unique");
+static_assert(unique(allUsed), "No two production subsystems may own the same GPIO");
 static_assert(touchSda != touchScl, "GT911 SDA/SCL must be distinct");
 static_assert(lcdClock != lcdMosi && lcdClock != lcdCs && lcdMosi != lcdCs,
               "LCD control SPI pins must be distinct");

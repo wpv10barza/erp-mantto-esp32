@@ -29,7 +29,7 @@
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "345f0e92d6123f8936c70645c6b49afd1d98b21b",
     "include/editor_components.h": "5893e1beaa63382aab1f5df3f2142ea544acb308",
-    "include/panel_gpio.h": "a98a3a40c5385aef5ceac7b61474f89303a7050b",
+    "include/panel_gpio.h": "44df401d6f28d9c2f8881c0e4969d073bed2edd6",
     "include/touch_input.h": "f13a49cb8d629ac1be30eda5424733922c23b00b",
     "include/home_menu.h": "a5a2c6c5bee67894415ec98fb9bd623feda66960",
     "platformio/src/panel_4848s040/virtual_keyboard.h": "345f0e92d6123f8936c70645c6b49afd1d98b21b"
@@ -42,7 +42,7 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.3.0-touch-gpio",
+    "version": "2.3.1-touch-gpio",
     "role": "final_principal_interface_with_precise_touch_and_modular_editor",
     "style": "component-isolated editor inspired by web grid/flex separation",
     "editor_components": [
@@ -63,6 +63,6 @@
       "debounce_ms": 140,
       "exact_visual_hitboxes": true
     },
-    "gpio_audit": true
+    "gpio_audit": "complete_unique_ownership_map"
   }
 }
