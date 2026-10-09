@@ -20,10 +20,10 @@ required_main = [
     '#include "home_menu.h"',
     "touch_input::mapRaw(rawX, rawY)",
     "home_ui::hitTest(",
-    "kTouchDebounceMs = 140",
-    '"GT911 I2C probe addr=0x%02X result=%u',
+    "touch_input::TapTracker touchTracker",
+    '"GT911 I2C probe addr=0x%02X result=%u bus=400kHz',
     '"GPIO MAP: BL=%d LCD_CS=%d',
-    'kFirmwareVersion[] = "2.3.1-touch-gpio"',
+    'kFirmwareVersion[] = "2.4.0-touch-router"',
 ]
 for needle in required_main:
     if needle not in MAIN:
@@ -51,6 +51,8 @@ for needle in [
     "kSwapXY = false",
     "kMirrorX = false",
     "kMirrorY = false",
+    "kTapSlopPx = 18",
+    "class TapTracker",
 ]:
     if needle not in TOUCH:
         raise AssertionError(f"missing GT911 calibration contract: {needle}")
@@ -59,6 +61,7 @@ for needle in [
     "{Action::Backend, {14, 62, 466, 107}}",
     "{Action::Sheets, {14, 111, 466, 156}}",
     "{Action::Send3C, {246, 426, 466, 468}}",
+    "kTouchInsetPx = 5",
 ]:
     if needle not in HOME:
         raise AssertionError(f"missing exact home hitbox: {needle}")
@@ -67,5 +70,7 @@ print("Touch + GPIO audit contract: PASS")
 print("- authoritative GPIO map centralized")
 print("- GT911 coordinates calibrated to 480x480")
 print("- exact visual hitboxes replace broad row-only routing")
-print("- menu gaps cannot select neighboring rows")
+print("- menu gaps and edge dead-zones cannot select neighboring rows")
+print("- tap is confirmed on release; drag/slip is rejected")
+print("- GT911 I2C bus runs at 400 kHz")
 print("- production and mirrored keyboard geometry are synchronized")
