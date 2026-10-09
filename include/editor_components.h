@@ -51,6 +51,7 @@ class ToolbarComponent {
   static constexpr int kGap = 6;
   static constexpr int kButtonWidth = 86;
   static constexpr int kButtonHeight = 42;
+  static constexpr int kHitInset = 3;
   static constexpr int kLeft = 13;
   static constexpr int kTop = 167;
 
@@ -71,7 +72,12 @@ class ToolbarComponent {
   static constexpr ToolbarAction hitTest(int x, int y) {
     const auto list = buttons();
     for (const auto& button : list) {
-      if (button.rect.contains(x, y)) return button.action;
+      const Rect active{
+          static_cast<int16_t>(button.rect.left + kHitInset),
+          static_cast<int16_t>(button.rect.top + kHitInset),
+          static_cast<int16_t>(button.rect.right - kHitInset),
+          static_cast<int16_t>(button.rect.bottom - kHitInset)};
+      if (active.contains(x, y)) return button.action;
     }
     return ToolbarAction::None;
   }
