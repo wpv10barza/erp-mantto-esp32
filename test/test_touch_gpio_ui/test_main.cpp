@@ -1,5 +1,9 @@
 #include <unity.h>
 
+// Explicit Unity lifecycle hooks for native toolchains without weak defaults.
+extern "C" void setUp(void) {}
+extern "C" void tearDown(void) {}
+
 #include "home_menu.h"
 #include "panel_gpio.h"
 #include "touch_input.h"
