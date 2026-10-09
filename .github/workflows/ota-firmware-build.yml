@@ -1,0 +1,54 @@
+name: Build ESP32 OTA Candidate
+on:
+  pull_request:
+    paths:
+      - "platformio.ini"
+      - "partitions_ota_16mb.csv"
+      - "platformio/src/**"
+      - "include/**"
+      - "src/main.cpp"
+      - "tests/test_ota_manual_contract.py"
+      - ".github/workflows/ota-firmware-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: pip install platformio==6.2.0
+      - name: Verify OTA source, mirrored production firmware and partitions
+        run: |
+          python tests/test_ota_manual_contract.py
+          python tests/test_firmware_main_sync.py
+          python tests/test_production_firmware.py
+      - name: Compile production ESP32-S3 4848S040 with OTA partitions
+        run: pio run -e panel_4848s040
+      - name: Verify binaries and image size
+        run: |
+          test -s .pio/build/panel_4848s040/firmware.bin
+          test -s .pio/build/panel_4848s040/partitions.bin
+          test -s .pio/build/panel_4848s040/bootloader.bin
+          python - <<'PY'
+          from pathlib import Path
+          firmware = Path('.pio/build/panel_4848s040/firmware.bin')
+          assert 0 < firmware.stat().st_size <= 0x400000
+          print('OTA production firmware bytes:', firmware.stat().st_size)
+          PY
+      - name: Upload unsigned, unprovisioned build for review only
+        uses: actions/upload-artifact@v4
+        with:
+          name: ota-candidate-esp32-s3-4848s040
+          path: |
+            .pio/build/panel_4848s040/firmware.bin
+            .pio/build/panel_4848s040/bootloader.bin
+            .pio/build/panel_4848s040/partitions.bin
+          if-no-files-found: error
