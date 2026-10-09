@@ -49,4 +49,58 @@ constexpr Point mapRaw(int rawX, int rawY) {
                x >= 0 && x < kScreenWidth && y >= 0 && y < kScreenHeight};
 }
 
+constexpr int kTapSlopPx = 18;
+
+class TapTracker {
+ public:
+  bool update(bool touched, int x, int y, Point* releasedTap = nullptr) {
+    if (touched) {
+      const Point current{static_cast<int16_t>(x), static_cast<int16_t>(y),
+                          x >= 0 && x < kScreenWidth && y >= 0 && y < kScreenHeight};
+      if (!current.valid) {
+        cancel();
+        return false;
+      }
+      if (!active_) {
+        active_ = true;
+        moved_ = false;
+        start_ = current;
+        last_ = current;
+        return false;
+      }
+
+      last_ = current;
+      const int dx = last_.x - start_.x;
+      const int dy = last_.y - start_.y;
+      if (dx > kTapSlopPx || dx < -kTapSlopPx ||
+          dy > kTapSlopPx || dy < -kTapSlopPx) {
+        moved_ = true;
+      }
+      return false;
+    }
+
+    if (!active_) return false;
+    const bool accepted = !moved_ && start_.valid;
+    const Point acceptedPoint = start_;
+    cancel();
+    if (accepted && releasedTap) *releasedTap = acceptedPoint;
+    return accepted;
+  }
+
+  void cancel() {
+    active_ = false;
+    moved_ = false;
+    start_ = Point{};
+    last_ = Point{};
+  }
+
+  bool active() const { return active_; }
+
+ private:
+  bool active_ = false;
+  bool moved_ = false;
+  Point start_{};
+  Point last_{};
+};
+
 }  // namespace touch_input
