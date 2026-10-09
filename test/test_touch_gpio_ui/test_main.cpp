@@ -50,6 +50,31 @@ void test_expanded_details_disable_hidden_secondary_rows() {
                         static_cast<int>(home_ui::hitTest(100, 80, true)));
 }
 
+void test_tap_tracker_fires_only_on_release() {
+  touch_input::TapTracker tracker;
+  touch_input::Point tap{};
+  TEST_ASSERT_FALSE(tracker.update(true, 100, 120, &tap));
+  TEST_ASSERT_FALSE(tracker.update(true, 104, 123, &tap));
+  TEST_ASSERT_TRUE(tracker.update(false, 0, 0, &tap));
+  TEST_ASSERT_EQUAL_INT(100, tap.x);
+  TEST_ASSERT_EQUAL_INT(120, tap.y);
+}
+
+void test_drag_across_neighbor_is_rejected() {
+  touch_input::TapTracker tracker;
+  touch_input::Point tap{};
+  TEST_ASSERT_FALSE(tracker.update(true, 100, 100, &tap));
+  TEST_ASSERT_FALSE(tracker.update(true, 100, 130, &tap));
+  TEST_ASSERT_FALSE(tracker.update(false, 0, 0, &tap));
+}
+
+void test_hitbox_edges_are_dead_zones() {
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::None),
+                        static_cast<int>(home_ui::hitTest(15, 80, false)));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::Backend),
+                        static_cast<int>(home_ui::hitTest(100, 80, false)));
+}
+
 void test_critical_gpio_map() {
   TEST_ASSERT_EQUAL_INT(38, panel_gpio::backlight);
   TEST_ASSERT_EQUAL_INT(39, panel_gpio::lcdCs);
@@ -62,6 +87,7 @@ void test_critical_gpio_map() {
   TEST_ASSERT_EQUAL_INT(16, panel_gpio::hsync);
   TEST_ASSERT_EQUAL_INT(21, panel_gpio::pclk);
   TEST_ASSERT_TRUE(panel_gpio::unique(panel_gpio::rgb));
+  TEST_ASSERT_TRUE(panel_gpio::unique(panel_gpio::allUsed));
 }
 
 int main() {
@@ -70,6 +96,9 @@ int main() {
   RUN_TEST(test_home_menu_gaps_do_not_trigger_adjacent_rows);
   RUN_TEST(test_home_menu_bottom_buttons_match_visual_bounds);
   RUN_TEST(test_expanded_details_disable_hidden_secondary_rows);
+  RUN_TEST(test_tap_tracker_fires_only_on_release);
+  RUN_TEST(test_drag_across_neighbor_is_rejected);
+  RUN_TEST(test_hitbox_edges_are_dead_zones);
   RUN_TEST(test_critical_gpio_map);
   return UNITY_END();
 }
