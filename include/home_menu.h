@@ -14,6 +14,14 @@ struct Rect {
   constexpr bool contains(int x, int y) const {
     return x >= left && x < right && y >= top && y < bottom;
   }
+
+  constexpr Rect inset(int amount) const {
+    return Rect{
+        static_cast<int16_t>(left + amount),
+        static_cast<int16_t>(top + amount),
+        static_cast<int16_t>(right - amount),
+        static_cast<int16_t>(bottom - amount)};
+  }
 };
 
 enum class Action : uint8_t {
@@ -34,6 +42,8 @@ struct Target {
   Action action;
   Rect rect;
 };
+
+constexpr int kTouchInsetPx = 5;
 
 constexpr std::array<Target, 10> targets() {
   return {{
@@ -59,7 +69,7 @@ constexpr Action hitTest(int x, int y, bool detailsExpanded) {
          target.action == Action::Device)) {
       continue;
     }
-    if (target.rect.contains(x, y)) return target.action;
+    if (target.rect.inset(kTouchInsetPx).contains(x, y)) return target.action;
   }
   return Action::None;
 }
