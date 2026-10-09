@@ -1,5 +1,43 @@
 # ERP Mantto ESP32 — ESP32-S3-4848S040
 
+## Guía actual: Windows PowerShell y Colab/Drive
+
+Consulta [la guía de actualización, pruebas y carga desde PowerShell](README_FLASH_POWERSHELL.md). El [cuaderno de Drive](https://drive.google.com/file/d/1_cFNIaC0fz8UhKJcpWbtqLTcQTjqGyeN/view?usp=drivesdk) también puede [abrirse en Colab](https://colab.research.google.com/drive/1_cFNIaC0fz8UhKJcpWbtqLTcQTjqGyeN). Es una guía Markdown: la carga USB y el monitor COM se ejecutan en Windows local. Si el cuaderno conserva comandos antiguos, utiliza la guía versionada del repositorio.
+
+### Estado verificado el 9 de octubre de 2026
+
+La revisión se realizó sobre el commit [9a7d32b](https://github.com/wpv10barza/erp-mantto-esp32/commit/9a7d32b7fa4ddd79264a94b65a5213fe14871f06), junto con el registro PowerShell compartido. No se atribuye al firmware recién compilado el comportamiento del firmware anterior ejecutado desde `firmware-demo`.
+
+| Comprobación | Resultado observado |
+|---|---|
+| Contratos Python ejecutados en Windows | Seis PASS: estados, UI, Wi-Fi, editor, touch/GPIO y producción |
+| Regresión del buffer en Windows | No ejecutada por ruta incorrecta; usar `py .\test\command_buffer_regression.py` |
+| Cinco suites `native` en Windows | ERRORED: `gcc` y `g++` no estaban en PATH |
+| Build `panel_4848s040` en Windows | SUCCESS; RAM 14.4 % y Flash 15.5 % |
+| Monitor COM9 desde `firmware-demo` | `GET health -> 200` y `DATABRICKS LISTO` repetidos |
+| Upload del build actual y prueba táctil | No documentados en el registro adjunto |
+| [CI de 9a7d32b](https://github.com/wpv10barza/erp-mantto-esp32/actions/runs/37959355032) | success |
+| [Firmware CD de 9a7d32b](https://github.com/wpv10barza/erp-mantto-esp32/actions/runs/37959355023) | success |
+
+El contrato JSON declara protocolo `1.1`; el health observado y la prueba E2E anuncian `1.0`. La discrepancia debe mantenerse visible hasta que se concilien las versiones. Un health exitoso acredita disponibilidad del servicio, pero todavía requiere comprobar Google Sheets, envío, revisión humana y resultado terminal.
+
+### Responsabilidades del sistema
+
+```mermaid
+flowchart TD
+  A["Panel ESP32: editar y enviar"] --> B["Databricks Apps: Device API"]
+  B --> C["Interpretar y validar propuesta"]
+  C --> D{"Revisión humana"}
+  D -->|Confirmar| E["Persistencia autorizada en Google Sheets"]
+  D -->|Rechazar| F["Estado rejected"]
+  E --> G["Estado applied"]
+  B --> H["Consulta periódica del panel"]
+  F --> H
+  G --> H
+```
+
+La autenticación de transporte combina OAuth M2M y `X-3C-Device-Token`. El diagrama describe responsabilidades; su ejecución completa requiere evidencia del flujo de la orden.
+
 ## Interfaz principal final — v2.4.0
 
 La interfaz principal del objetivo PlatformIO `panel_4848s040` adopta un menú compacto tipo aplicación móvil. La pantalla inicial evita mostrar datos técnicos innecesarios: presenta **Conexión al backend**, **Google Sheets**, **GitHub Actions** y **Actualizar firmware** como opciones principales y mantiene **Wi‑Fi 2.4 GHz**, **Nube Databricks**, **Diagnóstico** y **Estado del dispositivo** como paneles desplegables.
@@ -459,36 +497,27 @@ El contrato define el protocolo <code>1.1</code>, el transporte HTTPS hacia Data
 
 ### Flujo de estados
 
-~~~text
-POST /api/device/v1/commands
-          │
-          ▼
-pending_confirmation
-          │
-          ├──────────────► applied
-          │
-          └──────────────► rejected
-
-GET /api/device/v1/commands/{command_id}
-          ▲
-          │
-       polling
-       cada 2500 ms
-
-fallo de transporte/protocolo ─────► ERROR
-~~~
+```mermaid
+stateDiagram-v2
+  [*] --> pending_confirmation: Orden aceptada
+  pending_confirmation --> applied: Confirmación humana
+  pending_confirmation --> rejected: Rechazo humano
+  pending_confirmation --> ERROR: Fallo de transporte o protocolo
+  applied --> [*]
+  rejected --> [*]
+```
 
 El firmware consulta el estado cada **2500 ms**. Los estados terminales <code>applied</code> y <code>rejected</code> cierran el ciclo de la orden. Los estados <code>error</code>, <code>failed</code> y <code>fallido</code>, o un estado desconocido, se tratan como error de protocolo.
 
 El ESP32 no ejecuta por sí mismo la confirmación o el rechazo. La aprobación humana pertenece al Monitor web.
 
-### Contrato frente al servicio local de prueba
+### Contrato frente al servicio local de prueba y al backend Databricks
 
-[backend/device_api.py](backend/device_api.py) es un servicio local de prueba y conserva una implementación simplificada del API. El contrato normativo del dispositivo y la prueba E2E contra el Monitor real utilizan <code>device_id</code>, <code>request_id</code> y <code>text</code>.
+[backend/device_api.py](backend/device_api.py) es un servicio local de prueba y conserva una implementación simplificada del API. El contrato normativo del dispositivo y la prueba E2E contra la aplicación FastAPI de Databricks ejecutada localmente en CI utilizan <code>device_id</code>, <code>request_id</code> y <code>text</code>.
 
 Por esa razón, <code>backend/device_api.py</code> se documenta como **harness de prueba**, no como el backend productivo.
 
-La prueba [tests/test_device_api_e2e.py](tests/test_device_api_e2e.py) verifica contra el Monitor real la autenticación, el alta de la orden, la idempotencia por <code>request_id</code>, el estado <code>pending_confirmation</code>, el polling autenticado y el resultado terminal.
+La prueba [tests/test_device_api_e2e.py](tests/test_device_api_e2e.py) verifica el token de aplicación, el alta de la orden, la idempotencia por <code>request_id</code>, <code>pending_confirmation</code>, el polling autenticado y el rechazo humano terminal contra el backend FastAPI ejecutado localmente en CI. La prueba no reproduce el borde OAuth de Databricks ni escribe en Google Sheets.
 
 ## Versiones y dependencias
 
@@ -511,7 +540,10 @@ Las versiones se aseguran desde [scripts/02_tools_guition.sh](scripts/02_tools_g
 
 Las credenciales personales deben permanecer fuera del control de versiones. El patrón disponible es [include/local_config.example.h](include/local_config.example.h); el archivo real <code>include/local_config.h</code> debe mantenerse ignorado por Git.
 
-## Seis bloques de ejecución
+## Seis bloques de ejecución — alternativa WSL/Ubuntu
+
+Para el flujo Windows del registro compartido usa [README_FLASH_POWERSHELL.md](README_FLASH_POWERSHELL.md). Los siguientes bloques Bash corresponden a WSL/Ubuntu; no deben pegarse como comandos PowerShell.
+
 
 El fuente original define seis bloques para WSL/Ubuntu. Como este repositorio se ejecuta sobre el **destino** <code>erp-mantto-esp32</code>, se debe establecer <code>REPO_DIR</code> y utilizar la URL del destino en el Bloque 1.
 
@@ -641,19 +673,19 @@ El repositorio conserva pruebas Python, C++ y E2E:
 
 #### Firmware CD
 
-[.github/workflows/firmware-cd.yml](.github/workflows/firmware-cd.yml) amplía la validación con:
+[.github/workflows/firmware-cd.yml](.github/workflows/firmware-cd.yml) valida el firmware y el contrato del backend **`wpv10barza/asistente-de-databricks--erp`**, fijado al commit `1170ba2ab1b4918c66e25e3e1064547db8dea87a`. Ejecuta:
 
-- ESPHome validate/compile;
-- pruebas del Monitor real de <code>wpv10barza/asistente-3c</code>;
-- lint y pruebas Node;
-- health del Monitor;
-- Device API E2E;
-- Browser UI E2E con Playwright;
-- pruebas nativas;
-- compilación de <code>panel_4848s040</code>;
-- empaquetado de firmware y manifiesto SHA-256.
+- paridad de los archivos `main.cpp` y contratos de producción, UI y backend;
+- sintaxis de los lanzadores PCU;
+- instalación de herramientas y verificación del proyecto;
+- validación/compilación ESPHome;
+- arranque local del backend FastAPI de Databricks para Device API E2E;
+- pruebas nativas y compilación `panel_4848s040`;
+- empaquetado de firmware, PCU, contrato, manifiesto y SHA-256.
 
-El manifiesto distingue explícitamente la evidencia de compilación de la validación física.
+El workflow actual no incluye lint/pruebas Node del antiguo Monitor Express ni Browser UI E2E con Playwright. Conserva los archivos E2E históricos, pero su presencia no equivale a ejecución en Firmware CD.
+
+El E2E local cubre autenticación de aplicación e idempotencia, polling y rechazo humano. El borde OAuth M2M real de Databricks y la escritura real en Sheets requieren validación adicional. El manifiesto utiliza `compiled_not_physically_flashed` para distinguir el build del flasheo físico.
 
 #### Validación física
 
@@ -748,7 +780,7 @@ Los componentes principales son:
 
 La documentación académica que utilice esta información debe conservar la lógica **condición → diseño → implementación → evidencia → limitación**, sin crear una numeración paralela dentro de este README.
 
-## 4. Consolidación y comparación
+## Historial de consolidación y comparación
 
 Antes de modificar el destino se leyeron y compararon ambos README completos.
 
@@ -785,13 +817,13 @@ La versión consolidada utiliza como referencia:
 - **Destino:** <code>wpv10barza/erp-mantto-esp32</code>
 - **Rama destino:** <code>main</code>
 
-El firmware, GPIO, ST7701S, GT911, PSRAM, flash, API, estados, temporización, dependencias y pruebas se mantienen según el snapshot fuente utilizado. La consolidación realizada sobre este repositorio es documental y no rediseña la arquitectura funcional.
+Los identificadores de esta sección corresponden al snapshot histórico de importación. El estado actual debe obtenerse de `main`, `platformio.ini`, el firmware y los workflows vigentes; la integración Databricks, la interfaz y los contratos han recibido cambios posteriores.
 
 ### Figuras documentales por capítulo
 
 La documentación visible en este README sigue la regla **capítulo → una sola figura pertinente → PNG en `doc/images/` → referencia en README**. Cada figura se integra en su ubicación de capítulo y se acompaña de nombre de figura y nota aclaratoria.
 
-## Consolidación documental de la fuente técnica
+## Snapshot histórico de la fuente técnica
 
 Esta versión del README se consolidó después de leer y comparar directamente el `README.md` de `wpv10barza/ESP32-S3-4848S040` en la rama `main` antes de modificar el repositorio destino.
 
