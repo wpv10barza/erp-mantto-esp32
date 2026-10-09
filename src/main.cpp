@@ -858,7 +858,7 @@ bool isSha256Hex(const String& value) {
 }
 
 String sha256Hex(const unsigned char digest[32]) {
-  static const char kHex[] = "0123456789abcdef";
+  static const char kHex[] = "01234567" "89abcdef";
   String output;
   output.reserve(64);
   for (size_t index = 0; index < 32; ++index) {
