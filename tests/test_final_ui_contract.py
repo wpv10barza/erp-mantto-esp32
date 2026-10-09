@@ -2,7 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = (ROOT / "platformio" / "src" / "panel_4848s040" / "main.cpp").read_text(encoding="utf-8")
-MIRROR = (ROOT / "src" / "main.cpp").read_text(encoding="utf-8")
+MIRROR = (ROOT / "src" / "main.cpp").read_text(encoding="utf-8")\nEDITOR = (ROOT / "include" / "editor_components.h").read_text(encoding="utf-8")
 
 
 def require(needle: str, label: str) -> None:
