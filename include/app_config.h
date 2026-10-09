@@ -69,4 +69,7 @@ static constexpr unsigned long healthCheckMs = 30000UL;
 static constexpr unsigned long commandPollMs = 2500UL;
 static constexpr unsigned long httpTimeoutMs = 12000UL;
 static constexpr unsigned long oauthRefreshSkewMs = 300000UL;
+static constexpr unsigned long otaHttpTimeoutMs = 30000UL;
+static constexpr unsigned long otaStreamTimeoutMs = 30000UL;
+static constexpr unsigned long otaBootConfirmDelayMs = 15000UL;
 }

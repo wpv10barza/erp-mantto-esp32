@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <HTTPClient.h>
+#include <Update.h>
+#include <mbedtls/sha256.h>
+#include <esp_ota_ops.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -61,6 +64,8 @@ enum class HomePanel {
 
 HomePanel homePanel = HomePanel::None;
 constexpr char kFirmwareVersion[] = "2.5.0-white-async";
+// OTA manifests use strict numeric semver; the white UI name is still shown.
+constexpr char kOtaVersion[] = "2.5.0";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -78,7 +83,7 @@ bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
 
-enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C };
+enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C, OtaCheck, OtaInstall };
 struct NetworkRequest {
   NetworkAction action;
   char command[241];
@@ -102,6 +107,9 @@ constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
 virtual_keyboard::KeyboardMode keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
 bool commandEditorOpen = false;
+// Managed only by the network worker except otaBootConfirmed on the UI task.
+String lastOtaMessage = "OTA sin verificar";
+bool otaBootConfirmed = false;
 
 struct TouchSample {
   bool ready = false;
@@ -366,10 +374,13 @@ void drawExpandedPanel() {
     display->setCursor(28, 316);
     display->print("Version: ");
     display->print(kFirmwareVersion);
-    display->setCursor(28, 336);
-    display->print("Build reproducible desde GitHub Actions.");
-    display->setCursor(28, 356);
-    display->print("Flasheo fisico requiere dispositivo conectado.");
+    display->setCursor(28, 334);
+    display->print(panelDetail.startsWith("OTA") || panelDetail.startsWith("FW ")
+                       ? panelDetail : String("OTA: HTTPS + SHA-256"));
+    display->setCursor(28, 353);
+    display->print("Consultar antes de instalar firmware");
+    drawButton(24, 377, 205, 31, "BUSCAR OTA", WHITE);
+    drawButton(251, 377, 205, 31, "INSTALAR", WHITE);
   } else if (homePanel == HomePanel::Wifi) {
     display->setCursor(28, 316);
     display->print("SSID: ");
@@ -810,6 +821,302 @@ void addRequestAuth(HTTPClient& http) {
   }
 }
 
+int compareSemanticVersion(const String& leftRaw, const String& rightRaw) {
+  String left = leftRaw;
+  String right = rightRaw;
+  left.trim();
+  right.trim();
+  if (left.startsWith("v") || left.startsWith("V")) left.remove(0, 1);
+  if (right.startsWith("v") || right.startsWith("V")) right.remove(0, 1);
+
+  for (int part = 0; part < 3; ++part) {
+    const int leftDot = left.indexOf('.');
+    const int rightDot = right.indexOf('.');
+    String leftPart = leftDot >= 0 ? left.substring(0, leftDot) : left;
+    String rightPart = rightDot >= 0 ? right.substring(0, rightDot) : right;
+    const int leftDash = leftPart.indexOf('-');
+    const int rightDash = rightPart.indexOf('-');
+    if (leftDash >= 0) leftPart = leftPart.substring(0, leftDash);
+    if (rightDash >= 0) rightPart = rightPart.substring(0, rightDash);
+    const long leftValue = leftPart.toInt();
+    const long rightValue = rightPart.toInt();
+    if (leftValue < rightValue) return -1;
+    if (leftValue > rightValue) return 1;
+    left = leftDot >= 0 ? left.substring(leftDot + 1) : "";
+    right = rightDot >= 0 ? right.substring(rightDot + 1) : "";
+  }
+  return 0;
+}
+
+bool isSha256Hex(const String& value) {
+  if (value.length() != 64) return false;
+  for (size_t index = 0; index < value.length(); ++index) {
+    const char c = value[index];
+    if (!isxdigit(static_cast<unsigned char>(c))) return false;
+  }
+  return true;
+}
+
+String sha256Hex(const unsigned char digest[32]) {
+  static const char kHex[] = "0123456789abcdef";
+  String output;
+  output.reserve(64);
+  for (size_t index = 0; index < 32; ++index) {
+    output += kHex[(digest[index] >> 4) & 0x0F];
+    output += kHex[digest[index] & 0x0F];
+  }
+  return output;
+}
+
+String absoluteFirmwareUrl(const String& candidate) {
+  String url = candidate;
+  url.trim();
+  // Only allow same-origin Databricks App firmware paths. Prevent header leaks.
+  if (!url.startsWith("/api/device/v1/firmware/") ||
+      !url.endsWith(".bin") || url.indexOf("..") >= 0 ||
+      url.indexOf('?') >= 0 || url.indexOf('#') >= 0) return "";
+  return backendBaseUrl() + url;
+}
+
+void abortOta(const String& detail) {
+  Update.abort();
+  lastOtaMessage = detail;
+  updatePanel(PanelState::Error, detail, true);
+  Serial.printf("[ERROR] OTA %s\n", detail.c_str());
+}
+
+bool performOtaUpdate(
+    const String& version,
+    const String& downloadUrl,
+    const String& expectedSha256,
+    size_t expectedSize) {
+  if (!isSha256Hex(expectedSha256)) {
+    lastOtaMessage = "OTA: SHA-256 invalido";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  if (!ensureDatabricksAccessToken()) {
+    lastOtaMessage = "OTA OAuth no disponible";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  const String url = absoluteFirmwareUrl(downloadUrl);
+  if (!url.length()) {
+    lastOtaMessage = "OTA URL invalida";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  updatePanel(PanelState::Busy, String("OTA ") + version + " descargando", true);
+
+  HTTPClient http;
+  http.setTimeout(app_config::otaHttpTimeoutMs);
+  if (!http.begin(url)) {
+    lastOtaMessage = "OTA no pudo abrir HTTPS";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  addRequestAuth(http);
+  const int code = http.GET();
+  if (code != 200) {
+    lastOtaMessage = String("OTA descarga HTTP ") + code;
+    http.end();
+    if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  const int contentLength = http.getSize();
+  if (expectedSize > 0 && contentLength > 0 &&
+      static_cast<size_t>(contentLength) != expectedSize) {
+    http.end();
+    lastOtaMessage = "OTA tamano no coincide";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  const size_t updateSize =
+      contentLength > 0 ? static_cast<size_t>(contentLength) : UPDATE_SIZE_UNKNOWN;
+  if (!Update.begin(updateSize, U_FLASH)) {
+    http.end();
+    lastOtaMessage = "OTA sin particion disponible";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    Serial.printf("[ERROR] Update.begin: %s\n", Update.errorString());
+    return false;
+  }
+
+  mbedtls_sha256_context sha;
+  mbedtls_sha256_init(&sha);
+  if (mbedtls_sha256_starts_ret(&sha, 0) != 0) {
+    mbedtls_sha256_free(&sha);
+    http.end();
+    abortOta("OTA SHA init fallo");
+    return false;
+  }
+
+  WiFiClient* stream = http.getStreamPtr();
+  uint8_t buffer[4096];
+  size_t total = 0;
+  unsigned long lastProgress = millis();
+  bool streamOk = true;
+
+  while (http.connected() &&
+         (contentLength < 0 || total < static_cast<size_t>(contentLength))) {
+    const size_t available = stream->available();
+    if (!available) {
+      if (millis() - lastProgress > app_config::otaStreamTimeoutMs) {
+        streamOk = false;
+        break;
+      }
+      delay(5);
+      continue;
+    }
+
+    const size_t chunk = available < sizeof(buffer) ? available : sizeof(buffer);
+    const int read = stream->readBytes(buffer, chunk);
+    if (read <= 0) {
+      streamOk = false;
+      break;
+    }
+    lastProgress = millis();
+
+    if (mbedtls_sha256_update_ret(&sha, buffer, static_cast<size_t>(read)) != 0) {
+      streamOk = false;
+      break;
+    }
+    const size_t written = Update.write(buffer, static_cast<size_t>(read));
+    if (written != static_cast<size_t>(read)) {
+      streamOk = false;
+      break;
+    }
+    total += written;
+  }
+
+  unsigned char digest[32] = {};
+  const int shaResult = mbedtls_sha256_finish_ret(&sha, digest);
+  mbedtls_sha256_free(&sha);
+  http.end();
+
+  if (!streamOk || shaResult != 0) {
+    abortOta("OTA descarga incompleta");
+    return false;
+  }
+  if (contentLength > 0 && total != static_cast<size_t>(contentLength)) {
+    abortOta("OTA bytes incompletos");
+    return false;
+  }
+  if (expectedSize > 0 && total != expectedSize) {
+    abortOta("OTA tamano verificado fallo");
+    return false;
+  }
+
+  String actualSha = sha256Hex(digest);
+  String expectedSha = expectedSha256;
+  expectedSha.toLowerCase();
+  if (actualSha != expectedSha) {
+    Serial.printf("[ERROR] OTA SHA mismatch expected=%s actual=%s\n",
+                  expectedSha.c_str(), actualSha.c_str());
+    abortOta("OTA SHA-256 no coincide");
+    return false;
+  }
+
+  if (!Update.end(true)) {
+    Serial.printf("[ERROR] Update.end: %s\n", Update.errorString());
+    abortOta("OTA no pudo finalizar");
+    return false;
+  }
+
+  lastOtaMessage = String("OTA ") + version + " verificada";
+  updatePanel(PanelState::Busy, "OTA OK; reiniciando", true);
+  Serial.printf("OTA SUCCESS version=%s bytes=%u sha256=%s\n",
+                version.c_str(), static_cast<unsigned>(total), actualSha.c_str());
+  delay(1200);
+  ESP.restart();
+  return true;
+}
+
+bool checkForOtaUpdate(bool install) {
+  if (WiFi.status() != WL_CONNECTED) {
+    lastOtaMessage = "OTA sin Internet";
+    updatePanel(PanelState::Offline, lastOtaMessage, true);
+    return false;
+  }
+  if (!ensureDatabricksAccessToken()) {
+    lastOtaMessage = "OTA OAuth no disponible";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  const String url = endpoint("/api/device/v1/firmware/latest");
+  if (!http.begin(url)) {
+    lastOtaMessage = "OTA manifest no disponible";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  addRequestAuth(http);
+  http.addHeader("X-Firmware-Version", kOtaVersion);
+  const int code = http.GET();
+  const String body = code > 0 ? http.getString() : http.errorToString(code);
+  http.end();
+
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code != 200) {
+    lastOtaMessage = String("OTA manifest HTTP ") + code;
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    Serial.printf("[WARN] OTA manifest HTTP=%d detail=%s\n", code, body.c_str());
+    return false;
+  }
+
+  const String version = jsonStringValue(body, "version");
+  const String sha256 = jsonStringValue(body, "sha256");
+  const String path = jsonStringValue(body, "url");
+  const size_t size = static_cast<size_t>(jsonUnsignedLongValue(body, "size", 0UL));
+  if (!version.length() || !path.length() || !isSha256Hex(sha256) || size == 0 || size > 0x400000UL) {
+    lastOtaMessage = "OTA manifest invalido";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  if (compareSemanticVersion(version, kOtaVersion) <= 0) {
+    lastOtaMessage = String("FW ") + kOtaVersion + " al dia";
+    updatePanel(PanelState::Ready, lastOtaMessage, true);
+    return false;
+  }
+
+  lastOtaMessage = String("OTA disponible ") + version;
+  Serial.printf("OTA AVAILABLE current=%s latest=%s size=%u\n",
+                kOtaVersion, version.c_str(), static_cast<unsigned>(size));
+  // A check is read-only. Flashing requires a second explicit touch.
+  if (!install) {
+    updatePanel(PanelState::Pending, lastOtaMessage, true);
+    return false;
+  }
+  return performOtaUpdate(version, path, sha256, size);
+}
+
+
+void confirmOtaBootIfHealthy() {
+  if (otaBootConfirmed || millis() < app_config::otaBootConfirmDelayMs) return;
+  otaBootConfirmed = true;
+
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (!running) return;
+  esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+  const esp_err_t stateResult = esp_ota_get_state_partition(running, &state);
+  if (stateResult != ESP_OK || state != ESP_OTA_IMG_PENDING_VERIFY) return;
+
+  if (displayReady) {
+    const esp_err_t validResult = esp_ota_mark_app_valid_cancel_rollback();
+    Serial.printf("OTA BOOT CONFIRM result=%d\n", static_cast<int>(validResult));
+  } else {
+    Serial.println("[ERROR] OTA boot self-test failed; rolling back");
+    esp_ota_mark_app_invalid_rollback_and_reboot();
+  }
+}
+
 bool checkBackendHealthOnce() {
   if (!backendBaseUrl().length()) {
     backendAvailable = false;
@@ -1029,7 +1336,10 @@ bool queueNetworkRequest(NetworkAction action, const String& command = String())
     return false;
   }
   updatePanel(PanelState::Busy,
-              action == NetworkAction::Send3C ? "Orden 3C en cola" : "Consulta cloud en cola");
+              action == NetworkAction::Send3C ? "Orden 3C en cola" :
+              action == NetworkAction::OtaCheck ? "OTA: buscando" :
+              action == NetworkAction::OtaInstall ? "OTA: preparando instalacion" :
+              "Consulta cloud en cola");
   return true;
 }
 
@@ -1057,6 +1367,12 @@ void networkWorker(void* parameter) {
           break;
         case NetworkAction::Send3C:
           send3CCommand(String(request.command));
+          break;
+        case NetworkAction::OtaCheck:
+          checkForOtaUpdate(false);
+          break;
+        case NetworkAction::OtaInstall:
+          checkForOtaUpdate(true);
           break;
       }
       lastHealthCheck = millis();
@@ -1242,6 +1558,18 @@ void handleTouch() {
         }
       }
     } else {
+      // Firmware button coordinates are inside the expanded details, not
+      // in the hidden secondary menu. Explicit user actions are mandatory.
+      if (homePanel == HomePanel::Firmware && tap.y >= 377 && tap.y < 408) {
+        if (tap.x >= 24 && tap.x < 229) {
+          queueNetworkRequest(NetworkAction::OtaCheck);
+          return;
+        }
+        if (tap.x >= 251 && tap.x < 456) {
+          queueNetworkRequest(NetworkAction::OtaInstall);
+          return;
+        }
+      }
       auto togglePanel = [](HomePanel requested) {
         homePanel = homePanel == requested ? HomePanel::None : requested;
         drawPanel();
@@ -1331,6 +1659,7 @@ void setup() {
 }
 
 void loop() {
+  confirmOtaBootIfHealthy();
   processNetworkUiUpdates();
   web.handleClient();
   handleTouch();

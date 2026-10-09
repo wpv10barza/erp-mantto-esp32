@@ -64,6 +64,7 @@ jobs:
         run: |
           python tests/test_panel_state_contract.py
           python tests/test_final_ui_contract.py
+          python tests/test_ota_manual_contract.py
           python tests/test_async_white_ui_contract.py
           python tests/test_wifi_source.py
           python tests/test_command_editor_integration.py

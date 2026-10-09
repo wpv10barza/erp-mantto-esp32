@@ -36,6 +36,7 @@ jobs:
           python tests/test_firmware_main_sync.py
           python tests/test_backend_discovery.py
           python tests/test_final_ui_contract.py
+          python tests/test_ota_manual_contract.py
           python tests/test_async_white_ui_contract.py
           python tests/test_production_firmware.py
           grep -q '/api/device/v1/health' cloud/app/main.py
