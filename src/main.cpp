@@ -1053,7 +1053,7 @@ void handleTouch() {
   const TouchSample sample = readTouch();
   if (!sample.ready) return;
   touch_input::Point tap{};
-  if (!touchTracker.update(sample.touched, tap.x, tap.y, &tap)) return;
+  if (!touchTracker.update(sample.touched, sample.x, sample.y, &tap)) return;
   {
     if (commandEditorOpen) {
       virtual_keyboard::Key key{};
