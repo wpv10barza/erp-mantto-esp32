@@ -1,0 +1,9 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "erp_mantto_esp32": "./langgraph_app/graph.py:graph"
+  },
+  "python_version": "3.11",
+  "image_distro": "wolfi"
+}
