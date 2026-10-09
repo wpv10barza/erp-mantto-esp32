@@ -35,7 +35,7 @@ for needle, label in [
     ("drawEditorTextField()", "partial editor redraw"),
     ("checkCloudStack()", "cloud plus Sheets verifier"),
     ('endpoint("/api/sheet/verify")', "read-only Sheets verification"),
-    ('kFirmwareVersion[] = "2.3.1-touch-gpio"', "final firmware identity"),
+    ('kFirmwareVersion[] = "2.4.0-touch-router"', "final firmware identity"),
 ]:
     require_main(needle, label)
 
