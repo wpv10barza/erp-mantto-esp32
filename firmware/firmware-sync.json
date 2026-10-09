@@ -23,8 +23,8 @@
     "status_path": "/api/device/v1/commands/{command_id}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "cd8112b94739b54160240204d8f343c5d4fff356",
-    "src/main.cpp": "cd8112b94739b54160240204d8f343c5d4fff356",
+    "platformio/src/panel_4848s040/main.cpp": "46abfc930f6d6cfcea4f46b33f3dc438e3bdcad2",
+    "src/main.cpp": "46abfc930f6d6cfcea4f46b33f3dc438e3bdcad2",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "345f0e92d6123f8936c70645c6b49afd1d98b21b",

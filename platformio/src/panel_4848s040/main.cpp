@@ -372,8 +372,7 @@ void drawExpandedPanel() {
     display->print("Estado: ");
     display->print(WiFi.status() == WL_CONNECTED ? "Conectado" : "Desconectado");
     display->setCursor(28, 356);
-    display->print("IP: ");
-    display->print(WiFi.localIP().toString());
+    display->print("Direccion IP gestionada por DHCP");
     display->setCursor(28, 376);
     display->print("RSSI: ");
     display->print(WiFi.RSSI());
