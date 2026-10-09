@@ -23,10 +23,12 @@
     "status_path": "/api/device/v1/commands/{command_id}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "0ecb72cc3c22aeb7b4247523edd1c9587b55c258",
-    "src/main.cpp": "0ecb72cc3c22aeb7b4247523edd1c9587b55c258",
+    "platformio/src/panel_4848s040/main.cpp": "672c43739d93ca91c1bb3ed477c5b3adc9f1f5e9",
+    "src/main.cpp": "672c43739d93ca91c1bb3ed477c5b3adc9f1f5e9",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
-    "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b"
+    "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
+    "include/virtual_keyboard.h": "345f0e92d6123f8936c70645c6b49afd1d98b21b",
+    "include/editor_components.h": "5893e1beaa63382aab1f5df3f2142ea544acb308"
   },
   "production": {
     "platformio_env": "panel_4848s040",
@@ -36,9 +38,16 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.1.0-final-ui",
-    "role": "final_principal_interface",
-    "style": "compact mobile-app menu with expandable technical panels",
+    "version": "2.2.0-editor-ui",
+    "role": "final_principal_interface_with_modular_editor",
+    "style": "component-isolated editor inspired by web grid/flex separation",
+    "editor_components": [
+      "text_field",
+      "toolbar",
+      "virtual_keyboard"
+    ],
+    "partial_redraw": true,
+    "return_to_home": true,
     "cloud_test": "Databricks Device API + Google Sheets verification",
     "secrets_in_ui": false
   }
