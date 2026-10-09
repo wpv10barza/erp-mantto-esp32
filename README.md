@@ -1,12 +1,12 @@
 # ERP Mantto ESP32 — ESP32-S3-4848S040
 
-## Interfaz principal final — v2.2.0
+## Interfaz principal final — v2.4.0
 
 La interfaz principal del objetivo PlatformIO `panel_4848s040` adopta un menú compacto tipo aplicación móvil. La pantalla inicial evita mostrar datos técnicos innecesarios: presenta **Conexión al backend**, **Google Sheets**, **GitHub Actions** y **Actualizar firmware** como opciones principales y mantiene **Wi‑Fi 2.4 GHz**, **Nube Databricks**, **Diagnóstico** y **Estado del dispositivo** como paneles desplegables.
 
 Las acciones permanentes son **PROBAR CLOUD** y **ENVIAR 3C**. La primera verifica la Device API de Databricks y, a continuación, `/api/sheet/verify`; la segunda conserva el editor táctil de órdenes y el ciclo de confirmación humana. La contraseña Wi‑Fi nunca se dibuja en pantalla ni se versiona: permanece únicamente en `include/local_config.h`, excluido de Git.
 
-La identidad de esta versión es `2.2.0-editor-ui`. GitHub Actions valida el contrato de la interfaz, la paridad de los dos archivos `main.cpp`, los tests nativos y la compilación del firmware. La compilación remota no sustituye el flasheo ni la validación física del panel.
+La identidad de esta versión es `2.4.0-touch-router`. GitHub Actions valida el contrato de la interfaz, la paridad de los dos archivos `main.cpp`, los tests nativos y la compilación del firmware. La compilación remota no sustituye el flasheo ni la validación física del panel.
 
 ## Estado actual: integración directa con Databricks Apps
 
@@ -393,6 +393,14 @@ La configuración fija el componente externo de <code>i18n</code> al commit:
 
 La referencia está fijada para reproducibilidad. El proyecto no debe sustituirla por <code>@dev</code> de manera arbitraria.
 
+
+## Precisión táctil y auditoría GPIO — v2.4.0
+
+La interacción táctil ahora separa **lectura física**, **normalización de coordenadas**, **detección de tap**, **hit-testing** y **acción de interfaz**. Una opción ya no se ejecuta en el primer contacto: el firmware registra el punto inicial y confirma el tap al soltar el dedo. Si el dedo se desplaza más de 18 px, el gesto se descarta. Los controles del menú, la barra del editor y el teclado tienen zonas muertas internas para reducir selecciones accidentales de elementos vecinos.
+
+El editor mantiene componentes aislados para campo de texto, barra de herramientas y teclado. **INICIO** vuelve al menú principal sin enviar la orden; el teclado conserva ABC/123, espacio, backspace y Enter. La escritura normal redibuja solo el campo de texto y el cambio de modo redibuja únicamente el teclado.
+
+El GT911 usa SDA **GPIO19**, SCL **GPIO45** y bus I2C a **400 kHz**. El mapa de GPIO de display, touch y audio se valida en compilación con una tabla única de propiedad para detectar cualquier solapamiento. El objetivo de producción compila con C++17, igual que las pruebas nativas.
 
 ## Editor 3C modular — v2.2.0
 
