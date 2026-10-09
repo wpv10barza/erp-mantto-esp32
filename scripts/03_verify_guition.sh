@@ -16,6 +16,10 @@ required=(
   include/command_buffer.h
   include/command_text_viewport.h
   include/virtual_keyboard.h
+  include/editor_components.h
+  include/panel_gpio.h
+  include/touch_input.h
+  include/home_menu.h
   backend/device_api.py
   contract/device-command-v1.json
   firmware/firmware-sync.json
@@ -42,8 +46,12 @@ grep -Fq '2500UL' include/app_config.h
 # Physical Guition 86BOX display/touch parity contract.
 grep -Fq 'st7701_type9_init_operations' "$FIRMWARE"
 grep -Fq 'kScreenWidth, kScreenHeight, rgbPanel, 1, true' "$FIRMWARE"
-grep -Fq 'sample.x = rawX < kScreenWidth ? rawX' "$FIRMWARE"
-grep -Fq 'sample.y = rawY < kScreenHeight ? rawY' "$FIRMWARE"
+grep -Fq 'touch_input::mapRaw(rawX, rawY)' "$FIRMWARE"
+grep -Fq 'home_ui::hitTest(' "$FIRMWARE"
+grep -Fq 'constexpr int touchSda = 19;' include/panel_gpio.h
+grep -Fq 'constexpr int touchScl = 45;' include/panel_gpio.h
+grep -Fq 'kRawXMax = 480' include/touch_input.h
+grep -Fq 'kRawYMax = 480' include/touch_input.h
 
 # Production Databricks Apps contract.
 grep -Fq 'bool cloudEndpointConfigured()' "$FIRMWARE"
