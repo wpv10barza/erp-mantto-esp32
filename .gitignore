@@ -23,3 +23,6 @@ include/local_config.h
 *.map
 credentials.json
 .env
+
+# Built OTA releases contain privately provisioned credentials
+ota-release/

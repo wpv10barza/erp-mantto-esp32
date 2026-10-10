@@ -64,6 +64,22 @@ void test_keyboard_stays_below_toolbar() {
   TEST_ASSERT_TRUE(toolbar.bottom < virtual_keyboard::KeyboardLayout::top(KeyboardMode::NumericSymbols));
 }
 
+void test_top_right_home_is_visible_hit_testable_and_disjoint() {
+  const auto home = editor_ui::EditorLayout::topRightHome();
+  const auto title = editor_ui::EditorLayout::title();
+  const auto text = editor_ui::EditorLayout::textField();
+  TEST_ASSERT_TRUE(home.left >= 0);
+  TEST_ASSERT_TRUE(home.right <= editor_ui::EditorLayout::kScreenWidth);
+  TEST_ASSERT_TRUE(home.top >= title.top);
+  TEST_ASSERT_TRUE(home.bottom <= title.bottom);
+  TEST_ASSERT_TRUE(home.bottom <= text.top);
+  TEST_ASSERT_TRUE(editor_ui::EditorLayout::topRightHomeHit(424, 21));
+  TEST_ASSERT_FALSE(editor_ui::EditorLayout::topRightHomeHit(375, 21));
+  TEST_ASSERT_FALSE(editor_ui::EditorLayout::topRightHomeHit(424, 42));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(ToolbarAction::None),
+                        static_cast<int>(editor_ui::ToolbarComponent::hitTest(424, 21)));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_keyboard_is_horizontally_centered);
@@ -71,5 +87,6 @@ int main() {
   RUN_TEST(test_toolbar_buttons_do_not_overlap_and_fit_screen);
   RUN_TEST(test_toolbar_actions_are_independently_hit_testable);
   RUN_TEST(test_keyboard_stays_below_toolbar);
+  RUN_TEST(test_top_right_home_is_visible_hit_testable_and_disjoint);
   return UNITY_END();
 }

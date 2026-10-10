@@ -47,6 +47,15 @@ void test_home_menu_gaps_do_not_trigger_adjacent_rows() {
                         static_cast<int>(home_ui::hitTest(5, 120, false)));
 }
 
+void test_history_home_row_and_hidden_expansion() {
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::History),
+    static_cast<int>(home_ui::hitTest(120, 280, false)));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::None),
+    static_cast<int>(home_ui::hitTest(120, 280, true)));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::None),
+    static_cast<int>(home_ui::hitTest(120, 293, false)));
+}
+
 void test_home_menu_bottom_buttons_match_visual_bounds() {
   TEST_ASSERT_EQUAL_INT(static_cast<int>(Action::TestCloud),
                         static_cast<int>(home_ui::hitTest(20, 440, false)));
@@ -107,6 +116,7 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_touch_calibration_corners_and_center);
   RUN_TEST(test_home_menu_gaps_do_not_trigger_adjacent_rows);
+  RUN_TEST(test_history_home_row_and_hidden_expansion);
   RUN_TEST(test_home_menu_bottom_buttons_match_visual_bounds);
   RUN_TEST(test_expanded_details_disable_hidden_secondary_rows);
   RUN_TEST(test_tap_tracker_fires_only_on_release);

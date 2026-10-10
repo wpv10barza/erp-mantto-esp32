@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <HTTPClient.h>
+#include <Update.h>
+#include <mbedtls/sha256.h>
+#include <esp_ota_ops.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -53,6 +56,7 @@ enum class HomePanel {
   Sheets,
   Github,
   Firmware,
+  History,
   Wifi,
   Databricks,
   Diagnostics,
@@ -60,7 +64,9 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.5.0-white-async";
+constexpr char kFirmwareVersion[] = "2.5.3-white-async";
+// OTA manifests use strict numeric semver; the white UI name is still shown.
+constexpr char kOtaVersion[] = "2.5.3";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -78,7 +84,7 @@ bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
 
-enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C };
+enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C, OtaCheck, OtaInstall, HistoryFetch };
 struct NetworkRequest {
   NetworkAction action;
   char command[241];
@@ -87,6 +93,13 @@ struct UiNotification {
   PanelState state;
   char detail[160];
   bool sound;
+  bool historyLoaded = false;
+  uint16_t historyTotal = 0;
+  uint16_t historyOffset = 0;
+  char historyStatus[36] = {};
+  char historyText[110] = {};
+  char historyResult[100] = {};
+  char historyChanges[184] = {};
 };
 QueueHandle_t networkQueue = nullptr;
 QueueHandle_t uiQueue = nullptr;
@@ -102,6 +115,18 @@ constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
 virtual_keyboard::KeyboardMode keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
 bool commandEditorOpen = false;
+bool commandPreviewOpen = false;
+bool editingFirmwareCommit = false;
+uint16_t historyOffset = 0;
+uint16_t historyTotal = 0;
+String historyStatus = "empty";
+String historyText;
+String historyResult;
+String historyChanges;
+String selectedOtaCommit;
+// Managed only by the network worker except otaBootConfirmed on the UI task.
+String lastOtaMessage = "OTA sin verificar";
+bool otaBootConfirmed = false;
 
 struct TouchSample {
   bool ready = false;
@@ -176,7 +201,19 @@ void drawEditorFrame() {
   if (!displayReady) return;
   display->fillScreen(WHITE);
   display->fillRect(0, 0, kScreenWidth, 42, WHITE);
-  drawCentered("EDITAR ORDEN 3C", 11, 2, BLACK);
+  drawCentered(editingFirmwareCommit ? "ELEGIR COMMIT OTA" : "EDITAR ORDEN 3C", 11, 2, BLACK);
+
+  // Dedicated shortcut; returns home without posting a maintenance command.
+  const auto home = editor_ui::EditorLayout::topRightHome();
+  display->fillRoundRect(home.left, home.top,
+                         home.width(), home.height(), 8, WHITE);
+  display->drawRoundRect(home.left, home.top,
+                         home.width(), home.height(), 8, BLACK);
+  display->setTextColor(BLACK);
+  display->setTextSize(1);
+  display->setCursor(home.left + (home.width() - 36) / 2,
+                     home.top + (home.height() - 8) / 2);
+  display->print("INICIO");
 }
 
 void drawEditorTextField() {
@@ -265,6 +302,33 @@ void drawEditor() {
   drawEditorKeyboard();
 }
 
+void drawCommandPreview() {
+  if (!displayReady) return;
+  display->fillScreen(WHITE);
+  drawCentered("REVISAR ORDEN 3C", 18, 2, BLACK);
+  display->drawRoundRect(14, 60, 452, 275, 14, BLACK);
+  display->setTextSize(1);
+  display->setTextColor(BLACK);
+  display->setCursor(28, 76);
+  display->print("Se enviara a revision humana:");
+  const String full(app_config::commandBuffer);
+  display->setTextSize(2);
+  constexpr int charsPerLine = 34;
+  for (int line = 0; line < 8; ++line) {
+    const int begin = line * charsPerLine;
+    if (begin >= static_cast<int>(full.length())) break;
+    const int stop = min(begin + charsPerLine, static_cast<int>(full.length()));
+    display->setCursor(28, 102 + line * 26);
+    display->print(full.substring(begin, stop));
+  }
+  drawButton(14, 359, 144, 43, "EDITAR", WHITE);
+  drawButton(168, 359, 144, 43, "INICIO", WHITE);
+  drawButton(322, 359, 144, 43, "ENVIAR", WHITE);
+  display->setTextSize(1);
+  display->setCursor(32, 419);
+  display->print("Solo cambia Sheets tras aprobacion web.");
+}
+
 void drawChevron(int x, int y, bool down) {
   if (!displayReady) return;
   const uint16_t c = BLACK;
@@ -321,6 +385,7 @@ const char* homePanelTitle(HomePanel panel) {
     case HomePanel::Sheets: return "Google Sheets";
     case HomePanel::Github: return "GitHub Actions";
     case HomePanel::Firmware: return "Actualizar firmware";
+    case HomePanel::History: return "Historial 3C";
     case HomePanel::Wifi: return "Wi-Fi 2.4 GHz";
     case HomePanel::Databricks: return "Nube Databricks";
     case HomePanel::Diagnostics: return "Diagnostico";
@@ -366,10 +431,40 @@ void drawExpandedPanel() {
     display->setCursor(28, 316);
     display->print("Version: ");
     display->print(kFirmwareVersion);
-    display->setCursor(28, 336);
-    display->print("Build reproducible desde GitHub Actions.");
-    display->setCursor(28, 356);
-    display->print("Flasheo fisico requiere dispositivo conectado.");
+    display->setCursor(28, 334);
+    display->print(panelDetail.startsWith("OTA") || panelDetail.startsWith("FW ")
+                       ? panelDetail : String("OTA: HTTPS + SHA-256"));
+    display->setCursor(28, 353);
+    if (selectedOtaCommit.length()) {
+      display->print("Commit seleccionado: ");
+      display->print(selectedOtaCommit.substring(0, 12));
+    } else {
+      display->print("Buscar ultima version o elegir un commit");
+    }
+    drawButton(22, 377, 140, 31, "BUSCAR OTA", WHITE);
+    drawButton(170, 377, 132, 31, "COMMIT", WHITE);
+    drawButton(310, 377, 146, 31, "INSTALAR", WHITE);
+  } else if (homePanel == HomePanel::History) {
+    display->setCursor(28, 307);
+    display->print(String("Reciente (15 min): ") + String(historyTotal)
+                   + (historyTotal ? String(" | ") + String(historyOffset + 1) : ""));
+    display->setCursor(28, 325);
+    display->print(String("Estado: ") + (
+        historyStatus == "applied" ? "APLICADO" :
+        historyStatus == "rejected" ? "RECHAZADO" :
+        historyStatus == "pending_confirmation" ? "PENDIENTE WEB" :
+        historyStatus == "error" ? "ERROR" : "SIN REGISTROS"));
+    display->setCursor(28, 343);
+    display->print(String("Orden: ") + historyText.substring(0, 60));
+    display->setCursor(28, 361);
+    const String outcome = historyStatus == "applied"
+        ? (historyChanges.length() ? historyChanges : "Aplicado sin detalle de celdas")
+        : historyStatus == "pending_confirmation" ? "Sin cambios confirmados"
+        : historyResult;
+    display->print(String("Cambio: ") + outcome.substring(0, 60));
+    drawButton(22, 380, 140, 28, "ANTERIOR", WHITE);
+    drawButton(170, 380, 132, 28, "SIGUIENTE", WHITE);
+    drawButton(310, 380, 146, 28, "ACTUALIZAR", WHITE);
   } else if (homePanel == HomePanel::Wifi) {
     display->setCursor(28, 316);
     display->print("SSID: ");
@@ -418,6 +513,10 @@ void drawExpandedPanel() {
 }
 
 void drawPanel() {
+  if (commandPreviewOpen) {
+    drawCommandPreview();
+    return;
+  }
   if (commandEditorOpen) {
     drawEditor();
     return;
@@ -448,10 +547,11 @@ void drawPanel() {
               "Desplegar nueva version", homePanel == HomePanel::Firmware);
 
   if (homePanel == HomePanel::None) {
-    drawHomeRow(266, "WF", "Wi-Fi 2.4 GHz", "", false, 34);
-    drawHomeRow(302, "DB", "Nube Databricks", "", false, 34);
-    drawHomeRow(338, "DX", "Diagnostico", "", false, 34);
-    drawHomeRow(374, "ID", "Estado del dispositivo", "", false, 34);
+    drawHomeRow(266, "3C", "Historial 3C", "", false, 26);
+    drawHomeRow(295, "WF", "Wi-Fi 2.4 GHz", "", false, 26);
+    drawHomeRow(324, "DB", "Nube Databricks", "", false, 26);
+    drawHomeRow(353, "DX", "Diagnostico", "", false, 26);
+    drawHomeRow(382, "ID", "Estado del dispositivo", "", false, 26);
   } else {
     drawExpandedPanel();
   }
@@ -810,6 +910,364 @@ void addRequestAuth(HTTPClient& http) {
   }
 }
 
+int compareSemanticVersion(const String& leftRaw, const String& rightRaw) {
+  String left = leftRaw;
+  String right = rightRaw;
+  left.trim();
+  right.trim();
+  if (left.startsWith("v") || left.startsWith("V")) left.remove(0, 1);
+  if (right.startsWith("v") || right.startsWith("V")) right.remove(0, 1);
+
+  for (int part = 0; part < 3; ++part) {
+    const int leftDot = left.indexOf('.');
+    const int rightDot = right.indexOf('.');
+    String leftPart = leftDot >= 0 ? left.substring(0, leftDot) : left;
+    String rightPart = rightDot >= 0 ? right.substring(0, rightDot) : right;
+    const int leftDash = leftPart.indexOf('-');
+    const int rightDash = rightPart.indexOf('-');
+    if (leftDash >= 0) leftPart = leftPart.substring(0, leftDash);
+    if (rightDash >= 0) rightPart = rightPart.substring(0, rightDash);
+    const long leftValue = leftPart.toInt();
+    const long rightValue = rightPart.toInt();
+    if (leftValue < rightValue) return -1;
+    if (leftValue > rightValue) return 1;
+    left = leftDot >= 0 ? left.substring(leftDot + 1) : "";
+    right = rightDot >= 0 ? right.substring(rightDot + 1) : "";
+  }
+  return 0;
+}
+
+bool isSha256Hex(const String& value) {
+  if (value.length() != 64) return false;
+  for (size_t index = 0; index < value.length(); ++index) {
+    const char c = value[index];
+    if (!isxdigit(static_cast<unsigned char>(c))) return false;
+  }
+  return true;
+}
+
+String sha256Hex(const unsigned char digest[32]) {
+  static const char kHex[] = "01234567" "89abcdef";
+  String output;
+  output.reserve(64);
+  for (size_t index = 0; index < 32; ++index) {
+    output += kHex[(digest[index] >> 4) & 0x0F];
+    output += kHex[digest[index] & 0x0F];
+  }
+  return output;
+}
+
+String absoluteFirmwareUrl(const String& candidate) {
+  String url = candidate;
+  url.trim();
+  // Only allow same-origin Databricks App firmware paths. Prevent header leaks.
+  if (!url.startsWith("/api/device/v1/firmware/") ||
+      !url.endsWith(".bin") || url.indexOf("..") >= 0 ||
+      url.indexOf('?') >= 0 || url.indexOf('#') >= 0) return "";
+  return backendBaseUrl() + url;
+}
+
+void abortOta(const String& detail) {
+  Update.abort();
+  lastOtaMessage = detail;
+  updatePanel(PanelState::Error, detail, true);
+  Serial.printf("[ERROR] OTA %s\n", detail.c_str());
+}
+
+// HTTPClient parses both identity and chunked transfer framing here.
+// The sink verifies that only the exact manifest size reaches the inactive
+// partition. It never stores the whole firmware in ESP32 RAM.
+class OtaFlashSink : public Stream {
+ public:
+  OtaFlashSink(mbedtls_sha256_context& sha, size_t expected)
+      : sha_(sha), expected_(expected) {}
+
+  size_t write(uint8_t byte) override { return write(&byte, 1); }
+  size_t write(const uint8_t* buffer, size_t length) override {
+    if (failed_ || !length) return 0;
+    if (received_ > expected_ || length > expected_ - received_) {
+      failure_ = "payload_exceeds_manifest";
+      failed_ = true;
+      return 0;
+    }
+    const size_t written = Update.write(const_cast<uint8_t*>(buffer), length);
+    if (written != length) {
+      failure_ = "flash_write_failed";
+      failed_ = true;
+      return written;
+    }
+    if (mbedtls_sha256_update_ret(&sha_, buffer, length) != 0) {
+      failure_ = "sha256_update_failed";
+      failed_ = true;
+      return 0;
+    }
+    received_ += written;
+    const size_t milestone = received_ / (128U * 1024U);
+    if (milestone > lastMilestone_) {
+      lastMilestone_ = milestone;
+      Serial.printf("OTA PROGRESS bytes=%u/%u wifi_rssi=%d\n",
+                    static_cast<unsigned>(received_),
+                    static_cast<unsigned>(expected_),
+                    static_cast<int>(WiFi.RSSI()));
+    }
+    return length;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+  size_t received() const { return received_; }
+  bool failed() const { return failed_; }
+  const char* failure() const { return failure_; }
+
+ private:
+  mbedtls_sha256_context& sha_;
+  size_t expected_ = 0;
+  size_t received_ = 0;
+  size_t lastMilestone_ = 0;
+  bool failed_ = false;
+  const char* failure_ = "none";
+};
+
+bool performOtaUpdate(
+    const String& version,
+    const String& downloadUrl,
+    const String& expectedSha256,
+    size_t expectedSize) {
+  if (!isSha256Hex(expectedSha256)) {
+    lastOtaMessage = "OTA: SHA-256 invalido";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  if (!ensureDatabricksAccessToken()) {
+    lastOtaMessage = "OTA OAuth no disponible";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  const String url = absoluteFirmwareUrl(downloadUrl);
+  if (!url.length()) {
+    lastOtaMessage = "OTA URL invalida";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  updatePanel(PanelState::Busy, String("OTA ") + version + " descargando", true);
+
+  HTTPClient http;
+  http.setTimeout(app_config::otaHttpTimeoutMs);
+  if (!http.begin(url)) {
+    lastOtaMessage = "OTA no pudo abrir HTTPS";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  http.setReuse(false);
+  http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+  const char* otaHeaders[] = {"Content-Encoding", "Transfer-Encoding"};
+  http.collectHeaders(otaHeaders, 2);
+  http.addHeader("Accept-Encoding", "identity");
+  addRequestAuth(http);
+  const int code = http.GET();
+  if (code != 200) {
+    lastOtaMessage = String("OTA descarga HTTP ") + code;
+    http.end();
+    if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  // The manifest is integrity-verified on the backend, but the ESP32
+  // verifies actual received bytes independently before activating flash.
+  const int contentLength = http.getSize();
+  if (contentLength > 0 && static_cast<size_t>(contentLength) != expectedSize) {
+    Serial.printf("[ERROR] OTA content-length=%d expected=%u\n",
+                  contentLength, static_cast<unsigned>(expectedSize));
+    http.end();
+    lastOtaMessage = "OTA longitud HTTP distinta";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  const String encoding = http.header("Content-Encoding");
+  const String transferEncoding = http.header("Transfer-Encoding");
+  if (encoding.length() && !encoding.equalsIgnoreCase("identity")) {
+    Serial.printf("[ERROR] OTA unsupported content-encoding=%s\n",
+                  encoding.c_str());
+    http.end();
+    lastOtaMessage = "OTA codificacion HTTP invalida";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  Serial.printf("OTA HTTP start version=%s expected=%u content_length=%d transfer=%s free_heap=%u rssi=%d\n",
+                version.c_str(), static_cast<unsigned>(expectedSize),
+                contentLength, transferEncoding.c_str(),
+                static_cast<unsigned>(ESP.getFreeHeap()),
+                static_cast<int>(WiFi.RSSI()));
+
+  if (!Update.begin(expectedSize, U_FLASH)) {
+    http.end();
+    lastOtaMessage = "OTA sin particion disponible";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    Serial.printf("[ERROR] Update.begin: %s\n", Update.errorString());
+    return false;
+  }
+
+  mbedtls_sha256_context sha;
+  mbedtls_sha256_init(&sha);
+  if (mbedtls_sha256_starts_ret(&sha, 0) != 0) {
+    mbedtls_sha256_free(&sha);
+    http.end();
+    abortOta("OTA SHA init fallo");
+    return false;
+  }
+
+  OtaFlashSink sink(sha, expectedSize);
+  // HTTPClient handles chunk framing and read timeouts; bypassing its
+  // decoder would corrupt a chunked binary response.
+  const int transferred = http.writeToStream(&sink);
+  const size_t total = sink.received();
+  const bool flashError = sink.failed();
+  const String sinkFailure = sink.failure();
+  const int wifiStatus = static_cast<int>(WiFi.status());
+  const int wifiRssi = static_cast<int>(WiFi.RSSI());
+  http.end();
+
+  if (transferred < 0 || flashError || total != expectedSize ||
+      static_cast<size_t>(transferred) != expectedSize) {
+    Serial.printf("[ERROR] OTA TRANSFER result=%d received=%u expected=%u http_length=%d sink=%s wifi_status=%d rssi=%d update=%s\n",
+                  transferred, static_cast<unsigned>(total),
+                  static_cast<unsigned>(expectedSize), contentLength,
+                  sinkFailure.c_str(), wifiStatus, wifiRssi,
+                  Update.errorString());
+    mbedtls_sha256_free(&sha);
+    abortOta(flashError ? "OTA fallo escritura/SHA" : "OTA HTTPS incompleto");
+    return false;
+  }
+
+  unsigned char digest[32] = {};
+  const int shaResult = mbedtls_sha256_finish_ret(&sha, digest);
+  mbedtls_sha256_free(&sha);
+  if (shaResult != 0) {
+    abortOta("OTA SHA final fallo");
+    return false;
+  }
+
+  String actualSha = sha256Hex(digest);
+  String expectedSha = expectedSha256;
+  expectedSha.toLowerCase();
+  if (actualSha != expectedSha) {
+    Serial.printf("[ERROR] OTA SHA mismatch expected=%s actual=%s\n",
+                  expectedSha.c_str(), actualSha.c_str());
+    abortOta("OTA SHA-256 no coincide");
+    return false;
+  }
+
+  if (!Update.end()) {
+    Serial.printf("[ERROR] Update.end: %s\n", Update.errorString());
+    abortOta("OTA no pudo finalizar");
+    return false;
+  }
+
+  lastOtaMessage = String("OTA ") + version + " verificada";
+  updatePanel(PanelState::Busy, "OTA OK; reiniciando", true);
+  Serial.printf("OTA SUCCESS version=%s bytes=%u sha256=%s\n",
+                version.c_str(), static_cast<unsigned>(total), actualSha.c_str());
+  delay(1200);
+  ESP.restart();
+  return true;
+}
+
+bool checkForOtaUpdate(bool install, const String& commitRef = String()) {
+  if (WiFi.status() != WL_CONNECTED) {
+    lastOtaMessage = "OTA sin Internet";
+    updatePanel(PanelState::Offline, lastOtaMessage, true);
+    return false;
+  }
+  if (!ensureDatabricksAccessToken()) {
+    lastOtaMessage = "OTA OAuth no disponible";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  const String url = endpoint(commitRef.length()
+      ? String("/api/device/v1/firmware/commits/") + commitRef
+      : String("/api/device/v1/firmware/latest"));
+  if (!http.begin(url)) {
+    lastOtaMessage = "OTA manifest no disponible";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  addRequestAuth(http);
+  http.addHeader("X-Firmware-Version", kOtaVersion);
+  const int code = http.GET();
+  const String body = code > 0 ? http.getString() : http.errorToString(code);
+  http.end();
+
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code != 200) {
+    lastOtaMessage = String("OTA manifest HTTP ") + code;
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    Serial.printf("[WARN] OTA manifest HTTP=%d detail=%s\n", code, body.c_str());
+    return false;
+  }
+
+  if (commitRef.length()) {
+    String resolvedSha = jsonStringValue(body, "git_commit_sha");
+    resolvedSha.toLowerCase();
+    if (resolvedSha.length() != 40 || !resolvedSha.startsWith(commitRef)) {
+      lastOtaMessage = "OTA commit no coincide";
+      updatePanel(PanelState::Error, lastOtaMessage, true);
+      return false;
+    }
+  }
+  const String version = jsonStringValue(body, "version");
+  const String sha256 = jsonStringValue(body, "sha256");
+  const String path = jsonStringValue(body, "url");
+  const size_t size = static_cast<size_t>(jsonUnsignedLongValue(body, "size", 0UL));
+  if (!version.length() || !path.length() || !isSha256Hex(sha256) || size == 0 || size > 0x400000UL) {
+    lastOtaMessage = "OTA manifest invalido";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+
+  if (compareSemanticVersion(version, kOtaVersion) <= 0) {
+    lastOtaMessage = String("FW ") + kOtaVersion + " al dia";
+    updatePanel(PanelState::Ready, lastOtaMessage, true);
+    return false;
+  }
+
+  lastOtaMessage = String("OTA disponible ") + version;
+  Serial.printf("OTA AVAILABLE current=%s latest=%s size=%u\n",
+                kOtaVersion, version.c_str(), static_cast<unsigned>(size));
+  // A check is read-only. Flashing requires a second explicit touch.
+  if (!install) {
+    updatePanel(PanelState::Pending, lastOtaMessage, true);
+    return false;
+  }
+  return performOtaUpdate(version, path, sha256, size);
+}
+
+
+void confirmOtaBootIfHealthy() {
+  if (otaBootConfirmed || millis() < app_config::otaBootConfirmDelayMs) return;
+  otaBootConfirmed = true;
+
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  if (!running) return;
+  esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+  const esp_err_t stateResult = esp_ota_get_state_partition(running, &state);
+  if (stateResult != ESP_OK || state != ESP_OTA_IMG_PENDING_VERIFY) return;
+
+  if (displayReady) {
+    const esp_err_t validResult = esp_ota_mark_app_valid_cancel_rollback();
+    Serial.printf("OTA BOOT CONFIRM result=%d\n", static_cast<int>(validResult));
+  } else {
+    Serial.println("[ERROR] OTA boot self-test failed; rolling back");
+    esp_ota_mark_app_invalid_rollback_and_reboot();
+  }
+}
+
 bool checkBackendHealthOnce() {
   if (!backendBaseUrl().length()) {
     backendAvailable = false;
@@ -1010,6 +1468,62 @@ void pollCommandStatus() {
 }
 
 
+void fetchCommandHistory(uint16_t offset) {
+  UiNotification notice{};
+  notice.historyLoaded = true;
+  notice.historyOffset = offset;
+  auto deliver = [&](const String& status, const String& detail) {
+    status.toCharArray(notice.historyStatus, sizeof(notice.historyStatus));
+    detail.toCharArray(notice.historyResult, sizeof(notice.historyResult));
+    if (uiQueue) xQueueOverwrite(uiQueue, &notice);
+  };
+  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) {
+    deliver("error", "Sin Internet u OAuth");
+    return;
+  }
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  const String url = endpoint(String("/api/device/v1/commands/history?device_id=")
+                              + app_config::deviceId + "&offset=" + String(offset));
+  if (!http.begin(url)) {
+    deliver("error", "No se pudo abrir historial");
+    return;
+  }
+  addRequestAuth(http);
+  const int code = http.GET();
+  const String response = code > 0 ? http.getString() : http.errorToString(code);
+  http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code != 200) {
+    deliver("error", String("Historial HTTP ") + code);
+    Serial.printf("[WARN] Historial HTTP=%d detail=%s\n", code, response.c_str());
+    return;
+  }
+  notice.historyTotal = static_cast<uint16_t>(
+      jsonUnsignedLongValue(response, "total", 0UL));
+  jsonStringValue(response, "status").toCharArray(
+      notice.historyStatus, sizeof(notice.historyStatus));
+  jsonStringValue(response, "text").toCharArray(
+      notice.historyText, sizeof(notice.historyText));
+  jsonStringValue(response, "result").toCharArray(
+      notice.historyResult, sizeof(notice.historyResult));
+  jsonStringValue(response, "changes_summary").toCharArray(
+      notice.historyChanges, sizeof(notice.historyChanges));
+  if (uiQueue) xQueueOverwrite(uiQueue, &notice);
+  Serial.printf("HISTORY 3C -> total=%u index=%u status=%s changes=%s\n",
+                notice.historyTotal, notice.historyOffset,
+                notice.historyStatus, notice.historyChanges);
+}
+
+bool validOtaCommitRef(const String& ref) {
+  if (ref.length() < 8 || ref.length() > 40) return false;
+  for (size_t i = 0; i < ref.length(); ++i) {
+    const char c = ref[i];
+    if (!isxdigit(static_cast<unsigned char>(c))) return false;
+  }
+  return true;
+}
+
 bool queueNetworkRequest(NetworkAction action, const String& command = String()) {
   if (!networkQueue) {
     updatePanel(PanelState::Error, "Red no inicializada");
@@ -1023,13 +1537,27 @@ bool queueNetworkRequest(NetworkAction action, const String& command = String())
       return false;
     }
     command.toCharArray(request.command, sizeof(request.command));
+  } else if (action == NetworkAction::HistoryFetch) {
+    command.toCharArray(request.command, sizeof(request.command));
+  } else if (action == NetworkAction::OtaCheck || action == NetworkAction::OtaInstall) {
+    // Never infer a Git commit from GitHub source on the device.
+    // An empty commit is an explicit request for latest.
+    if (command.length() && !validOtaCommitRef(command)) {
+      updatePanel(PanelState::Error, "Commit OTA invalido");
+      return false;
+    }
+    command.toCharArray(request.command, sizeof(request.command));
   }
   if (xQueueSend(networkQueue, &request, 0) != pdTRUE) {
     updatePanel(PanelState::Error, "Solicitudes en espera; intente nuevamente");
     return false;
   }
   updatePanel(PanelState::Busy,
-              action == NetworkAction::Send3C ? "Orden 3C en cola" : "Consulta cloud en cola");
+              action == NetworkAction::Send3C ? "Orden 3C en cola" :
+              action == NetworkAction::OtaCheck ? "OTA: buscando" :
+              action == NetworkAction::OtaInstall ? "OTA: preparando instalacion" :
+               action == NetworkAction::HistoryFetch ? "Consultando historial 3C" :
+              "Consulta cloud en cola");
   return true;
 }
 
@@ -1037,7 +1565,18 @@ void processNetworkUiUpdates() {
   if (!uiQueue) return;
   UiNotification notice{};
   if (xQueueReceive(uiQueue, &notice, 0) == pdTRUE) {
-    updatePanel(notice.state, String(notice.detail), notice.sound);
+    if (notice.historyLoaded) {
+      historyTotal = notice.historyTotal;
+      historyOffset = notice.historyOffset;
+      historyStatus = notice.historyStatus;
+      historyText = notice.historyText;
+      historyResult = notice.historyResult;
+      historyChanges = notice.historyChanges;
+      if (homePanel == HomePanel::History && !commandEditorOpen && !commandPreviewOpen)
+        drawPanel();
+    } else {
+      updatePanel(notice.state, String(notice.detail), notice.sound);
+    }
   }
 }
 
@@ -1057,6 +1596,16 @@ void networkWorker(void* parameter) {
           break;
         case NetworkAction::Send3C:
           send3CCommand(String(request.command));
+          fetchCommandHistory(0);
+          break;
+        case NetworkAction::HistoryFetch:
+          fetchCommandHistory(static_cast<uint16_t>(String(request.command).toInt()));
+          break;
+        case NetworkAction::OtaCheck:
+          checkForOtaUpdate(false, String(request.command));
+          break;
+        case NetworkAction::OtaInstall:
+          checkForOtaUpdate(true, String(request.command));
           break;
       }
       lastHealthCheck = millis();
@@ -1165,7 +1714,37 @@ void handleTouch() {
   if (millis() - lastHandledTapMs < kTouchDebounceMs) return;
   lastHandledTapMs = millis();
   {
+    if (commandPreviewOpen) {
+      // Enter shows preview. Only button ENVIAR transmits.
+      if (tap.y >= 359 && tap.y < 402) {
+        if (tap.x >= 14 && tap.x < 158) {
+          commandPreviewOpen = false;
+          commandEditorOpen = true;
+          commandBuffer.set(app_config::commandBuffer.c_str());
+          drawEditor();
+        } else if (tap.x >= 168 && tap.x < 312) {
+          commandPreviewOpen = false;
+          homePanel = HomePanel::None;
+          drawPanel();
+        } else if (tap.x >= 322 && tap.x < 466) {
+          commandPreviewOpen = false;
+          homePanel = HomePanel::History;
+          historyOffset = 0;
+          drawPanel();
+          queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);
+        }
+      }
+      return;
+    }
     if (commandEditorOpen) {
+      // GT911 touch release confirmed by TapTracker, never on finger-down.
+      if (editor_ui::EditorLayout::topRightHomeHit(tap.x, tap.y)) {
+        commandEditorOpen = false;
+        editingFirmwareCommit = false;
+        homePanel = HomePanel::None;
+        drawPanel();
+        return;
+      }
       virtual_keyboard::Key key{};
       if (virtual_keyboard::hitTest(keyboardMode, tap.x, tap.y, &key)) {
         using virtual_keyboard::KeyKind;
@@ -1182,12 +1761,35 @@ void handleTouch() {
             commandBuffer.insert(' ');
             drawEditorTextField();
             break;
-          case KeyKind::Enter:
+          case KeyKind::Enter: {
+            if (editingFirmwareCommit) {
+              String commitRef(commandBuffer.c_str());
+              commitRef.trim();
+              commitRef.toLowerCase();
+              commandEditorOpen = false;
+              editingFirmwareCommit = false;
+              homePanel = HomePanel::Firmware;
+              if (!validOtaCommitRef(commitRef)) {
+                updatePanel(PanelState::Error, "Commit: use 8-40 hex", true);
+                return;
+              }
+              selectedOtaCommit = commitRef;
+              drawPanel();
+              queueNetworkRequest(NetworkAction::OtaCheck, selectedOtaCommit);
+              return;
+            }
             app_config::commandBuffer = commandBuffer.c_str();
+            String reviewCommand = app_config::commandBuffer;
+            reviewCommand.trim();
+            if (!reviewCommand.length()) {
+              updatePanel(PanelState::Error, "Orden 3C vacia", true);
+              return;
+            }
             commandEditorOpen = false;
+            commandPreviewOpen = true;
             drawPanel();
-            queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);
             return;
+          }
           case KeyKind::ToggleAlphaNumeric:
             keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
                 ? virtual_keyboard::KeyboardMode::NumericSymbols
@@ -1200,6 +1802,7 @@ void handleTouch() {
         switch (action) {
           case editor_ui::ToolbarAction::Home:
             commandEditorOpen = false;
+            editingFirmwareCommit = false;
             homePanel = HomePanel::None;
             drawPanel();
             break;
@@ -1242,6 +1845,39 @@ void handleTouch() {
         }
       }
     } else {
+      if (homePanel == HomePanel::History &&
+          tap.y >= 380 && tap.y < 408) {
+        if (tap.x >= 22 && tap.x < 162) {
+          if (historyOffset > 0) historyOffset--;
+        } else if (tap.x >= 170 && tap.x < 302) {
+          if (historyOffset + 1 < historyTotal) historyOffset++;
+        } else if (!(tap.x >= 310 && tap.x < 456)) {
+          return;
+        }
+        queueNetworkRequest(NetworkAction::HistoryFetch, String(historyOffset));
+        return;
+      }
+      // Firmware button coordinates are inside the expanded details, not
+      // in the hidden secondary menu. Explicit user actions are mandatory.
+      if (homePanel == HomePanel::Firmware && tap.y >= 377 && tap.y < 408) {
+        if (tap.x >= 22 && tap.x < 162) {
+          selectedOtaCommit = "";
+          queueNetworkRequest(NetworkAction::OtaCheck);
+          return;
+        }
+        if (tap.x >= 170 && tap.x < 302) {
+          editingFirmwareCommit = true;
+          commandEditorOpen = true;
+          keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
+          commandBuffer.set(selectedOtaCommit.c_str());
+          drawEditor();
+          return;
+        }
+        if (tap.x >= 310 && tap.x < 456) {
+          queueNetworkRequest(NetworkAction::OtaInstall, selectedOtaCommit);
+          return;
+        }
+      }
       auto togglePanel = [](HomePanel requested) {
         homePanel = homePanel == requested ? HomePanel::None : requested;
         drawPanel();
@@ -1257,7 +1893,9 @@ void handleTouch() {
           break;
         case home_ui::Action::Send3C:
           homePanel = HomePanel::None;
+          editingFirmwareCommit = false;
           commandEditorOpen = true;
+          commandBuffer.set(app_config::commandBuffer.c_str());
           keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
           drawEditor();
           break;
@@ -1272,6 +1910,12 @@ void handleTouch() {
           break;
         case home_ui::Action::Firmware:
           togglePanel(HomePanel::Firmware);
+          break;
+        case home_ui::Action::History:
+          homePanel = HomePanel::History;
+          historyOffset = 0;
+          drawPanel();
+          queueNetworkRequest(NetworkAction::HistoryFetch, "0");
           break;
         case home_ui::Action::Wifi:
           togglePanel(HomePanel::Wifi);
@@ -1331,6 +1975,7 @@ void setup() {
 }
 
 void loop() {
+  confirmOtaBootIfHealthy();
   processNetworkUiUpdates();
   web.handleClient();
   handleTouch();

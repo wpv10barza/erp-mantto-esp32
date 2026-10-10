@@ -13,6 +13,8 @@ def require(text: str, needle: str, label: str) -> None:
 
 for needle, label in [
     ('"INICIO"', "return-to-main button"),
+    ('topRightHome() { return {378, 4, 470, 39}; }', "top-right home geometry"),
+    ('topRightHomeHit(int x, int y)', "top-right home hit-test"),
     ('ToolbarAction::MoveLeft', "left cursor action"),
     ('ToolbarAction::MoveRight', "right cursor action"),
     ('ToolbarAction::DeleteForward', "forward delete action"),
@@ -35,6 +37,8 @@ for needle, label in [
 
 for needle, label in [
     ('drawEditorFrame()', "frame renderer"),
+    ('const auto home = editor_ui::EditorLayout::topRightHome();', "visible upper-right home button"),
+    ('if (editor_ui::EditorLayout::topRightHomeHit(tap.x, tap.y))', "upper-right home touch handler"),
     ('drawEditorTextField()', "text-field renderer"),
     ('drawEditorToolbar()', "toolbar renderer"),
     ('drawEditorKeyboard()', "keyboard renderer"),
@@ -54,7 +58,7 @@ if "drawEditor();" in char_case:
     raise AssertionError("character input must not redraw the complete editor")
 
 print("Editor component integration: PASS")
-print("- INICIO returns to the final main menu")
+print("- INICIO returns to the final main menu, including upper-right corner")
 print("- keyboard geometry is centered independently")
 print("- left/right/delete/clear controls are isolated from the keyboard")
 print("- normal typing redraws only the text field")

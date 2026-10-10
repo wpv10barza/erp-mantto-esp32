@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wpv10barza/asistente-de-databricks--erp
-          ref: 1170ba2ab1b4918c66e25e3e1064547db8dea87a
+          ref: 67d27fd11aa2bcd025d8168a9702e6f50337f7ac
           path: cloud
 
       - uses: actions/setup-python@v5
@@ -36,6 +36,9 @@ jobs:
           python tests/test_firmware_main_sync.py
           python tests/test_backend_discovery.py
           python tests/test_final_ui_contract.py
+          python tests/test_ota_manual_contract.py
+          python tests/test_ota_release_2_5_1.py
+          python tests/test_history_3c_ui.py
           python tests/test_async_white_ui_contract.py
           python tests/test_production_firmware.py
           grep -q '/api/device/v1/health' cloud/app/main.py
@@ -50,6 +53,7 @@ jobs:
           grep -q 'origin/main' PCU-ERP-MANTTO-ESP32.ps1
           grep -q 'firmware\\firmware-sync.json' PCU-ERP-MANTTO-ESP32.ps1
           pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("PCU-ERP-MANTTO-ESP32.ps1",[ref]$tokens,[ref]$errors) > $null; if($errors.Count){$errors | ForEach-Object { Write-Error $_.Message }; exit 1}'
+          pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/prepare_publish_ota_2_5_1.ps1",[ref]$tokens,[ref]$errors) > $null; if($errors.Count){$errors | ForEach-Object { Write-Error $_.Message }; exit 1}'
 
       - name: Block 2 - tools
         env:
@@ -110,7 +114,7 @@ jobs:
           cp firmware/firmware-sync.json dist/
           cp contract/device-command-v1.json dist/
           printf '%s\n' '0x0000 bootloader.bin' '0x8000 partitions.bin' '0x10000 firmware.bin' > dist/flash-layout.txt
-          printf '{"source_sha":"%s","environment":"panel_4848s040","build_type":"release","production":true,"flash_target":"ESP32-S3-4848S040","authoritative_repository":"wpv10barza/erp-mantto-esp32","authoritative_branch":"main","backend_repository":"wpv10barza/asistente-de-databricks--erp","backend_commit":"1170ba2ab1b4918c66e25e3e1064547db8dea87a","validation":"compiled_not_physically_flashed"}\n' "${GITHUB_SHA}" > dist/manifest.json
+          printf '{"source_sha":"%s","environment":"panel_4848s040","build_type":"release","production":true,"flash_target":"ESP32-S3-4848S040","authoritative_repository":"wpv10barza/erp-mantto-esp32","authoritative_branch":"main","backend_repository":"wpv10barza/asistente-de-databricks--erp","backend_commit":"67d27fd11aa2bcd025d8168a9702e6f50337f7ac","validation":"compiled_not_physically_flashed"}\n' "${GITHUB_SHA}" > dist/manifest.json
           (cd dist && sha256sum * > SHA256SUMS.txt)
 
       - uses: actions/upload-artifact@v4
