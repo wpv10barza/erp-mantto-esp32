@@ -29,8 +29,8 @@
     "voice_draft_ack_path": "/api/device/v1/voice/drafts/{draft_id}/ack"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "035febc1be49511454f41a12f1d4e2ec9f29cbb0",
-    "src/main.cpp": "035febc1be49511454f41a12f1d4e2ec9f29cbb0",
+    "platformio/src/panel_4848s040/main.cpp": "9319631a3cb3fe5f5413381b622f89b1e7151a47",
+    "src/main.cpp": "9319631a3cb3fe5f5413381b622f89b1e7151a47",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -63,7 +63,10 @@
       "endpoint": "/api/device/v1/cloud/verify",
       "status": "Data!A4:AF4 live headers with Google API",
       "separate_from_health": true,
-      "spreadsheet_id_match": true
+      "spreadsheet_id_match": true,
+      "auto_on_wifi_connect": true,
+      "auto_on_open_sheets": true,
+      "write_permission_shown": true
     },
     "secrets_in_ui": false,
     "touch": {
@@ -90,7 +93,17 @@
       "orders_preview": true,
       "sheets_only_confirmed": true,
       "background_fetch": true,
-      "durability": "optional backend HISTORY_LOG_PATH"
+      "durability": "optional backend HISTORY_LOG_PATH",
+      "review_status_counts": [
+        "approved",
+        "rejected",
+        "pending",
+        "apply_attempts",
+        "applied",
+        "blocked"
+      ],
+      "scope_display": true,
+      "sheets_tab": "audited proposals and Sheet attempts, only sheet_applied means write"
     },
     "ota": {
       "input": "Exactly 40 hexadecimal characters, full Git commit ID",

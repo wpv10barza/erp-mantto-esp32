@@ -195,6 +195,14 @@ struct HistorySnapshot {
   HistoryItem sheets[kHistoryCapacity];
   uint8_t orderCount = 0;
   uint8_t sheetCount = 0;
+  uint16_t approved = 0;
+  uint16_t rejected = 0;
+  uint16_t pending = 0;
+  uint16_t attempts = 0;
+  uint16_t applied = 0;
+  uint16_t blocked = 0;
+  bool hasSummary = false;
+  bool persistent = false;
 };
 HistorySnapshot historyCache{};
 portMUX_TYPE historyMux = portMUX_INITIALIZER_UNLOCKED;
@@ -221,6 +229,8 @@ std::atomic<bool> pendingCommand{false};
 // 3=failed. Show this on the HOME screen after PROBAR CLOUD.
 std::atomic<int> sheetsVerifyState{0};
 std::atomic<int> sheetsVerifyHttp{0};
+// 0: backend write capability not verified, 1: writes disabled, 2: writes enabled.
+std::atomic<int> sheetsWriteMode{0};
 unsigned long lastVoicePollMs = 0;
 constexpr unsigned long kVoicePollIntervalMs = 9000UL;
 struct VoiceMailbox {
@@ -538,19 +548,43 @@ void drawExpandedPanel() {
     display->setCursor(28, 356);
     display->print("Usa PROBAR CLOUD para validar extremo a extremo.");
   } else if (homePanel == HomePanel::Sheets) {
-    display->setCursor(28, 316);
+    int approved = 0, rejected = 0, pending = 0;
+    int attempts = 0, applied = 0, blocked = 0;
+    bool hasSummary = false, persistent = false;
+    portENTER_CRITICAL(&historyMux);
+    approved = historyCache.approved;
+    rejected = historyCache.rejected;
+    pending = historyCache.pending;
+    attempts = historyCache.attempts;
+    applied = historyCache.applied;
+    blocked = historyCache.blocked;
+    hasSummary = historyCache.hasSummary;
+    persistent = historyCache.persistent;
+    portEXIT_CRITICAL(&historyMux);
     const int verified = sheetsVerifyState.load();
-    display->print("Estado: ");
-    display->print(verified == 2 ? "CONECTADO (lectura real)" :
-                   verified == 1 ? "VERIFICANDO..." :
-                   verified == 3 ? "NO VERIFICADO" : "SIN PROBAR");
-    display->setCursor(28, 336);
-    display->print("Plantilla: Data!A4:AF4");
-    display->setCursor(28, 356);
-    display->print("HTTP Sheets: ");
+    display->setCursor(28, 310);
+    display->print("Lectura REAL: ");
+    display->print(verified == 2 ? "CONECTADO" :
+                   verified == 1 ? "VERIFICANDO" :
+                   verified == 3 ? "ERROR" : "SIN PROBAR");
+    display->setCursor(28, 332);
+    display->print("Data!A4:AF4 HTTP: ");
     display->print(sheetsVerifyHttp.load());
-    display->setCursor(28, 377);
-    display->print("Cambios solo tras aprobacion humana.");
+    display->setCursor(28, 354);
+    display->print("Escritura: ");
+    display->print(sheetsWriteMode.load() == 1 ? "DESHABILITADA" :
+                   sheetsWriteMode.load() == 2 ? "HABILITADA" : "SIN VERIFICAR");
+    display->setCursor(28, 375);
+    if (hasSummary) {
+      display->printf("APR:%d RECH:%d PEND:%d INT:%d OK:%d BLO:%d",
+                      approved, rejected, pending, attempts, applied, blocked);
+    } else {
+      display->print("Auditoria: NO CONSULTADA");
+    }
+    display->setCursor(28, 397);
+    display->print(hasSummary ? (persistent ? "AUD: PERSISTENTE | HISTORIAL" :
+                                            "AUD: SESION | HISTORIAL") :
+                                "Toque HISTORIAL para ver detalle");
   } else if (homePanel == HomePanel::Github) {
     display->setCursor(28, 316);
     display->print("GitHub Actions valida contratos y compilacion.");
@@ -590,7 +624,9 @@ void drawExpandedPanel() {
     display->print("Estado: ");
     display->print(WiFi.status() == WL_CONNECTED ? "Conectado" : "Desconectado");
     display->setCursor(28, 356);
-    display->print("Direccion IP gestionada por DHCP");
+    display->print("IP local: ");
+    display->print(WiFi.status() == WL_CONNECTED ?
+                   WiFi.localIP().toString() : String("Sin IP"));
     display->setCursor(28, 376);
     display->print("RSSI: ");
     display->print(WiFi.RSSI());
@@ -646,8 +682,19 @@ void drawHistoryWrapped(const String& message, int top, int lines = 3) {
 
 void drawHistoryScreen() {
   if (!displayReady) return;
+  int count = 0, approved = 0, rejected = 0, pending = 0;
+  int attempts = 0, applied = 0, blocked = 0;
+  bool hasSummary = false, persistent = false;
   portENTER_CRITICAL(&historyMux);
-  const int count = historySheetTab ? historyCache.sheetCount : historyCache.orderCount;
+  count = historySheetTab ? historyCache.sheetCount : historyCache.orderCount;
+  approved = historyCache.approved;
+  rejected = historyCache.rejected;
+  pending = historyCache.pending;
+  attempts = historyCache.attempts;
+  applied = historyCache.applied;
+  blocked = historyCache.blocked;
+  hasSummary = historyCache.hasSummary;
+  persistent = historyCache.persistent;
   portEXIT_CRITICAL(&historyMux);
 
   display->fillScreen(WHITE);
@@ -657,10 +704,19 @@ void drawHistoryScreen() {
   display->print("HISTORIAL");
   drawButton(358, 5, 108, 37, "VOLVER", WHITE);
   drawButton(14, 52, 220, 42, "ORDEN 3C", WHITE);
-  drawButton(246, 52, 220, 42, "SHEETS", WHITE);
+  drawButton(246, 52, 220, 42, "SHEETS/REV", WHITE);
   display->setTextSize(1);
-  display->setCursor(16, 103);
-  display->print(historySheetTab ? "Cambios ejecutados" : "Ordenes / vista previa");
+  display->setCursor(16, 100);
+  if (hasSummary) {
+    display->printf("APR:%d RECH:%d PEND:%d INT:%d OK:%d BLO:%d",
+                    approved, rejected, pending, attempts, applied, blocked);
+  } else {
+    display->print("AUDITORIA: NO CONSULTADA");
+  }
+  display->setCursor(16, 115);
+  display->print(hasSummary ? (persistent ? "REGISTRO PERSISTENTE" :
+                                           "SOLO SESION ACTUAL") :
+                              "Estados sin comprobar");
 
   if (historyDetailOpen && historySelected < count) {
     HistoryItem item{};
@@ -670,7 +726,7 @@ void drawHistoryScreen() {
     display->drawRoundRect(14, 124, 452, 288, 12, BLACK);
     display->setTextSize(2);
     display->setCursor(24, 145);
-    display->print(historySheetTab ? "SHEETS APLICADO" : "ORDEN 3C");
+    display->print(historySheetTab ? "REVISION / SHEETS" : "ORDEN 3C");
     drawHistoryWrapped(String(item.when), 180, 1);
     drawHistoryWrapped(String("Estado: ") + item.status, 210, 2);
     drawHistoryWrapped(String(item.text), 255, 4);
@@ -680,8 +736,10 @@ void drawHistoryScreen() {
   } else if (count == 0) {
     display->setTextSize(2);
     display->setCursor(25, 185);
-    display->print(historyLoading ? "Consultando..." : "Sin registros");
-    drawHistoryWrapped(String(panelDetail), 230, 2);
+    display->print(historyLoading ? "Consultando..." : "Sin registros conservados");
+    drawHistoryWrapped(hasSummary && !persistent ?
+      String("Solo sesion Databricks; no confirma cero historico.") :
+      String(panelDetail), 230, 2);
   } else {
     for (int row = 0; row < 3; ++row) {
       const int index = historyPage * 3 + row;
@@ -1230,6 +1288,7 @@ bool checkBackendHealth() {
 bool checkGoogleSheetsVerify() {
   sheetsVerifyState = 1;
   sheetsVerifyHttp = 0;
+  sheetsWriteMode = 0;
   updatePanel(PanelState::Busy, "Google Sheets: verificando lectura REAL");
   if (WiFi.status() != WL_CONNECTED) {
     sheetsVerifyState = 3;
@@ -1254,6 +1313,9 @@ bool checkGoogleSheetsVerify() {
   http.end();
   if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
   sheetsVerifyHttp = code;
+  if (code == 200) {
+    sheetsWriteMode = body.indexOf("\"sheet_write_enabled\":true") >= 0 ? 2 : 1;
+  }
   const bool connected =
       code == 200 && body.indexOf("\"connected\":true") >= 0 &&
       body.indexOf("\"ok\":true") >= 0 &&
@@ -1273,7 +1335,12 @@ bool checkGoogleSheetsVerify() {
 }
 
 bool checkCloudStack() {
-  if (!checkBackendHealth()) return false;
+  if (!checkBackendHealth()) {
+    sheetsVerifyState = 3;  // 0 must mean never checked, not a failed precondition
+    sheetsVerifyHttp = 0;
+    sheetsWriteMode = 0;
+    return false;
+  }
   return checkGoogleSheetsVerify();
 }
 
@@ -1316,6 +1383,21 @@ void fetchHistory() {
       if (tab < 0) break;
       start = tab + 1;
     }
+    if (fields[0] == "M") {
+      unsigned int pending = 0, attempts = 0, applied = 0, blocked = 0;
+      if (sscanf(fields[3].c_str(), "%u|%u|%u|%u",
+                 &pending, &attempts, &applied, &blocked) == 4) {
+        loaded.approved = fields[1].toInt();
+        loaded.rejected = fields[2].toInt();
+        loaded.pending = pending;
+        loaded.attempts = attempts;
+        loaded.applied = applied;
+        loaded.blocked = blocked;
+        loaded.persistent = fields[4] == "PERSIST";
+        loaded.hasSummary = true;
+      }
+      continue;
+    }
     HistoryItem* item = nullptr;
     if (fields[0] == "O" && loaded.orderCount < kHistoryCapacity)
       item = &loaded.orders[loaded.orderCount++];
@@ -1331,8 +1413,11 @@ void fetchHistory() {
   historyCache = loaded;
   portEXIT_CRITICAL(&historyMux);
   historyLoading = false;
-  Serial.printf("HISTORY 3C -> %u orders, %u Sheets changes\n",
-    loaded.orderCount, loaded.sheetCount);
+  Serial.printf("HISTORY 3C -> %u orders, %u Sheets/review events | APR=%u RECH=%u PEND=%u INT=%u OK=%u BLO=%u | scope=%s\n",
+    loaded.orderCount, loaded.sheetCount,
+    loaded.approved, loaded.rejected, loaded.pending,
+    loaded.attempts, loaded.applied, loaded.blocked,
+    loaded.persistent ? "persistent" : "session");
   updatePanel(PanelState::Ready, "Historial actualizado");
 }
 
@@ -1821,7 +1906,8 @@ void networkWorker(void* parameter) {
     if (!sawWifi) {
       sawWifi = true;
       lastHealthCheck = millis();
-      checkBackendHealth();
+      checkCloudStack();
+      fetchHistory();
       continue;
     }
     if (millis() - lastVoicePollMs >= kVoicePollIntervalMs) {
@@ -1879,6 +1965,9 @@ void configureWebServer() {
       ",\"voice_editor_deliveries\":" + String(voiceEditorDeliveries.load()) +
       ",\"voice_waiting\":" + (voiceWaiting ? "true" : "false") +
       ",\"voice_ack_pending\":" + (ackWaiting ? "true" : "false") +
+      ",\"sheet_verify_state\":" + String(sheetsVerifyState.load()) +
+      ",\"sheet_verify_http\":" + String(sheetsVerifyHttp.load()) +
+      ",\"sheet_write_mode\":" + String(sheetsWriteMode.load()) +
       ",\"transport\":\"internet\"}";
     web.send(200, "application/json", body);
   });
@@ -2156,6 +2245,10 @@ void handleTouch() {
           break;
         case home_ui::Action::Sheets:
           togglePanel(HomePanel::Sheets);
+          if (homePanel == HomePanel::Sheets) {
+            queueNetworkRequest(NetworkAction::CloudAndSheets);
+            queueNetworkRequest(NetworkAction::LoadHistory);
+          }
           break;
         case home_ui::Action::Github:
           togglePanel(HomePanel::Github);

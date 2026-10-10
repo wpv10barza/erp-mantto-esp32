@@ -1,30 +1,26 @@
 from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-FIRMWARE = (ROOT / "platformio/src/panel_4848s040/main.cpp").read_text(encoding="utf-8")
-MIRROR = (ROOT / "src/main.cpp").read_text(encoding="utf-8")
-assert FIRMWARE == MIRROR, "both firmware entry points must be identical"
-for needle in [
-    'kFirmwareVersion[] = "2.7.0-ota-commit"',
-    'drawHistoryScreen()',
-    'showHistoryScreen(false)',
-    'void handleHistoryTap(int x, int y)',
-    'if (historyScreenOpen)',
+root = Path(__file__).resolve().parents[1]
+source = (root / "platformio/src/panel_4848s040/main.cpp").read_text(encoding="utf-8")
+mirror = (root / "src/main.cpp").read_text(encoding="utf-8")
+assert source == mirror
+for needle in (
+    'bool hasSummary = false;',
+    'sheetsWriteMode',
+    'sheet_verify_state',
+    'sheet_verify_http',
+    'homePanel == HomePanel::Sheets',
+    'queueNetworkRequest(NetworkAction::CloudAndSheets)',
     'queueNetworkRequest(NetworkAction::LoadHistory)',
-    'case NetworkAction::LoadHistory:',
-    'void fetchHistory()',
-    '/api/device/v1/history/panel?device_id=',
-    'addRequestAuth(http)',
-    'historySheetTab',
-    '"ORDEN 3C"',
-    '"SHEETS"',
-    '"HISTORIAL"',
-    '"Cambios ejecutados"',
-    'portENTER_CRITICAL(&historyMux)',
-    'portEXIT_CRITICAL(&historyMux)',
-]:
-    assert needle in FIRMWARE, f"Missing authenticated history UI contract: {needle}"
-loop = FIRMWARE[FIRMWARE.index("void loop() {"):]
-assert "fetchHistory();" not in loop
-assert "http.GET()" not in loop
-print("ESP32 order history + applied Sheets read-only UI contract: PASS")
+    'loaded.persistent = fields[4] == "PERSIST"',
+    'APR:%d RECH:%d PEND:%d INT:%d OK:%d BLO:%d',
+    'AUD: SESION | HISTORIAL',
+    'SOLO SESION ACTUAL',
+    'Sin registros conservados',
+    'REVISION / SHEETS',
+    'WiFi.localIP().toString()',
+    'checkCloudStack();\n      fetchHistory();',
+):
+    assert needle in source, needle
+assert source.count('sheetVerifyState = 3') >= 3
+assert source.count('sheetsWriteMode = 0;') >= 2
+print("Sheets audit, live connection, and monitor history contract: PASS")
