@@ -343,3 +343,29 @@ Para conocer tu commit compilado desde GitHub, abre **Firmware CD** y revisa
 La 2.6 requiere una **migración por USB** para instalar la tabla dual OTA.
 Un commit de GitHub no es directamente flasheable sin compilar y publicar
 su binario correspondiente en Databricks.
+
+## Probar Cloud, conexión real a Sheets y órdenes por voz desde Windows
+
+El botón **PROBAR CLOUD** realiza ahora dos consultas distintas en
+Databricks Apps: `/api/device/v1/health` y el endpoint autenticado
+`/api/device/v1/cloud/verify`, que **lee Data!A4:AF4 directamente de
+Google Sheets**. El panel muestra **SHEETS: OK**, **SHEETS: ERROR**
+o **SHEETS: ...** y, al expandir Google Sheets, se ve el HTTP real.
+Un HTTP 200 de `/api/health` por sí solo no valida Google Sheets.
+
+Para diagnosticar desde PowerShell sin modificar filas, consulte el
+repositorio [Voz 3C](https://github.com/wpv10barza/voice-embeding-in-databricks-for-esp32)
+y ejecute `scripts/Probar-Extremo3C.ps1`. Para dictar en el PC o subir
+un WAV/MP3, ejecute `scripts/Enviar-Voz3C.ps1`. El módulo IA se ejecuta
+**en Databricks**, no en el ESP32.
+
+El firmware consulta cada 9 s la bandeja temporal de voz. Al recibir
+un borrador para `panel-4848s040-3c-01`, abre
+**EDITAR ORDEN 3C** con el texto prellenado. NO envía el texto ni escribe
+Google Sheets automáticamente; debes revisar, tocar ENVIAR 3C y
+posteriormente validar/aplicar cualquier propuesta por el flujo humano.
+
+La bandeja actual tiene TTL 15 min y almacén en memoria de proceso:
+es una prueba funcional, no entrega garantizada entre reinicios/réplicas.
+Primero despliegue el backend actualizado y posteriormente flashee el
+firmware aprobado por GitHub Actions.

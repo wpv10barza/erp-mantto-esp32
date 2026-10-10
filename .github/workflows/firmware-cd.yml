@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wpv10barza/asistente-de-databricks--erp
-          ref: 017c3f62445ef64911f08b429961e7a0661ba55f
+          ref: a042ac350b970707fc54c1a9b37cbe83a5864129
           path: cloud
 
       - uses: actions/setup-python@v5
@@ -42,6 +42,7 @@ jobs:
           python tests/test_firmware_main_sync.py
           python tests/test_backend_discovery.py
           python tests/test_final_ui_contract.py
+          python tests/test_voice_cloud_contract.py
           python tests/test_ota_commit_contract.py
           python tests/test_history_ui_contract.py
           python tests/test_async_white_ui_contract.py
@@ -51,6 +52,8 @@ jobs:
           grep -q 'requires_human_confirmation' cloud/app/main.py
           grep -q 'get_device_history_panel' cloud/app/main.py
           grep -q 'firmware_by_commit' cloud/app/main.py
+          grep -q 'device_cloud_verify' cloud/app/main.py
+          grep -q 'voice_panel_inbox' cloud/app/main.py
 
       - name: Validate PCU launchers
         shell: bash
@@ -82,7 +85,7 @@ jobs:
 
       - name: Backend historical audit tests
         working-directory: cloud
-        run: python -m pytest -q tests/test_history.py
+        run: python -m pytest -q tests/test_history.py tests/test_voice_3c.py
 
       - name: Start Databricks-only FastAPI backend locally
         working-directory: cloud
