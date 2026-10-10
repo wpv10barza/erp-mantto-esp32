@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "c7b1ec2ea7f1f2d3c4b425838e1a84c9d217e1fa",
+    "validated_commit": "67d27fd11aa2bcd025d8168a9702e6f50337f7ac",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",

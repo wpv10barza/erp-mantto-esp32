@@ -8,8 +8,8 @@ script = (root / "scripts/prepare_publish_ota_2_5_1.ps1").read_text()
 ignore = (root / ".gitignore").read_text()
 
 assert main == mirror
-assert 'kOtaVersion[] = "2.5.2"' in main
-assert 'kFirmwareVersion[] = "2.5.2-white-async"' in main
+assert 'kOtaVersion[] = "2.5.3"' in main
+assert 'kFirmwareVersion[] = "2.5.3-white-async"' in main
 assert "ota-release/" in ignore
 for needle in (
     "include\\local_config.h",
