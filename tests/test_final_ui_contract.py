@@ -34,7 +34,7 @@ for needle, label in [
     ("drawExpandedPanel()", "expandable detail renderer"),
     ("drawEditorTextField()", "partial editor redraw"),
     ("checkCloudStack()", "cloud plus Sheets verifier"),
-    ('endpoint("/api/sheet/verify")', "read-only Sheets verification"),
+    ('endpoint("/api/device/v1/cloud/verify")', "read-only Sheets verification"),
     ('kFirmwareVersion[] = "2.7.0-ota-commit"', "final firmware identity"),
 ]:
     require_main(needle, label)
