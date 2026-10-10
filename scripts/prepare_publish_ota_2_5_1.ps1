@@ -40,7 +40,7 @@ function Write-JsonUtf8NoBom {
     param([string]$Path, [object]$Data)
     $json = ($Data | ConvertTo-Json -Depth 8) + [Environment]::NewLine
     [System.IO.File]::WriteAllText(
-        $Path, $json, (New-Object System.Text.UTF8Encoding($false))
+        $Path, $json, ([System.Text.UTF8Encoding]::new($false))
     )
 }
 
