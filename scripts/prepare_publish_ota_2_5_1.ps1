@@ -99,6 +99,8 @@ try {
     if (-not (Get-Command pio -ErrorAction SilentlyContinue)) {
         throw "Instale PlatformIO CLI (pio) antes de compilar."
     }
+    # Force recompilation so all private local_config.h macros are embedded.
+    Invoke-Checked "pio" @("run", "-e", $envName, "-t", "clean")
     Invoke-Checked "pio" @("run", "-e", $envName)
 
     $binary = Join-Path $root ".pio\build\$envName\firmware.bin"
