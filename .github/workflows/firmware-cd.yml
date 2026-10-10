@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wpv10barza/asistente-de-databricks--erp
-          ref: 662fd1cd4d7fdc9806996af8a506a920ba6a2b2a
+          ref: 483abf8d73623c550ac64842383eb056f82e2056
           path: cloud
 
       - uses: actions/setup-python@v5
@@ -57,6 +57,8 @@ jobs:
           grep -q 'firmware_by_commit' cloud/app/main.py
           grep -q 'device_cloud_verify' cloud/app/main.py
           grep -q 'voice_panel_inbox' cloud/app/main.py
+          grep -q 'request_windows_voice_capture' cloud/app/main.py
+          grep -q 'next_windows_voice_capture' cloud/app/main.py
 
       - name: Validate PCU launchers
         shell: bash
