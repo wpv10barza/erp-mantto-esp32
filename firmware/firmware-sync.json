@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "a042ac350b970707fc54c1a9b37cbe83a5864129",
+    "validated_commit": "347d1ce7b9536bf7de84125bfbf65704f95ffa5c",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
@@ -29,8 +29,8 @@
     "voice_draft_ack_path": "/api/device/v1/voice/drafts/{draft_id}/ack"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "328cfc6b75d6a503baa1fe54455930d49baf1f67",
-    "src/main.cpp": "328cfc6b75d6a503baa1fe54455930d49baf1f67",
+    "platformio/src/panel_4848s040/main.cpp": "c957438c788498db1816d19b9e974ff9d9075fbf",
+    "src/main.cpp": "c957438c788498db1816d19b9e974ff9d9075fbf",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -62,7 +62,8 @@
     "cloud_test": {
       "endpoint": "/api/device/v1/cloud/verify",
       "status": "Data!A4:AF4 live headers with Google API",
-      "separate_from_health": true
+      "separate_from_health": true,
+      "spreadsheet_id_match": true
     },
     "secrets_in_ui": false,
     "touch": {

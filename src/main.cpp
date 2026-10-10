@@ -67,6 +67,7 @@ enum class HomePanel {
 
 HomePanel homePanel = HomePanel::None;
 constexpr char kFirmwareVersion[] = "2.7.0-ota-commit";
+constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // This 40-character commit is EMBEDDED by PlatformIO at build time.
 // It identifies the running binary, not whatever the user typed into OTA.
 constexpr char kInstalledCommit[] = FIRMWARE_SOURCE_COMMIT;
@@ -1244,6 +1245,7 @@ bool checkGoogleSheetsVerify() {
       code == 200 && body.indexOf("\"connected\":true") >= 0 &&
       body.indexOf("\"ok\":true") >= 0 &&
       jsonStringValue(body, "sheet_name") == "Data" &&
+      jsonStringValue(body, "spreadsheet_id") == kExpectedSpreadsheetId &&
       jsonUnsignedLongValue(body, "header_row", 0UL) == 4UL;
   sheetsVerifyState = connected ? 2 : 3;
   Serial.printf("SHEETS VERIFY -> HTTP=%d connected=%s Data!A4:AF4=%s\n",
