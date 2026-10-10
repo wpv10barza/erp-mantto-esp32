@@ -26,8 +26,8 @@
     "ota_lookup_path": "/api/device/v1/firmware/by-commit/{sha}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "3a03d253bf58174ee61d5fba38ea1e3a9e624eb9",
-    "src/main.cpp": "3a03d253bf58174ee61d5fba38ea1e3a9e624eb9",
+    "platformio/src/panel_4848s040/main.cpp": "05813813d27bc23d9b64616bb614dfdfa32fae9c",
+    "src/main.cpp": "05813813d27bc23d9b64616bb614dfdfa32fae9c",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -91,7 +91,9 @@
       "verification": "commit + version + exact size + SHA-256",
       "confirmation": "two taps",
       "bootstrap": "USB first from v2.6 non-OTA partitions",
-      "note": "Git SHA is not itself a flashable binary"
+      "note": "Git SHA is not itself a flashable binary",
+      "credential_migration": "bootstrap local_config -> ota3c Preferences NVS; later OTA reads NVS",
+      "credential_warning": "NVS is not flash-encrypted by default; protect physical device"
     }
   }
 }
