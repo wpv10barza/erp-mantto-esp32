@@ -1468,6 +1468,53 @@ void pollCommandStatus() {
 }
 
 
+void fetchCommandHistory(uint16_t offset) {
+  UiNotification notice{};
+  notice.historyLoaded = true;
+  notice.historyOffset = offset;
+  auto deliver = [&](const String& status, const String& detail) {
+    status.toCharArray(notice.historyStatus, sizeof(notice.historyStatus));
+    detail.toCharArray(notice.historyResult, sizeof(notice.historyResult));
+    if (uiQueue) xQueueOverwrite(uiQueue, &notice);
+  };
+  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) {
+    deliver("error", "Sin Internet u OAuth");
+    return;
+  }
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  const String url = endpoint(String("/api/device/v1/commands/history?device_id=")
+                              + app_config::deviceId + "&offset=" + String(offset));
+  if (!http.begin(url)) {
+    deliver("error", "No se pudo abrir historial");
+    return;
+  }
+  addRequestAuth(http);
+  const int code = http.GET();
+  const String response = code > 0 ? http.getString() : http.errorToString(code);
+  http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code != 200) {
+    deliver("error", String("Historial HTTP ") + code);
+    Serial.printf("[WARN] Historial HTTP=%d detail=%s\n", code, response.c_str());
+    return;
+  }
+  notice.historyTotal = static_cast<uint16_t>(
+      jsonUnsignedLongValue(response, "total", 0UL));
+  jsonStringValue(response, "status").toCharArray(
+      notice.historyStatus, sizeof(notice.historyStatus));
+  jsonStringValue(response, "text").toCharArray(
+      notice.historyText, sizeof(notice.historyText));
+  jsonStringValue(response, "result").toCharArray(
+      notice.historyResult, sizeof(notice.historyResult));
+  jsonStringValue(response, "changes_summary").toCharArray(
+      notice.historyChanges, sizeof(notice.historyChanges));
+  if (uiQueue) xQueueOverwrite(uiQueue, &notice);
+  Serial.printf("HISTORY 3C -> total=%u index=%u status=%s changes=%s\n",
+                notice.historyTotal, notice.historyOffset,
+                notice.historyStatus, notice.historyChanges);
+}
+
 bool validOtaCommitRef(const String& ref) {
   if (ref.length() < 8 || ref.length() > 40) return false;
   for (size_t i = 0; i < ref.length(); ++i) {
@@ -1490,6 +1537,8 @@ bool queueNetworkRequest(NetworkAction action, const String& command = String())
       return false;
     }
     command.toCharArray(request.command, sizeof(request.command));
+  } else if (action == NetworkAction::HistoryFetch) {
+    command.toCharArray(request.command, sizeof(request.command));
   } else if (action == NetworkAction::OtaCheck || action == NetworkAction::OtaInstall) {
     // Never infer a Git commit from GitHub source on the device.
     // An empty commit is an explicit request for latest.
@@ -1507,6 +1556,7 @@ bool queueNetworkRequest(NetworkAction action, const String& command = String())
               action == NetworkAction::Send3C ? "Orden 3C en cola" :
               action == NetworkAction::OtaCheck ? "OTA: buscando" :
               action == NetworkAction::OtaInstall ? "OTA: preparando instalacion" :
+               action == NetworkAction::HistoryFetch ? "Consultando historial 3C" :
               "Consulta cloud en cola");
   return true;
 }
@@ -1515,7 +1565,18 @@ void processNetworkUiUpdates() {
   if (!uiQueue) return;
   UiNotification notice{};
   if (xQueueReceive(uiQueue, &notice, 0) == pdTRUE) {
-    updatePanel(notice.state, String(notice.detail), notice.sound);
+    if (notice.historyLoaded) {
+      historyTotal = notice.historyTotal;
+      historyOffset = notice.historyOffset;
+      historyStatus = notice.historyStatus;
+      historyText = notice.historyText;
+      historyResult = notice.historyResult;
+      historyChanges = notice.historyChanges;
+      if (homePanel == HomePanel::History && !commandEditorOpen && !commandPreviewOpen)
+        drawPanel();
+    } else {
+      updatePanel(notice.state, String(notice.detail), notice.sound);
+    }
   }
 }
 
@@ -1535,6 +1596,10 @@ void networkWorker(void* parameter) {
           break;
         case NetworkAction::Send3C:
           send3CCommand(String(request.command));
+          fetchCommandHistory(0);
+          break;
+        case NetworkAction::HistoryFetch:
+          fetchCommandHistory(static_cast<uint16_t>(String(request.command).toInt()));
           break;
         case NetworkAction::OtaCheck:
           checkForOtaUpdate(false, String(request.command));
@@ -1649,6 +1714,28 @@ void handleTouch() {
   if (millis() - lastHandledTapMs < kTouchDebounceMs) return;
   lastHandledTapMs = millis();
   {
+    if (commandPreviewOpen) {
+      // Enter shows preview. Only button ENVIAR transmits.
+      if (tap.y >= 359 && tap.y < 402) {
+        if (tap.x >= 14 && tap.x < 158) {
+          commandPreviewOpen = false;
+          commandEditorOpen = true;
+          commandBuffer.set(app_config::commandBuffer.c_str());
+          drawEditor();
+        } else if (tap.x >= 168 && tap.x < 312) {
+          commandPreviewOpen = false;
+          homePanel = HomePanel::None;
+          drawPanel();
+        } else if (tap.x >= 322 && tap.x < 466) {
+          commandPreviewOpen = false;
+          homePanel = HomePanel::History;
+          historyOffset = 0;
+          drawPanel();
+          queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);
+        }
+      }
+      return;
+    }
     if (commandEditorOpen) {
       // GT911 touch release confirmed by TapTracker, never on finger-down.
       if (editor_ui::EditorLayout::topRightHomeHit(tap.x, tap.y)) {
@@ -1692,9 +1779,15 @@ void handleTouch() {
               return;
             }
             app_config::commandBuffer = commandBuffer.c_str();
+            String reviewCommand = app_config::commandBuffer;
+            reviewCommand.trim();
+            if (!reviewCommand.length()) {
+              updatePanel(PanelState::Error, "Orden 3C vacia", true);
+              return;
+            }
             commandEditorOpen = false;
+            commandPreviewOpen = true;
             drawPanel();
-            queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);
             return;
           case KeyKind::ToggleAlphaNumeric:
             keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
@@ -1751,6 +1844,18 @@ void handleTouch() {
         }
       }
     } else {
+      if (homePanel == HomePanel::History &&
+          tap.y >= 380 && tap.y < 408) {
+        if (tap.x >= 22 && tap.x < 162) {
+          if (historyOffset > 0) historyOffset--;
+        } else if (tap.x >= 170 && tap.x < 302) {
+          if (historyOffset + 1 < historyTotal) historyOffset++;
+        } else if (!(tap.x >= 310 && tap.x < 456)) {
+          return;
+        }
+        queueNetworkRequest(NetworkAction::HistoryFetch, String(historyOffset));
+        return;
+      }
       // Firmware button coordinates are inside the expanded details, not
       // in the hidden secondary menu. Explicit user actions are mandatory.
       if (homePanel == HomePanel::Firmware && tap.y >= 377 && tap.y < 408) {
@@ -1804,6 +1909,12 @@ void handleTouch() {
           break;
         case home_ui::Action::Firmware:
           togglePanel(HomePanel::Firmware);
+          break;
+        case home_ui::Action::History:
+          homePanel = HomePanel::History;
+          historyOffset = 0;
+          drawPanel();
+          queueNetworkRequest(NetworkAction::HistoryFetch, "0");
           break;
         case home_ui::Action::Wifi:
           togglePanel(HomePanel::Wifi);
