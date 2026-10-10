@@ -23,12 +23,12 @@
     "status_path": "/api/device/v1/commands/{command_id}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "2cc14cff2f1ae25b549848e0e0bba636ab75a93b",
-    "src/main.cpp": "2cc14cff2f1ae25b549848e0e0bba636ab75a93b",
+    "platformio/src/panel_4848s040/main.cpp": "fac6b1eeddcdc6aa1ccffcc5d4efc3f655838c9e",
+    "src/main.cpp": "fac6b1eeddcdc6aa1ccffcc5d4efc3f655838c9e",
     "include/app_config.h": "439a1c79f9e757d2b80d085bf20c678f0ae0b046",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
-    "include/editor_components.h": "020f12663522ddf1eed0ecb28ab2a5e36eda9f54",
+    "include/editor_components.h": "c606ef54fb66598318e72a2cdbca1a47f3ee6c80",
     "include/panel_gpio.h": "5439ae00de14e9b3e3cb407a913f9e417f5546b8",
     "include/touch_input.h": "859e2ee6d4f3e17d34c4909ae385a69c8ebdcfc2",
     "include/home_menu.h": "177c6d8028bc26badd888bfa8b2dd0c6bca87a3e",
@@ -80,6 +80,16 @@
       "verification": "SHA-256",
       "boot_confirmation": "esp_ota",
       "hardware_validation": "pending"
+    },
+    "top_right_editor_home": {
+      "rect": [
+        378,
+        4,
+        470,
+        39
+      ],
+      "behavior": "returns to main menu, no command transmitted",
+      "touch": "release confirmed"
     }
   }
 }

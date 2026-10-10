@@ -38,6 +38,15 @@ class EditorLayout {
   static constexpr int kScreenWidth = 480;
   static constexpr int kScreenHeight = 480;
   static constexpr Rect title() { return {0, 0, 480, 42}; }
+  // Visible touch target in the top-right of the editor title bar.
+  // Keep it separate from the lower toolbar and keyboard hitboxes.
+  static constexpr Rect topRightHome() { return {378, 4, 470, 39}; }
+  static constexpr bool topRightHomeHit(int x, int y) {
+    const Rect button = topRightHome();
+    constexpr int inset = 3;
+    return x >= button.left + inset && x < button.right - inset &&
+           y >= button.top + inset && y < button.bottom - inset;
+  }
   static constexpr Rect textField() { return {12, 48, 468, 146}; }
   static constexpr Rect toolbar() { return {12, 164, 468, 212}; }
 

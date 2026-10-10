@@ -185,6 +185,18 @@ void drawEditorFrame() {
   display->fillScreen(WHITE);
   display->fillRect(0, 0, kScreenWidth, 42, WHITE);
   drawCentered("EDITAR ORDEN 3C", 11, 2, BLACK);
+
+  // Dedicated shortcut; returns home without posting a maintenance command.
+  const auto home = editor_ui::EditorLayout::topRightHome();
+  display->fillRoundRect(home.left, home.top,
+                         home.width(), home.height(), 8, WHITE);
+  display->drawRoundRect(home.left, home.top,
+                         home.width(), home.height(), 8, BLACK);
+  display->setTextColor(BLACK);
+  display->setTextSize(1);
+  display->setCursor(home.left + (home.width() - 36) / 2,
+                     home.top + (home.height() - 8) / 2);
+  display->print("INICIO");
 }
 
 void drawEditorTextField() {
@@ -1482,6 +1494,13 @@ void handleTouch() {
   lastHandledTapMs = millis();
   {
     if (commandEditorOpen) {
+      // GT911 touch release confirmed by TapTracker, never on finger-down.
+      if (editor_ui::EditorLayout::topRightHomeHit(tap.x, tap.y)) {
+        commandEditorOpen = false;
+        homePanel = HomePanel::None;
+        drawPanel();
+        return;
+      }
       virtual_keyboard::Key key{};
       if (virtual_keyboard::hitTest(keyboardMode, tap.x, tap.y, &key)) {
         using virtual_keyboard::KeyKind;
