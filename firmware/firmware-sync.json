@@ -23,8 +23,8 @@
     "status_path": "/api/device/v1/commands/{command_id}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "fac6b1eeddcdc6aa1ccffcc5d4efc3f655838c9e",
-    "src/main.cpp": "fac6b1eeddcdc6aa1ccffcc5d4efc3f655838c9e",
+    "platformio/src/panel_4848s040/main.cpp": "615cbc74f9ce2373d23dc2df94958a8a254117e0",
+    "src/main.cpp": "615cbc74f9ce2373d23dc2df94958a8a254117e0",
     "include/app_config.h": "439a1c79f9e757d2b80d085bf20c678f0ae0b046",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -79,7 +79,10 @@
       "partition_csv": "partitions_ota_16mb.csv",
       "verification": "SHA-256",
       "boot_confirmation": "esp_ota",
-      "hardware_validation": "pending"
+      "hardware_validation": "pending",
+      "commit_selection": "manual SHA 8-40 hex, Databricks verified release only",
+      "default_selection": "latest",
+      "status": "review pending deployment"
     },
     "top_right_editor_home": {
       "rect": [

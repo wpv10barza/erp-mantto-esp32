@@ -107,6 +107,8 @@ constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
 virtual_keyboard::KeyboardMode keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
 bool commandEditorOpen = false;
+bool editingFirmwareCommit = false;
+String selectedOtaCommit;
 // Managed only by the network worker except otaBootConfirmed on the UI task.
 String lastOtaMessage = "OTA sin verificar";
 bool otaBootConfirmed = false;
@@ -184,7 +186,7 @@ void drawEditorFrame() {
   if (!displayReady) return;
   display->fillScreen(WHITE);
   display->fillRect(0, 0, kScreenWidth, 42, WHITE);
-  drawCentered("EDITAR ORDEN 3C", 11, 2, BLACK);
+  drawCentered(editingFirmwareCommit ? "ELEGIR COMMIT OTA" : "EDITAR ORDEN 3C", 11, 2, BLACK);
 
   // Dedicated shortcut; returns home without posting a maintenance command.
   const auto home = editor_ui::EditorLayout::topRightHome();
@@ -390,9 +392,15 @@ void drawExpandedPanel() {
     display->print(panelDetail.startsWith("OTA") || panelDetail.startsWith("FW ")
                        ? panelDetail : String("OTA: HTTPS + SHA-256"));
     display->setCursor(28, 353);
-    display->print("Consultar antes de instalar firmware");
-    drawButton(24, 377, 205, 31, "BUSCAR OTA", WHITE);
-    drawButton(251, 377, 205, 31, "INSTALAR", WHITE);
+    if (selectedOtaCommit.length()) {
+      display->print("Commit seleccionado: ");
+      display->print(selectedOtaCommit.substring(0, 12));
+    } else {
+      display->print("Buscar ultima version o elegir un commit");
+    }
+    drawButton(22, 377, 140, 31, "BUSCAR OTA", WHITE);
+    drawButton(170, 377, 132, 31, "COMMIT", WHITE);
+    drawButton(310, 377, 146, 31, "INSTALAR", WHITE);
   } else if (homePanel == HomePanel::Wifi) {
     display->setCursor(28, 316);
     display->print("SSID: ");
@@ -1048,7 +1056,7 @@ bool performOtaUpdate(
   return true;
 }
 
-bool checkForOtaUpdate(bool install) {
+bool checkForOtaUpdate(bool install, const String& commitRef = String()) {
   if (WiFi.status() != WL_CONNECTED) {
     lastOtaMessage = "OTA sin Internet";
     updatePanel(PanelState::Offline, lastOtaMessage, true);
@@ -1062,7 +1070,9 @@ bool checkForOtaUpdate(bool install) {
 
   HTTPClient http;
   http.setTimeout(app_config::httpTimeoutMs);
-  const String url = endpoint("/api/device/v1/firmware/latest");
+  const String url = endpoint(commitRef.length()
+      ? String("/api/device/v1/firmware/commits/") + commitRef
+      : String("/api/device/v1/firmware/latest"));
   if (!http.begin(url)) {
     lastOtaMessage = "OTA manifest no disponible";
     updatePanel(PanelState::Error, lastOtaMessage, true);
@@ -1082,6 +1092,15 @@ bool checkForOtaUpdate(bool install) {
     return false;
   }
 
+  if (commitRef.length()) {
+    String resolvedSha = jsonStringValue(body, "git_commit_sha");
+    resolvedSha.toLowerCase();
+    if (resolvedSha.length() != 40 || !resolvedSha.startsWith(commitRef)) {
+      lastOtaMessage = "OTA commit no coincide";
+      updatePanel(PanelState::Error, lastOtaMessage, true);
+      return false;
+    }
+  }
   const String version = jsonStringValue(body, "version");
   const String sha256 = jsonStringValue(body, "sha256");
   const String path = jsonStringValue(body, "url");
@@ -1329,6 +1348,15 @@ void pollCommandStatus() {
 }
 
 
+bool validOtaCommitRef(const String& ref) {
+  if (ref.length() < 8 || ref.length() > 40) return false;
+  for (size_t i = 0; i < ref.length(); ++i) {
+    const char c = ref[i];
+    if (!isxdigit(static_cast<unsigned char>(c))) return false;
+  }
+  return true;
+}
+
 bool queueNetworkRequest(NetworkAction action, const String& command = String()) {
   if (!networkQueue) {
     updatePanel(PanelState::Error, "Red no inicializada");
@@ -1339,6 +1367,14 @@ bool queueNetworkRequest(NetworkAction action, const String& command = String())
   if (action == NetworkAction::Send3C) {
     if (!command.length() || command.length() >= sizeof(request.command)) {
       updatePanel(PanelState::Error, "Orden 3C vacia o muy larga");
+      return false;
+    }
+    command.toCharArray(request.command, sizeof(request.command));
+  } else if (action == NetworkAction::OtaCheck || action == NetworkAction::OtaInstall) {
+    // Never infer a Git commit from GitHub source on the device.
+    // An empty commit is an explicit request for latest.
+    if (command.length() && !validOtaCommitRef(command)) {
+      updatePanel(PanelState::Error, "Commit OTA invalido");
       return false;
     }
     command.toCharArray(request.command, sizeof(request.command));
@@ -1381,10 +1417,10 @@ void networkWorker(void* parameter) {
           send3CCommand(String(request.command));
           break;
         case NetworkAction::OtaCheck:
-          checkForOtaUpdate(false);
+          checkForOtaUpdate(false, String(request.command));
           break;
         case NetworkAction::OtaInstall:
-          checkForOtaUpdate(true);
+          checkForOtaUpdate(true, String(request.command));
           break;
       }
       lastHealthCheck = millis();
@@ -1497,6 +1533,7 @@ void handleTouch() {
       // GT911 touch release confirmed by TapTracker, never on finger-down.
       if (editor_ui::EditorLayout::topRightHomeHit(tap.x, tap.y)) {
         commandEditorOpen = false;
+        editingFirmwareCommit = false;
         homePanel = HomePanel::None;
         drawPanel();
         return;
@@ -1518,6 +1555,22 @@ void handleTouch() {
             drawEditorTextField();
             break;
           case KeyKind::Enter:
+            if (editingFirmwareCommit) {
+              String commitRef(commandBuffer.c_str());
+              commitRef.trim();
+              commitRef.toLowerCase();
+              commandEditorOpen = false;
+              editingFirmwareCommit = false;
+              homePanel = HomePanel::Firmware;
+              if (!validOtaCommitRef(commitRef)) {
+                updatePanel(PanelState::Error, "Commit: use 8-40 hex", true);
+                return;
+              }
+              selectedOtaCommit = commitRef;
+              drawPanel();
+              queueNetworkRequest(NetworkAction::OtaCheck, selectedOtaCommit);
+              return;
+            }
             app_config::commandBuffer = commandBuffer.c_str();
             commandEditorOpen = false;
             drawPanel();
@@ -1535,6 +1588,7 @@ void handleTouch() {
         switch (action) {
           case editor_ui::ToolbarAction::Home:
             commandEditorOpen = false;
+            editingFirmwareCommit = false;
             homePanel = HomePanel::None;
             drawPanel();
             break;
@@ -1580,12 +1634,21 @@ void handleTouch() {
       // Firmware button coordinates are inside the expanded details, not
       // in the hidden secondary menu. Explicit user actions are mandatory.
       if (homePanel == HomePanel::Firmware && tap.y >= 377 && tap.y < 408) {
-        if (tap.x >= 24 && tap.x < 229) {
+        if (tap.x >= 22 && tap.x < 162) {
+          selectedOtaCommit = "";
           queueNetworkRequest(NetworkAction::OtaCheck);
           return;
         }
-        if (tap.x >= 251 && tap.x < 456) {
-          queueNetworkRequest(NetworkAction::OtaInstall);
+        if (tap.x >= 170 && tap.x < 302) {
+          editingFirmwareCommit = true;
+          commandEditorOpen = true;
+          keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
+          commandBuffer.set(selectedOtaCommit.c_str());
+          drawEditor();
+          return;
+        }
+        if (tap.x >= 310 && tap.x < 456) {
+          queueNetworkRequest(NetworkAction::OtaInstall, selectedOtaCommit);
           return;
         }
       }
@@ -1604,7 +1667,9 @@ void handleTouch() {
           break;
         case home_ui::Action::Send3C:
           homePanel = HomePanel::None;
+          editingFirmwareCommit = false;
           commandEditorOpen = true;
+          commandBuffer.set(app_config::commandBuffer.c_str());
           keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
           drawEditor();
           break;
