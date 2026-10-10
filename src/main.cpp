@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <HTTPClient.h>
+#include <Update.h>
+#include <mbedtls/sha256.h>
+#include <esp_ota_ops.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #include <Wire.h>
@@ -60,7 +63,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.6.0-history-3c";
+constexpr char kFirmwareVersion[] = "2.7.0-ota-commit";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -78,7 +81,64 @@ bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
 
-enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C, LoadHistory };
+enum class NetworkAction : uint8_t {
+  Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta
+};
+
+// OTA is intentionally commit-selectable only among published Databricks builds.
+// Never fetch raw commits or write flash without validating size and SHA-256.
+constexpr size_t kOtaCommitCapacity = 64;
+CommandBuffer<kOtaCommitCapacity> otaCommitBuffer;
+bool otaCommitEditorOpen = false;
+bool otaConfirmArmed = false;
+struct OtaSelection {
+  bool ready = false;
+  char commit[41] = {};
+  char version[32] = {};
+  char sha256[65] = {};
+  char url[110] = {};
+  char message[86] = "Ingrese commit publicado";
+  size_t size = 0;
+};
+OtaSelection otaSelection{};
+portMUX_TYPE otaMux = portMUX_INITIALIZER_UNLOCKED;
+
+bool validCommitSha(String value) {
+  value.trim();
+  if (value.length() < 7 || value.length() > 40) return false;
+  for (size_t i = 0; i < value.length(); ++i) {
+    const char ch = value[i];
+    if (!isxdigit(static_cast<unsigned char>(ch))) return false;
+  }
+  return true;
+}
+
+bool validSha256(const String& value) {
+  if (value.length() != 64) return false;
+  for (size_t i = 0; i < value.length(); ++i) {
+    if (!isxdigit(static_cast<unsigned char>(value[i]))) return false;
+  }
+  return true;
+}
+
+void setOtaStatus(const String& status, bool clearCandidate = false) {
+  char message[86]{};
+  status.toCharArray(message, sizeof(message));
+  portENTER_CRITICAL(&otaMux);
+  if (clearCandidate) otaSelection.ready = false;
+  memcpy(otaSelection.message, message, sizeof(message));
+  portEXIT_CRITICAL(&otaMux);
+}
+
+int otaVersionCompare(const char* latest, const char* current) {
+  unsigned a[3]{}, b[3]{};
+  if (sscanf(latest, "%u.%u.%u", &a[0], &a[1], &a[2]) != 3 ||
+      sscanf(current, "%u.%u.%u", &b[0], &b[1], &b[2]) != 3) return -1;
+  for (int i = 0; i < 3; ++i) {
+    if (a[i] != b[i]) return a[i] > b[i] ? 1 : -1;
+  }
+  return 0;
+}
 
 constexpr int kHistoryCapacity = 8;
 struct HistoryItem {
@@ -292,6 +352,34 @@ void drawEditor() {
   drawEditorKeyboard();
 }
 
+void drawOtaCommitField() {
+  if (!displayReady) return;
+  const auto f = editor_ui::EditorLayout::textField();
+  display->fillRoundRect(f.left, f.top, f.width(), f.height(), 10, WHITE);
+  display->drawRoundRect(f.left, f.top, f.width(), f.height(), 10, BLACK);
+  display->setTextColor(BLACK);
+  display->setTextSize(1);
+  display->setCursor(24, 61);
+  display->print("Git SHA 7-40 caracteres (solo hexadecimal)");
+  display->setTextSize(2);
+  const String content(otaCommitBuffer.c_str());
+  const int start = content.length() > 30 ? content.length() - 30 : 0;
+  display->setCursor(24, 98);
+  display->print(content.substring(start));
+  display->setTextSize(1);
+  display->setCursor(24, 131);
+  display->print("ENTER = buscar version firmada/publicada");
+}
+
+void drawOtaCommitEditor() {
+  if (!displayReady) return;
+  display->fillScreen(WHITE);
+  drawCentered("EDITAR COMMIT OTA", 11, 2, BLACK);
+  drawOtaCommitField();
+  drawEditorToolbar();
+  drawEditorKeyboard();
+}
+
 void drawChevron(int x, int y, bool down) {
   if (!displayReady) return;
   const uint16_t c = BLACK;
@@ -390,13 +478,28 @@ void drawExpandedPanel() {
     display->setCursor(28, 336);
     display->print("El firmware final se publica como artefacto.");
   } else if (homePanel == HomePanel::Firmware) {
-    display->setCursor(28, 316);
-    display->print("Version: ");
+    OtaSelection candidate{};
+    portENTER_CRITICAL(&otaMux);
+    candidate = otaSelection;
+    portEXIT_CRITICAL(&otaMux);
+    display->setCursor(28, 310);
+    display->print("FW actual: ");
     display->print(kFirmwareVersion);
-    display->setCursor(28, 336);
-    display->print("Build reproducible desde GitHub Actions.");
-    display->setCursor(28, 356);
-    display->print("Flasheo fisico requiere dispositivo conectado.");
+    display->setCursor(28, 327);
+    display->print("Commit: ");
+    display->print(String(otaCommitBuffer.c_str()).substring(0, 40));
+    display->setCursor(28, 344);
+    display->print(String(candidate.message).substring(0, 70));
+    display->fillRoundRect(26, 361, 201, 43, 9, WHITE);
+    display->drawRoundRect(26, 361, 201, 43, 9, BLACK);
+    display->fillRoundRect(239, 361, 214, 43, 9, WHITE);
+    display->drawRoundRect(239, 361, 214, 43, 9, BLACK);
+    display->setTextSize(2);
+    display->setCursor(47, 375);
+    display->print("EDITAR SHA");
+    display->setCursor(252, 375);
+    display->print(otaConfirmArmed ? "CONFIRMAR" :
+                   candidate.ready ? "INSTALAR OTA" : "BUSCAR OTA");
   } else if (homePanel == HomePanel::Wifi) {
     display->setCursor(28, 316);
     display->print("SSID: ");
@@ -575,6 +678,10 @@ void handleHistoryTap(int x, int y) {
 }
 
 void drawPanel() {
+  if (otaCommitEditorOpen) {
+    drawOtaCommitEditor();
+    return;
+  }
   if (historyScreenOpen) {
     drawHistoryScreen();
     return;
@@ -663,7 +770,7 @@ void updatePanel(PanelState state, const String& detail, bool sound = false) {
   const bool changed = state != panelState;
   panelState = state;
   panelDetail = detail;
-  if (!commandEditorOpen || historyScreenOpen) drawPanel();
+  if ((!commandEditorOpen && !otaCommitEditorOpen) || historyScreenOpen) drawPanel();
   Serial.printf("PANEL STATE -> %s | %s\n", stateLabel(panelState), panelDetail.c_str());
   if (!sound || !changed) return;
   if (state == PanelState::Applied || state == PanelState::Ready) playTone(880, 70);
@@ -1127,6 +1234,184 @@ void fetchHistory() {
   updatePanel(PanelState::Ready, "Historial actualizado");
 }
 
+
+bool checkOtaCommit(const String& rawCommit) {
+  String sha = rawCommit;
+  sha.trim();
+  sha.toLowerCase();
+  if (!validCommitSha(sha)) {
+    setOtaStatus("SHA invalido (7-40 hex)", true);
+    updatePanel(PanelState::Error, "Commit OTA invalido");
+    return false;
+  }
+  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) {
+    setOtaStatus("Sin Wi-Fi / OAuth Databricks", true);
+    updatePanel(PanelState::Offline, "OTA: sin conexion");
+    return false;
+  }
+  setOtaStatus("Consultando publicacion OTA...", true);
+  updatePanel(PanelState::Busy, "Buscando firmware OTA");
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  if (!http.begin(endpoint("/api/device/v1/firmware/by-commit/" + sha))) {
+    setOtaStatus("No se pudo abrir OTA", true);
+    updatePanel(PanelState::Error, "OTA URL invalida");
+    return false;
+  }
+  addRequestAuth(http);
+  const int code = http.GET();
+  const String body = code == 200 ? http.getString() : "";
+  http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code != 200) {
+    setOtaStatus(code == 404 ? "Commit sin OTA publicada" :
+                 String("OTA consulta HTTP ") + code, true);
+    updatePanel(PanelState::Error, String("OTA HTTP ") + code);
+    Serial.printf("OTA LOOKUP HTTP=%d commit=%s\n", code, sha.c_str());
+    return false;
+  }
+  const String fullSha = jsonStringValue(body, "source_sha");
+  const String version = jsonStringValue(body, "version");
+  const String checksum = jsonStringValue(body, "sha256");
+  const String path = jsonStringValue(body, "url");
+  const size_t fileSize = jsonUnsignedLongValue(body, "size", 0UL);
+  if (fullSha.length() != 40 || !fullSha.startsWith(sha) ||
+      !validSha256(checksum) ||
+      !path.startsWith("/api/device/v1/firmware/") || !path.endsWith(".bin") ||
+      fileSize < 65536 || fileSize > 0x400000 ||
+      otaVersionCompare(version.c_str(), kFirmwareVersion) <= 0) {
+    setOtaStatus("Build no apta, antigua o invalida", true);
+    updatePanel(PanelState::Error, "OTA: version/manifest invalido");
+    return false;
+  }
+  OtaSelection candidate{};
+  candidate.ready = true;
+  fullSha.toCharArray(candidate.commit, sizeof(candidate.commit));
+  version.toCharArray(candidate.version, sizeof(candidate.version));
+  checksum.toCharArray(candidate.sha256, sizeof(candidate.sha256));
+  path.toCharArray(candidate.url, sizeof(candidate.url));
+  candidate.size = fileSize;
+  const String message = String("OTA ") + version + " lista; pulse INSTALAR";
+  message.toCharArray(candidate.message, sizeof(candidate.message));
+  portENTER_CRITICAL(&otaMux);
+  otaSelection = candidate;
+  portEXIT_CRITICAL(&otaMux);
+  Serial.printf("OTA VERIFIED commit=%s version=%s size=%u\n",
+                fullSha.c_str(), version.c_str(), static_cast<unsigned>(fileSize));
+  updatePanel(PanelState::Ready, "OTA lista para instalar");
+  return true;
+}
+
+bool installSelectedOta() {
+  OtaSelection selected{};
+  portENTER_CRITICAL(&otaMux);
+  selected = otaSelection;
+  portEXIT_CRITICAL(&otaMux);
+  if (!selected.ready || !validSha256(String(selected.sha256)) ||
+      !String(selected.url).startsWith("/api/device/v1/firmware/") ||
+      !String(selected.url).endsWith(".bin") ||
+      selected.size < 65536 || selected.size > 0x400000) {
+    setOtaStatus("Seleccione y verifique commit", true);
+    updatePanel(PanelState::Error, "OTA sin manifest valido");
+    return false;
+  }
+  if (!esp_ota_get_next_update_partition(nullptr)) {
+    setOtaStatus("Sin particion OTA; usar USB", true);
+    updatePanel(PanelState::Error, "OTA necesita instalacion USB");
+    return false;
+  }
+  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) {
+    setOtaStatus("Red no disponible", true);
+    updatePanel(PanelState::Offline, "OTA sin conexion");
+    return false;
+  }
+  const String url = endpoint(String(selected.url));
+  HTTPClient http;
+  http.setTimeout(30000);
+  if (!http.begin(url)) {
+    setOtaStatus("URL de descarga invalida", true);
+    updatePanel(PanelState::Error, "OTA URL invalida");
+    return false;
+  }
+  addRequestAuth(http);
+  const int code = http.GET();
+  if (code != 200) {
+    if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+    http.end();
+    setOtaStatus(String("Descarga HTTP ") + code, true);
+    updatePanel(PanelState::Error, String("OTA descarga HTTP ") + code);
+    return false;
+  }
+  const int contentLength = http.getSize();
+  if (contentLength <= 0 || static_cast<size_t>(contentLength) != selected.size) {
+    http.end();
+    setOtaStatus("Tamano OTA no coincide", true);
+    updatePanel(PanelState::Error, "OTA tamano invalido");
+    return false;
+  }
+  updatePanel(PanelState::Busy, "OTA: descargando y verificando");
+  if (!Update.begin(selected.size, U_FLASH)) {
+    http.end();
+    setOtaStatus("Update.begin fallo; usar USB", true);
+    updatePanel(PanelState::Error, "OTA particion insuficiente");
+    return false;
+  }
+  mbedtls_sha256_context sha;
+  mbedtls_sha256_init(&sha);
+  bool ok = mbedtls_sha256_starts_ret(&sha, 0) == 0;
+  WiFiClient* stream = http.getStreamPtr();
+  uint8_t data[2048]{};
+  size_t received = 0;
+  unsigned long progress = millis();
+  while (ok && received < selected.size) {
+    const int available = stream->available();
+    if (available <= 0) {
+      if (!http.connected() || millis() - progress > 30000UL) { ok = false; break; }
+      vTaskDelay(pdMS_TO_TICKS(5));
+      continue;
+    }
+    size_t length = static_cast<size_t>(available);
+    if (length > sizeof(data)) length = sizeof(data);
+    if (length > selected.size - received) length = selected.size - received;
+    const int n = stream->readBytes(data, length);
+    if (n <= 0 || mbedtls_sha256_update_ret(&sha, data, n) != 0 ||
+        Update.write(data, n) != static_cast<size_t>(n)) {
+      ok = false;
+      break;
+    }
+    received += static_cast<size_t>(n);
+    progress = millis();
+  }
+  unsigned char digest[32]{};
+  if (ok) ok = (mbedtls_sha256_finish_ret(&sha, digest) == 0);
+  mbedtls_sha256_free(&sha);
+  http.end();
+  char hashText[65]{};
+  for (int i = 0; i < 32; ++i) {
+    snprintf(hashText + i * 2, 3, "%02x", digest[i]);
+  }
+  if (!ok || received != selected.size ||
+      !String(hashText).equalsIgnoreCase(selected.sha256)) {
+    Update.abort();
+    setOtaStatus("Descarga incompleta o SHA-256 incorrecto", true);
+    updatePanel(PanelState::Error, "OTA abortada, firmware intacto");
+    return false;
+  }
+  if (!Update.end(true)) {
+    Update.abort();
+    setOtaStatus("No se pudo activar particion OTA", true);
+    updatePanel(PanelState::Error, "Update.end fallo");
+    return false;
+  }
+  setOtaStatus("OTA verificada; reiniciando");
+  updatePanel(PanelState::Ready, "OTA SHA-256 OK; reiniciando");
+  Serial.printf("OTA SUCCESS version=%s source_sha=%s bytes=%u\n",
+                selected.version, selected.commit, static_cast<unsigned>(received));
+  vTaskDelay(pdMS_TO_TICKS(900));
+  ESP.restart();
+  return true;
+}
+
 int send3CCommand(const String& rawCommand) {
   String command = rawCommand;
   command.trim();
@@ -1241,7 +1526,7 @@ bool queueNetworkRequest(NetworkAction action, const String& command) {
   }
   NetworkRequest request{};
   request.action = action;
-  if (action == NetworkAction::Send3C) {
+  if (action == NetworkAction::Send3C || action == NetworkAction::CheckOtaCommit) {
     if (!command.length() || command.length() >= sizeof(request.command)) {
       updatePanel(PanelState::Error, "Orden 3C vacia o muy larga");
       return false;
@@ -1253,7 +1538,10 @@ bool queueNetworkRequest(NetworkAction action, const String& command) {
     return false;
   }
   updatePanel(PanelState::Busy,
-              action == NetworkAction::Send3C ? "Orden 3C en cola" : "Consulta cloud en cola");
+              action == NetworkAction::Send3C ? "Orden 3C en cola" :
+              action == NetworkAction::CheckOtaCommit ? "Consulta OTA en cola" :
+              action == NetworkAction::InstallOta ? "Instalacion OTA en cola" :
+              "Consulta cloud en cola");
   return true;
 }
 
@@ -1284,6 +1572,12 @@ void networkWorker(void* parameter) {
           break;
         case NetworkAction::LoadHistory:
           fetchHistory();
+          break;
+        case NetworkAction::CheckOtaCommit:
+          checkOtaCommit(String(request.command));
+          break;
+        case NetworkAction::InstallOta:
+          installSelectedOta();
           break;
       }
       lastHealthCheck = millis();
@@ -1392,6 +1686,66 @@ void handleTouch() {
   if (millis() - lastHandledTapMs < kTouchDebounceMs) return;
   lastHandledTapMs = millis();
   {
+    if (otaCommitEditorOpen) {
+      virtual_keyboard::Key key{};
+      if (virtual_keyboard::hitTest(keyboardMode, tap.x, tap.y, &key)) {
+        using virtual_keyboard::KeyKind;
+        switch (key.definition.kind) {
+          case KeyKind::Character:
+            otaCommitBuffer.insert(key.definition.label);
+            drawOtaCommitField();
+            break;
+          case KeyKind::Backspace:
+            otaCommitBuffer.backspace();
+            drawOtaCommitField();
+            break;
+          case KeyKind::Space:
+            break;  // a commit SHA never contains spaces
+          case KeyKind::ToggleAlphaNumeric:
+            keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
+              ? virtual_keyboard::KeyboardMode::NumericSymbols :
+                virtual_keyboard::KeyboardMode::Alpha;
+            drawEditorKeyboard();
+            break;
+          case KeyKind::Enter: {
+            String typed = otaCommitBuffer.c_str();
+            typed.trim();
+            typed.toLowerCase();
+            if (!validCommitSha(typed)) {
+              setOtaStatus("SHA invalido: 7-40 hex", true);
+              drawOtaCommitField();
+              break;
+            }
+            otaCommitBuffer.set(typed.c_str());
+            otaConfirmArmed = false;
+            otaCommitEditorOpen = false;
+            homePanel = HomePanel::Firmware;
+            drawPanel();
+            queueNetworkRequest(NetworkAction::CheckOtaCommit, typed);
+            return;
+          }
+        }
+      } else {
+        switch (editor_ui::ToolbarComponent::hitTest(tap.x, tap.y)) {
+          case editor_ui::ToolbarAction::Home:
+            otaCommitEditorOpen = false;
+            otaConfirmArmed = false;
+            homePanel = HomePanel::Firmware;
+            drawPanel();
+            break;
+          case editor_ui::ToolbarAction::MoveLeft:
+            otaCommitBuffer.moveLeft(); drawOtaCommitField(); break;
+          case editor_ui::ToolbarAction::MoveRight:
+            otaCommitBuffer.moveRight(); drawOtaCommitField(); break;
+          case editor_ui::ToolbarAction::DeleteForward:
+            otaCommitBuffer.deleteForward(); drawOtaCommitField(); break;
+          case editor_ui::ToolbarAction::Clear:
+            otaCommitBuffer.clear(); drawOtaCommitField(); break;
+          case editor_ui::ToolbarAction::None: break;
+        }
+      }
+      return;
+    }
     if (historyScreenOpen) {
       handleHistoryTap(tap.x, tap.y);
       return;
@@ -1477,6 +1831,34 @@ void handleTouch() {
         }
       }
     } else {
+      if (homePanel == HomePanel::Firmware &&
+          tap.y >= 361 && tap.y < 405) {
+        if (tap.x >= 26 && tap.x < 228) {
+          otaCommitEditorOpen = true;
+          otaConfirmArmed = false;
+          keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
+          drawOtaCommitEditor();
+          return;
+        }
+        if (tap.x >= 239 && tap.x < 454) {
+          OtaSelection selection{};
+          portENTER_CRITICAL(&otaMux);
+          selection = otaSelection;
+          portEXIT_CRITICAL(&otaMux);
+          if (!selection.ready) {
+            queueNetworkRequest(NetworkAction::CheckOtaCommit,
+                                String(otaCommitBuffer.c_str()));
+          } else if (!otaConfirmArmed) {
+            otaConfirmArmed = true;
+            setOtaStatus("Confirmar instalacion OTA");
+            drawPanel();
+          } else {
+            otaConfirmArmed = false;
+            queueNetworkRequest(NetworkAction::InstallOta);
+          }
+          return;
+        }
+      }
       if (tap.y < 43 && tap.x >= 350) {
         showHistoryScreen(false);
         return;
@@ -1510,6 +1892,7 @@ void handleTouch() {
           togglePanel(HomePanel::Github);
           break;
         case home_ui::Action::Firmware:
+          otaConfirmArmed = false;
           togglePanel(HomePanel::Firmware);
           break;
         case home_ui::Action::Wifi:
@@ -1546,6 +1929,17 @@ void setup() {
 
   displayReady = initializeDisplay();
   if (!displayReady) Serial.println("No se pudo inicializar la pantalla ST7701.");
+  // Confirm a good OTA boot only after the RGB display initialized.
+  const esp_partition_t* active = esp_ota_get_running_partition();
+  if (active) {
+    esp_ota_img_states_t otaState = ESP_OTA_IMG_UNDEFINED;
+    if (esp_ota_get_state_partition(active, &otaState) == ESP_OK &&
+        otaState == ESP_OTA_IMG_PENDING_VERIFY && displayReady) {
+      esp_ota_mark_app_valid_cancel_rollback();
+      Serial.println("OTA boot confirmed: display OK");
+    }
+  }
+
   Serial.printf("GPIO MAP: BL=%d LCD_CS=%d LCD_CLK=%d LCD_MOSI=%d TOUCH_SDA=%d TOUCH_SCL=%d DE=%d VSYNC=%d HSYNC=%d PCLK=%d\n",
                 pins::backlight, pins::lcdCs, pins::lcdClock, pins::lcdMosi,
                 pins::touchSda, pins::touchScl, pins::de, pins::vsync, pins::hsync, pins::pclk);
