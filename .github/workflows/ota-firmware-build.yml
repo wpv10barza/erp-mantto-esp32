@@ -47,6 +47,7 @@ jobs:
       - name: Verify OTA source, mirrored production firmware and partitions
         run: |
           python tests/test_ota_manual_contract.py
+          python tests/test_ota_release_2_5_1.py
           python tests/test_firmware_main_sync.py
           python tests/test_production_firmware.py
       - name: Compile production ESP32-S3 4848S040 with OTA partitions
