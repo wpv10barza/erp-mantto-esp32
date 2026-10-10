@@ -35,7 +35,7 @@ for needle, label in [
     ("drawEditorTextField()", "partial editor redraw"),
     ("checkCloudStack()", "cloud plus Sheets verifier"),
     ('endpoint("/api/sheet/verify")', "read-only Sheets verification"),
-    ('kFirmwareVersion[] = "2.5.0-white-async"', "final firmware identity"),
+    ('kFirmwareVersion[] = "2.6.0-history-3c"', "final firmware identity"),
 ]:
     require_main(needle, label)
 

@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "1170ba2ab1b4918c66e25e3e1064547db8dea87a",
+    "validated_commit": "88213be4fa8eebf194a1f0014de0c681d56e9b9c",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
@@ -20,11 +20,13 @@
     "wsl_dependency": false,
     "health_path": "/api/device/v1/health",
     "command_path": "/api/device/v1/commands",
-    "status_path": "/api/device/v1/commands/{command_id}"
+    "status_path": "/api/device/v1/commands/{command_id}",
+    "history_path": "/api/device/v1/history",
+    "history_panel_path": "/api/device/v1/history/panel"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "d8d21e3050e6cf9dcdda7dd7b14e00fbb05481b4",
-    "src/main.cpp": "d8d21e3050e6cf9dcdda7dd7b14e00fbb05481b4",
+    "platformio/src/panel_4848s040/main.cpp": "1a90587e20609fd56240b2a498287e76ca4de0d5",
+    "src/main.cpp": "1a90587e20609fd56240b2a498287e76ca4de0d5",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -42,8 +44,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.5.0-white-async",
-    "role": "final_principal_interface_with_release_confirmed_touch_and_modular_editor",
+    "version": "2.6.0-history-3c",
+    "role": "final_main_interface_with_3c_preview_and_confirmed_sheet_history",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -71,6 +73,14 @@
     "gpio_audit": "complete C++11-compatible compile-time unique ownership map across display, touch and audio",
     "non_blocking_network": true,
     "network_worker": "FreeRTOS task: OAuth, Databricks API, Google Sheets verify, 3C POST/status polling",
-    "touch_idle_release_ms": 80
+    "touch_idle_release_ms": 80,
+    "history": {
+      "main_menu_entry": true,
+      "editor_entry": true,
+      "orders_preview": true,
+      "sheets_only_confirmed": true,
+      "background_fetch": true,
+      "durability": "optional backend HISTORY_LOG_PATH"
+    }
   }
 }
