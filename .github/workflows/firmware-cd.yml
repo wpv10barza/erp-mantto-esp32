@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_to_databricks:
+        description: "Publicar release OTA verificada en UC Volume"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -126,3 +132,63 @@ jobs:
           name: erp-mantto-esp32-4848-databricks-production
           path: dist/
           if-no-files-found: error
+
+  publish_ota:
+    name: Publish verified OTA to Databricks
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_databricks }}
+    needs: [firmware]
+    runs-on: ubuntu-latest
+    environment: prod
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      OTA_VOLUME_PATH: ${{ vars.OTA_VOLUME_PATH }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: erp-mantto-esp32-4848-databricks-production
+          path: dist
+
+      - name: Check channel, source SHA and release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DATABRICKS_HOST"
+          test -n "$DATABRICKS_CLIENT_ID"
+          [[ "$OTA_VOLUME_PATH" =~ ^/Volumes/[^/]+/[^/]+/[^/]+$ ]]
+          python - <<'PY'
+          import json,hashlib,os,pathlib
+          p=pathlib.Path("dist")
+          release=json.loads((p/"manifest.json").read_text())
+          latest=json.loads((p/"latest.json").read_text())
+          assert release["source_sha"]==os.environ["GITHUB_SHA"]
+          assert release["source_repository"]=="wpv10barza/erp-mantto-esp32"
+          assert release["hardware"]=="ESP32-S3-4848S040"
+          assert release["partition_table"]=="partitions_ota_16mb.csv"
+          assert release["credential_mode"]=="ota3c-nvs"
+          assert latest["version"]==release["version"]
+          data=(p/"firmware.bin").read_bytes()
+          assert len(data)==release["size"]==latest["size"]
+          assert hashlib.sha256(data).hexdigest()==release["sha256"]==latest["sha256"]
+          open(os.environ["GITHUB_ENV"],"a").write("OTA_VERSION="+release["version"]+"\n")
+          PY
+
+      - name: Databricks CLI
+        uses: databricks/setup-cli@main
+
+      - name: Publish immutable release, update latest last
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="dbfs:$OTA_VOLUME_PATH/stable"
+          VERSION_DIR="$ROOT/$OTA_VERSION"
+          databricks fs mkdir "$ROOT"
+          databricks fs mkdir "$VERSION_DIR"
+          databricks fs cp dist/firmware.bin "$VERSION_DIR/firmware.bin" --overwrite
+          databricks fs cp dist/manifest.json "$VERSION_DIR/manifest.json" --overwrite
+          databricks fs cp dist/latest.json "$ROOT/latest.json" --overwrite
+          databricks fs cat "$ROOT/latest.json"
