@@ -23,8 +23,8 @@
     "status_path": "/api/device/v1/commands/{command_id}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "0704dc0d62f3b6c3aa404e7312dbef4ef9df8bad",
-    "src/main.cpp": "0704dc0d62f3b6c3aa404e7312dbef4ef9df8bad",
+    "platformio/src/panel_4848s040/main.cpp": "4630cfd6eb2683ea65af952f58e6d52cc09baba9",
+    "src/main.cpp": "4630cfd6eb2683ea65af952f58e6d52cc09baba9",
     "include/app_config.h": "439a1c79f9e757d2b80d085bf20c678f0ae0b046",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -42,7 +42,7 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.5.1-white-async",
+    "version": "2.5.2-white-async",
     "role": "final_principal_interface_with_release_confirmed_touch_and_modular_editor",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
@@ -83,7 +83,7 @@
       "commit_selection": "manual SHA 8-40 hex, Databricks verified release only",
       "default_selection": "latest",
       "status": "review pending deployment",
-      "release_version": "2.5.1",
+      "release_version": "2.5.2",
       "provisioning": "local_config.h required for first provisioned OTA release; public CI artifacts excluded"
     },
     "top_right_editor_home": {

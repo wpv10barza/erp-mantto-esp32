@@ -63,9 +63,9 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.5.1-white-async";
+constexpr char kFirmwareVersion[] = "2.5.2-white-async";
 // OTA manifests use strict numeric semver; the white UI name is still shown.
-constexpr char kOtaVersion[] = "2.5.1";
+constexpr char kOtaVersion[] = "2.5.2";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -905,6 +905,61 @@ void abortOta(const String& detail) {
   Serial.printf("[ERROR] OTA %s\n", detail.c_str());
 }
 
+// HTTPClient parses both identity and chunked transfer framing here.
+// The sink verifies that only the exact manifest size reaches the inactive
+// partition. It never stores the whole firmware in ESP32 RAM.
+class OtaFlashSink : public Stream {
+ public:
+  OtaFlashSink(mbedtls_sha256_context& sha, size_t expected)
+      : sha_(sha), expected_(expected) {}
+
+  size_t write(uint8_t byte) override { return write(&byte, 1); }
+  size_t write(const uint8_t* buffer, size_t length) override {
+    if (failed_ || !length) return 0;
+    if (received_ > expected_ || length > expected_ - received_) {
+      failure_ = "payload_exceeds_manifest";
+      failed_ = true;
+      return 0;
+    }
+    const size_t written = Update.write(const_cast<uint8_t*>(buffer), length);
+    if (written != length) {
+      failure_ = "flash_write_failed";
+      failed_ = true;
+      return written;
+    }
+    if (mbedtls_sha256_update_ret(&sha_, buffer, length) != 0) {
+      failure_ = "sha256_update_failed";
+      failed_ = true;
+      return 0;
+    }
+    received_ += written;
+    const size_t milestone = received_ / (128U * 1024U);
+    if (milestone > lastMilestone_) {
+      lastMilestone_ = milestone;
+      Serial.printf("OTA PROGRESS bytes=%u/%u wifi_rssi=%d\n",
+                    static_cast<unsigned>(received_),
+                    static_cast<unsigned>(expected_),
+                    static_cast<int>(WiFi.RSSI()));
+    }
+    return length;
+  }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+  size_t received() const { return received_; }
+  bool failed() const { return failed_; }
+  const char* failure() const { return failure_; }
+
+ private:
+  mbedtls_sha256_context& sha_;
+  size_t expected_ = 0;
+  size_t received_ = 0;
+  size_t lastMilestone_ = 0;
+  bool failed_ = false;
+  const char* failure_ = "none";
+};
+
 bool performOtaUpdate(
     const String& version,
     const String& downloadUrl,
@@ -937,6 +992,10 @@ bool performOtaUpdate(
     updatePanel(PanelState::Error, lastOtaMessage, true);
     return false;
   }
+  http.setReuse(false);
+  const char* otaHeaders[] = {"Content-Encoding", "Transfer-Encoding"};
+  http.collectHeaders(otaHeaders, 2);
+  http.addHeader("Accept-Encoding", "identity");
   addRequestAuth(http);
   const int code = http.GET();
   if (code != 200) {
@@ -947,18 +1006,34 @@ bool performOtaUpdate(
     return false;
   }
 
+  // The manifest is integrity-verified on the backend, but the ESP32
+  // verifies actual received bytes independently before activating flash.
   const int contentLength = http.getSize();
-  if (expectedSize > 0 && contentLength > 0 &&
-      static_cast<size_t>(contentLength) != expectedSize) {
+  if (contentLength > 0 && static_cast<size_t>(contentLength) != expectedSize) {
+    Serial.printf("[ERROR] OTA content-length=%d expected=%u\n",
+                  contentLength, static_cast<unsigned>(expectedSize));
     http.end();
-    lastOtaMessage = "OTA tamano no coincide";
+    lastOtaMessage = "OTA longitud HTTP distinta";
     updatePanel(PanelState::Error, lastOtaMessage, true);
     return false;
   }
+  const String encoding = http.header("Content-Encoding");
+  const String transferEncoding = http.header("Transfer-Encoding");
+  if (encoding.length() && !encoding.equalsIgnoreCase("identity")) {
+    Serial.printf("[ERROR] OTA unsupported content-encoding=%s\n",
+                  encoding.c_str());
+    http.end();
+    lastOtaMessage = "OTA codificacion HTTP invalida";
+    updatePanel(PanelState::Error, lastOtaMessage, true);
+    return false;
+  }
+  Serial.printf("OTA HTTP start version=%s expected=%u content_length=%d transfer=%s free_heap=%u rssi=%d\n",
+                version.c_str(), static_cast<unsigned>(expectedSize),
+                contentLength, transferEncoding.c_str(),
+                static_cast<unsigned>(ESP.getFreeHeap()),
+                static_cast<int>(WiFi.RSSI()));
 
-  const size_t updateSize =
-      contentLength > 0 ? static_cast<size_t>(contentLength) : UPDATE_SIZE_UNKNOWN;
-  if (!Update.begin(updateSize, U_FLASH)) {
+  if (!Update.begin(expectedSize, U_FLASH)) {
     http.end();
     lastOtaMessage = "OTA sin particion disponible";
     updatePanel(PanelState::Error, lastOtaMessage, true);
@@ -975,59 +1050,34 @@ bool performOtaUpdate(
     return false;
   }
 
-  WiFiClient* stream = http.getStreamPtr();
-  uint8_t buffer[4096];
-  size_t total = 0;
-  unsigned long lastProgress = millis();
-  bool streamOk = true;
+  OtaFlashSink sink(sha, expectedSize);
+  // HTTPClient handles chunk framing and read timeouts; getStreamPtr()
+  // exposes raw transfer bytes and must not be used for chunked bodies.
+  const int transferred = http.writeToStream(&sink);
+  const size_t total = sink.received();
+  const bool flashError = sink.failed();
+  const String sinkFailure = sink.failure();
+  const int wifiStatus = static_cast<int>(WiFi.status());
+  const int wifiRssi = static_cast<int>(WiFi.RSSI());
+  http.end();
 
-  while (http.connected() &&
-         (contentLength < 0 || total < static_cast<size_t>(contentLength))) {
-    const size_t available = stream->available();
-    if (!available) {
-      if (millis() - lastProgress > app_config::otaStreamTimeoutMs) {
-        streamOk = false;
-        break;
-      }
-      delay(5);
-      continue;
-    }
-
-    const size_t chunk = available < sizeof(buffer) ? available : sizeof(buffer);
-    const int read = stream->readBytes(buffer, chunk);
-    if (read <= 0) {
-      streamOk = false;
-      break;
-    }
-    lastProgress = millis();
-
-    if (mbedtls_sha256_update_ret(&sha, buffer, static_cast<size_t>(read)) != 0) {
-      streamOk = false;
-      break;
-    }
-    const size_t written = Update.write(buffer, static_cast<size_t>(read));
-    if (written != static_cast<size_t>(read)) {
-      streamOk = false;
-      break;
-    }
-    total += written;
+  if (transferred < 0 || flashError || total != expectedSize ||
+      static_cast<size_t>(transferred) != expectedSize) {
+    Serial.printf("[ERROR] OTA TRANSFER result=%d received=%u expected=%u http_length=%d sink=%s wifi_status=%d rssi=%d update=%s\n",
+                  transferred, static_cast<unsigned>(total),
+                  static_cast<unsigned>(expectedSize), contentLength,
+                  sinkFailure.c_str(), wifiStatus, wifiRssi,
+                  Update.errorString());
+    mbedtls_sha256_free(&sha);
+    abortOta(flashError ? "OTA fallo escritura/SHA" : "OTA HTTPS incompleto");
+    return false;
   }
 
   unsigned char digest[32] = {};
   const int shaResult = mbedtls_sha256_finish_ret(&sha, digest);
   mbedtls_sha256_free(&sha);
-  http.end();
-
-  if (!streamOk || shaResult != 0) {
-    abortOta("OTA descarga incompleta");
-    return false;
-  }
-  if (contentLength > 0 && total != static_cast<size_t>(contentLength)) {
-    abortOta("OTA bytes incompletos");
-    return false;
-  }
-  if (expectedSize > 0 && total != expectedSize) {
-    abortOta("OTA tamano verificado fallo");
+  if (shaResult != 0) {
+    abortOta("OTA SHA final fallo");
     return false;
   }
 
@@ -1041,7 +1091,7 @@ bool performOtaUpdate(
     return false;
   }
 
-  if (!Update.end(true)) {
+  if (!Update.end()) {
     Serial.printf("[ERROR] Update.end: %s\n", Update.errorString());
     abortOta("OTA no pudo finalizar");
     return false;
