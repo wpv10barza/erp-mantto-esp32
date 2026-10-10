@@ -261,3 +261,60 @@ anteriores a la incorporación de estos endpoints no se reconstruyen
 automáticamente. El despliegue de la nueva app Databricks y el
 flasheo físico son pasos independientes de subir los commits a GitHub.
 
+
+
+## OTA con campo GitHub commit (v2.7.0-ota-commit)
+
+**Se recuperó el campo táctil dentro de `Actualizar firmware`.**
+En el panel principal, abra **Actualizar firmware** y pulse **EDITAR SHA**.
+Escriba un SHA de GitHub de 7 a 40 caracteres hexadecimales con el
+teclado en pantalla; **ENTER** consulta al backend Databricks de forma
+asíncrona. También puede pulsar **BUSCAR OTA** para repetir la búsqueda.
+
+El backend usa la ruta autenticada
+`GET /api/device/v1/firmware/by-commit/{sha}`. No compila
+automáticamente commits de GitHub ni acepta archivos desconocidos:
+solo devuelve un firmware **ya publicado en un Unity Catalog Volume**,
+con metadatos `source_sha`, `version`, `size` y `sha256`.
+Cuando está disponible, el panel indica la versión. Para flashear,
+pulse **INSTALAR OTA** y después **CONFIRMAR**. La descarga y
+verificación SHA-256 se hacen en la tarea de red, no bloquean el teclado,
+y se escriben en la ranura OTA inactiva. Un SHA no publicado mostrará
+`Commit sin OTA publicada`; no se instalará el firmware de otro commit.
+
+### Migración obligatoria desde la versión 2.6 mostrada en la foto
+
+La interfaz **2.6.0-history-3c** utilizaba
+`board_build.partitions = default_16MB.csv` y no tiene dos ranuras OTA.
+Por tanto **no puede actualizarse directamente por aire a 2.7**:
+necesita **una instalación de arranque por USB** que incluya
+`bootloader.bin`, `partitions.bin` y `firmware.bin` con la nueva tabla
+`partitions_ota_16mb.csv`.
+
+1. Antes de compilar localmente, configure
+   `include/local_config.h` (excluido de Git). Nunca publique contraseñas.
+2. Ejecute `py -m platformio run -e panel_4848s040` y posteriormente
+   `py -m platformio run -e panel_4848s040 -t upload --upload-port COM9`,
+   confirmando primero el puerto conectado.
+3. Al arrancar, **2.7** guarda la configuración provista en NVS (namespace
+   `ota3c`) para que las siguientes imágenes OTA, incluso si se compilan
+   sin `local_config.h`, puedan seguir conectadas.
+
+**Seguridad:** NVS de Arduino no está cifrada por defecto.
+En un equipo accesible a terceros, habilite las protecciones de
+flash del ESP32 según su política antes de guardar credenciales.
+
+### Requisitos de publicación
+
+`Firmware CD` genera artefactos, **no los publica automáticamente
+en un Volume de Databricks**. Para resolver un SHA debe existir
+`<OTA_VOLUME_PATH>/<OTA_CHANNEL>/<version>/firmware.bin`
+y el archivo `manifest.json` que vincula exactamente el
+`source_sha` con el binario SHA-256. La App Databricks necesita el
+Volume asignado y `OTA_VOLUME_PATH` configurado.
+
+Un `databricks apps deploy ... --git-commit ...` solo cambia el
+backend, no actualiza el ESP32. Instale una nueva versión semántica
+(superior a 2.7.0) desde una imagen compilada para el hardware y
+particiones OTA correctos. Verifique antes de publicar que **el
+siguiente arranque no perderá las credenciales NVS**.
