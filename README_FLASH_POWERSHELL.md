@@ -207,3 +207,57 @@ La respuesta health anuncia `protocol_version: "1.0"`, mientras el contrato del 
 ## Recuperación rápida
 
 Si el puerto no aparece: cambia cable USB, prueba otro puerto físico, mantén BOOT durante el inicio del upload si el panel lo requiere y vuelve a ejecutar `pio device list`. Si la compilación falla, no fuerces el flash: actualiza nuevamente `main`, ejecuta las pruebas y recompila.
+
+## Historial de órdenes 3C y cambios aplicados en Sheets
+
+Desde la versión `2.6.0-history-3c`, el panel 4848S040 tiene el botón
+**HISTORIAL** arriba a la derecha tanto en **INICIO** como en
+**EDITAR ORDEN 3C**. El menú tiene dos pestañas:
+
+- **ORDEN 3C:** texto enviado, fecha UTC, estado real y una vista previa
+  de celdas si la propuesta se vinculó a la orden.
+- **SHEETS:** únicamente cambios registrados *después* de que la API de
+  Google Sheets respondió a una escritura; presenta celda, valor nuevo y
+  referencia de la orden o su origen web.
+
+Use **ACTUALIZAR** para consultar la nube en segundo plano; **ANT/SIG**
+para paginar y toque una entrada para ver más detalles. **VOLVER**
+regresa a la pantalla desde la que se abrió el historial. Una orden
+`pending_confirmation` nunca se muestra como un cambio ejecutado.
+
+**Consultar desde PowerShell** después de flashear en el puerto
+que Windows detecte (por ejemplo COM9):
+
+```powershell
+py -m platformio device monitor --port COM9 --baud 115200
+```
+
+Al pulsar ACTUALIZAR, la consola registra una línea como
+`HISTORY 3C -> 2 orders, 1 Sheets changes`.
+Esas cifras proceden del backend: **un HTTP 200 con
+`pending_confirmation` no equivale a modificar la hoja**.
+
+**Consultar la API desde PowerShell (sin cambiar Sheets):** se necesitan
+dos credenciales distintas: Bearer OAuth de Databricks Apps y
+`X-3C-Device-Token`. Ambas deben obtenerse mediante un mecanismo privado,
+no guardarse en scripts versionados. Ejemplo cuando ya están disponibles
+en variables de entorno del proceso:
+
+```powershell
+$Base = "https://asistente-cloud-erp-7474651957738908.aws.databricksapps.com"
+$Headers = @{
+  Authorization = "Bearer $env:DATABRICKS_ACCESS_TOKEN"
+  "X-3C-Device-Token" = $env:ESP32_API_TOKEN
+}
+Invoke-RestMethod -Method GET -Uri "$Base/api/device/v1/history?limit=8" -Headers $Headers |
+  ConvertTo-Json -Depth 8
+```
+
+**Persistencia importante:** en el backend, `HISTORY_LOG_PATH` debe
+apuntar a una ruta real de un volumen persistente de Databricks Apps
+para conservar historial entre reinicios. Sin esa configuración, el
+historial solo cubre la sesión de ejecución actual. Las órdenes
+anteriores a la incorporación de estos endpoints no se reconstruyen
+automáticamente. El despliegue de la nueva app Databricks y el
+flasheo físico son pasos independientes de subir los commits a GitHub.
+
