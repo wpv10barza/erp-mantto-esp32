@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "347d1ce7b9536bf7de84125bfbf65704f95ffa5c",
+    "validated_commit": "483abf8d73623c550ac64842383eb056f82e2056",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
@@ -26,11 +26,12 @@
     "ota_lookup_path": "/api/device/v1/firmware/by-commit/{sha}",
     "cloud_verify_path": "/api/device/v1/cloud/verify",
     "voice_inbox_path": "/api/device/v1/voice/inbox/panel",
-    "voice_draft_ack_path": "/api/device/v1/voice/drafts/{draft_id}/ack"
+    "voice_draft_ack_path": "/api/device/v1/voice/drafts/{draft_id}/ack",
+    "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "9319631a3cb3fe5f5413381b622f89b1e7151a47",
-    "src/main.cpp": "9319631a3cb3fe5f5413381b622f89b1e7151a47",
+    "platformio/src/panel_4848s040/main.cpp": "51fc6ceb859320979aa5b794de80b54a91f36736",
+    "src/main.cpp": "51fc6ceb859320979aa5b794de80b54a91f36736",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -49,8 +50,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.0-ota-commit",
-    "role": "final_interface_commit_picker_and_guarded_OTA",
+    "version": "2.7.1-pc-dictation",
+    "role": "final_interface_commit_picker_and_guarded_OTA_with_pc_dictation",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -133,7 +134,11 @@
       "ack_status": "delivered_to_editor only when backend confirms HTTP 200",
       "receives_while_editor_open": true,
       "preserves_manually_edited_text": true,
-      "screen_indicator": "VOZ PC: LISTO"
+      "screen_indicator": "DICTAR PC / PC: ESPERANDO",
+      "touch_button": "DICTAR PC in EDITAR ORDEN 3C",
+      "capture_request_endpoint": "/api/device/v1/voice/capture/request",
+      "windows_consent_agent_required": true,
+      "removes_default_editor_text_on_capture": true
     }
   }
 }
