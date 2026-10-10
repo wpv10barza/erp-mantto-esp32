@@ -12,16 +12,27 @@ for name in ("otadata", "ota_0", "ota_1"):
     assert name in PARTITIONS, f"missing OTA partition {name}"
 required = [
     'kFirmwareVersion[] = "2.7.0-ota-commit"',
+    'kInstalledCommit[] = FIRMWARE_SOURCE_COMMIT',
+    'void drawOtaCommitEditor()',
+    'display->print(kInstalledCommit)',
+    '"EDITAR COMMIT"',
+    '"COMMIT COMPLETO (40 caracteres hex)"',
+    'content.substring(0, 20)',
+    'content.substring(20, 40)',
+    'bool validFullCommit(String value)',
+    'if (value.length() != 40) return false',
+    'sha.equalsIgnoreCase(kInstalledCommit)',
+    'fullSha.equalsIgnoreCase(sha)',
     'otaCommitEditorOpen',
     'void drawOtaCommitEditor()',
     'void drawOtaCommitField()',
-    '"EDITAR SHA"',
+
     '"BUSCAR OTA"',
     '"CONFIRMAR"',
     'otaCommitBuffer.insert',
     'otaCommitBuffer.backspace',
     'otaCommitBuffer.clear',
-    'bool validCommitSha(String value)',
+
     'NetworkAction::CheckOtaCommit',
     'NetworkAction::InstallOta',
     '/api/device/v1/firmware/by-commit/',
@@ -41,6 +52,13 @@ for item in required:
 loop = MAIN[MAIN.index("void loop() {"):]
 for forbidden in ("http.GET()", "installSelectedOta()", "checkOtaCommit("):
     assert forbidden not in loop, f"blocking network in UI loop: {forbidden}"
-assert re.search(r'otaVersionCompare\(version.c_str\(\), kFirmwareVersion\) <= 0', MAIN)
+assert re.search(r'otaVersionCompare\(version.c_str\(\), kFirmwareVersion\) < 0', MAIN)
 assert 'commandBuffer.set(app_config::commandBuffer.c_str());' in MAIN
 print("Commit-select OTA v2.7 contract: PASS (USB bootstrap still required)")
+
+assert 'extra_scripts = pre:scripts/inject_firmware_commit.py' in PIO
+BUILD_SCRIPT = (ROOT / "scripts/inject_firmware_commit.py").read_text(encoding="utf-8")
+assert 'git", "rev-parse", "HEAD"' in BUILD_SCRIPT
+assert 'GITHUB_SHA' in BUILD_SCRIPT
+assert 'firmware_source_commit.generated.h' in BUILD_SCRIPT
+assert "This 40-character commit is EMBEDDED" in MAIN

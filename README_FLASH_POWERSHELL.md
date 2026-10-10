@@ -318,3 +318,28 @@ backend, no actualiza el ESP32. Instale una nueva versión semántica
 (superior a 2.7.0) desde una imagen compilada para el hardware y
 particiones OTA correctos. Verifique antes de publicar que **el
 siguiente arranque no perderá las credenciales NVS**.
+
+## Commit instalado y commit solicitado (firmware v2.7)
+
+**Git commit ID = SHA-1 de Git**, por lo que son el mismo identificador
+expresado con dos nombres. El ESP32 pide el **ID completo de 40 caracteres**,
+no el hash SHA-256 del archivo de firmware.
+
+- **Instalado**: commit incorporado automáticamente al compilar por el
+  script `scripts/inject_firmware_commit.py`. Es el firmware que está
+  ejecutándose, no lo que se escribió manualmente.
+- **Solicitado**: commit de 40 caracteres introducido en la pantalla
+  **EDITAR COMMIT**. El editor muestra las dos mitades de 20 caracteres.
+- Si ambos coinciden, aparece **Este commit ya está instalado**.
+- Si difieren, se consulta Databricks para recuperar un binario OTA
+  publicado para *exactamente* ese commit. Si la versión semántica es
+  la misma, se admite un cambio de commit; nunca se permite bajar la
+  versión semántica. El dispositivo verifica tamaño y SHA-256 del binario.
+
+Para conocer tu commit compilado desde GitHub, abre **Firmware CD** y revisa
+`dist/manifest.json` (`source_sha`). **No confundir:** ejecutar
+`databricks apps deploy --git-commit` cambia la app cloud, no el ESP32.
+
+La 2.6 requiere una **migración por USB** para instalar la tabla dual OTA.
+Un commit de GitHub no es directamente flasheable sin compilar y publicar
+su binario correspondiente en Databricks.
