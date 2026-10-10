@@ -28,7 +28,12 @@ if not binary.is_file():
 size = binary.stat().st_size
 if not (65536 <= size <= 0x400000):
     raise SystemExit(f"Invalid 4 MiB OTA slot binary size {size}")
-sha = hashlib.file_digest(binary.open("rb"), "sha256").hexdigest()
+# Ensure the compiled binary actually contains the full source commit
+# displayed by the HMI, not only the metadata describing the build.
+binary_bytes = binary.read_bytes()
+if commit.encode("ascii") not in binary_bytes:
+    raise SystemExit("Firmware binary does not embed the full source commit; refuse OTA publication")
+sha = hashlib.sha256(binary_bytes).hexdigest()
 manifest = {
     "version": version,
     "sha256": sha,
