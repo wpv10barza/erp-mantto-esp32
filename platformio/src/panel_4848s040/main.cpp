@@ -993,6 +993,7 @@ bool performOtaUpdate(
     return false;
   }
   http.setReuse(false);
+  http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
   const char* otaHeaders[] = {"Content-Encoding", "Transfer-Encoding"};
   http.collectHeaders(otaHeaders, 2);
   http.addHeader("Accept-Encoding", "identity");
@@ -1051,8 +1052,8 @@ bool performOtaUpdate(
   }
 
   OtaFlashSink sink(sha, expectedSize);
-  // HTTPClient handles chunk framing and read timeouts; getStreamPtr()
-  // exposes raw transfer bytes and must not be used for chunked bodies.
+  // HTTPClient handles chunk framing and read timeouts; bypassing its
+  // decoder would corrupt a chunked binary response.
   const int transferred = http.writeToStream(&sink);
   const size_t total = sink.received();
   const bool flashError = sink.failed();
