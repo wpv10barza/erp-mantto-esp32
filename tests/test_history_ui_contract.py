@@ -5,7 +5,7 @@ FIRMWARE = (ROOT / "platformio/src/panel_4848s040/main.cpp").read_text(encoding=
 MIRROR = (ROOT / "src/main.cpp").read_text(encoding="utf-8")
 assert FIRMWARE == MIRROR, "both firmware entry points must be identical"
 for needle in [
-    'kFirmwareVersion[] = "2.6.0-history-3c"',
+    'kFirmwareVersion[] = "2.7.0-ota-commit"',
     'drawHistoryScreen()',
     'showHistoryScreen(false)',
     'void handleHistoryTap(int x, int y)',
