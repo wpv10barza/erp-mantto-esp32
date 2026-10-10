@@ -51,7 +51,19 @@ assert '"voice_poll_http"' not in MAIN or 'voice_poll_http' in MAIN
 # already open, but never overwrites text manually edited on the touchscreen.
 assert 'if (commandEditorOpen || otaCommitEditorOpen || historyScreenOpen) return;' not in MAIN
 assert '(commandEditorOpen && editorTextTouched.load())' in MAIN
-assert 'display->print("VOZ PC: LISTO")' in MAIN
+assert 'display->print(voicePcRequested.load() ? "PC: ESPERANDO" : "DICTAR PC")' in MAIN
+assert 'NetworkAction::RequestPcVoice' in MAIN
+assert '"/api/device/v1/voice/capture/request"' in MAIN
+assert 'voice_pc_request_http' in MAIN
+assert 'voicePcRequested = true' in MAIN
+assert 'commandBuffer.clear();  // Remove the default 3C task immediately.' in MAIN
+assert 'void requestPcVoiceCapture() {' in MAIN
+capture_logic = MAIN[MAIN.index("void requestPcVoiceCapture() {"):MAIN.index("void pollVoiceDraft() {")]
+assert 'send3CCommand(' not in capture_logic
+assert 'Update.begin(' not in capture_logic
+assert 'http.POST(body)' in capture_logic
+assert 'addRequestAuth(http);' in capture_logic
+assert 'voicePcRequestStartedMs.load() > 120000UL' in MAIN
 assert 'editorTextTouched = true' in MAIN
 assert 'editorTextTouched = false' in MAIN
 assert "voiceEditorDeliveries.fetch_add(1)" in MAIN
