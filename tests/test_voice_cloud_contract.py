@@ -8,6 +8,8 @@ for needle in [
     'body.indexOf("\\\"connected\\\":true")',
     'sheetsVerifyState',
     'sheetsVerifyHttp',
+    'kExpectedSpreadsheetId',
+    'jsonStringValue(body, "spreadsheet_id") == kExpectedSpreadsheetId',
     'SHEETS VERIFY -> HTTP=',
     '"/api/device/v1/voice/inbox/panel?device_id="',
     'pollVoiceDraft()',
