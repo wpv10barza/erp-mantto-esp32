@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "1170ba2ab1b4918c66e25e3e1064547db8dea87a",
+    "validated_commit": "c7b1ec2ea7f1f2d3c4b425838e1a84c9d217e1fa",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
@@ -23,8 +23,8 @@
     "status_path": "/api/device/v1/commands/{command_id}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "615cbc74f9ce2373d23dc2df94958a8a254117e0",
-    "src/main.cpp": "615cbc74f9ce2373d23dc2df94958a8a254117e0",
+    "platformio/src/panel_4848s040/main.cpp": "0704dc0d62f3b6c3aa404e7312dbef4ef9df8bad",
+    "src/main.cpp": "0704dc0d62f3b6c3aa404e7312dbef4ef9df8bad",
     "include/app_config.h": "439a1c79f9e757d2b80d085bf20c678f0ae0b046",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -42,7 +42,7 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.5.0-white-async",
+    "version": "2.5.1-white-async",
     "role": "final_principal_interface_with_release_confirmed_touch_and_modular_editor",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
@@ -82,7 +82,9 @@
       "hardware_validation": "pending",
       "commit_selection": "manual SHA 8-40 hex, Databricks verified release only",
       "default_selection": "latest",
-      "status": "review pending deployment"
+      "status": "review pending deployment",
+      "release_version": "2.5.1",
+      "provisioning": "local_config.h required for first provisioned OTA release; public CI artifacts excluded"
     },
     "top_right_editor_home": {
       "rect": [

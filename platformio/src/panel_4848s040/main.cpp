@@ -63,9 +63,9 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.5.0-white-async";
+constexpr char kFirmwareVersion[] = "2.5.1-white-async";
 // OTA manifests use strict numeric semver; the white UI name is still shown.
-constexpr char kOtaVersion[] = "2.5.0";
+constexpr char kOtaVersion[] = "2.5.1";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
