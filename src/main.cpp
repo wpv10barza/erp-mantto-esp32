@@ -56,6 +56,7 @@ enum class HomePanel {
   Sheets,
   Github,
   Firmware,
+  History,
   Wifi,
   Databricks,
   Diagnostics,
@@ -63,9 +64,9 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.5.2-white-async";
+constexpr char kFirmwareVersion[] = "2.5.3-white-async";
 // OTA manifests use strict numeric semver; the white UI name is still shown.
-constexpr char kOtaVersion[] = "2.5.2";
+constexpr char kOtaVersion[] = "2.5.3";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -83,7 +84,7 @@ bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
 
-enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C, OtaCheck, OtaInstall };
+enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C, OtaCheck, OtaInstall, HistoryFetch };
 struct NetworkRequest {
   NetworkAction action;
   char command[241];
@@ -92,6 +93,13 @@ struct UiNotification {
   PanelState state;
   char detail[160];
   bool sound;
+  bool historyLoaded = false;
+  uint16_t historyTotal = 0;
+  uint16_t historyOffset = 0;
+  char historyStatus[36] = {};
+  char historyText[110] = {};
+  char historyResult[100] = {};
+  char historyChanges[184] = {};
 };
 QueueHandle_t networkQueue = nullptr;
 QueueHandle_t uiQueue = nullptr;
@@ -107,7 +115,14 @@ constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
 virtual_keyboard::KeyboardMode keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
 bool commandEditorOpen = false;
+bool commandPreviewOpen = false;
 bool editingFirmwareCommit = false;
+uint16_t historyOffset = 0;
+uint16_t historyTotal = 0;
+String historyStatus = "empty";
+String historyText;
+String historyResult;
+String historyChanges;
 String selectedOtaCommit;
 // Managed only by the network worker except otaBootConfirmed on the UI task.
 String lastOtaMessage = "OTA sin verificar";
@@ -287,6 +302,33 @@ void drawEditor() {
   drawEditorKeyboard();
 }
 
+void drawCommandPreview() {
+  if (!displayReady) return;
+  display->fillScreen(WHITE);
+  drawCentered("REVISAR ORDEN 3C", 18, 2, BLACK);
+  display->drawRoundRect(14, 60, 452, 275, 14, BLACK);
+  display->setTextSize(1);
+  display->setTextColor(BLACK);
+  display->setCursor(28, 76);
+  display->print("Se enviara a revision humana:");
+  const String full(app_config::commandBuffer);
+  display->setTextSize(2);
+  constexpr int charsPerLine = 34;
+  for (int line = 0; line < 8; ++line) {
+    const int begin = line * charsPerLine;
+    if (begin >= static_cast<int>(full.length())) break;
+    const int stop = min(begin + charsPerLine, static_cast<int>(full.length()));
+    display->setCursor(28, 102 + line * 26);
+    display->print(full.substring(begin, stop));
+  }
+  drawButton(14, 359, 144, 43, "EDITAR", WHITE);
+  drawButton(168, 359, 144, 43, "INICIO", WHITE);
+  drawButton(322, 359, 144, 43, "ENVIAR", WHITE);
+  display->setTextSize(1);
+  display->setCursor(32, 419);
+  display->print("Solo cambia Sheets tras aprobacion web.");
+}
+
 void drawChevron(int x, int y, bool down) {
   if (!displayReady) return;
   const uint16_t c = BLACK;
@@ -343,6 +385,7 @@ const char* homePanelTitle(HomePanel panel) {
     case HomePanel::Sheets: return "Google Sheets";
     case HomePanel::Github: return "GitHub Actions";
     case HomePanel::Firmware: return "Actualizar firmware";
+    case HomePanel::History: return "Historial 3C";
     case HomePanel::Wifi: return "Wi-Fi 2.4 GHz";
     case HomePanel::Databricks: return "Nube Databricks";
     case HomePanel::Diagnostics: return "Diagnostico";
@@ -401,6 +444,27 @@ void drawExpandedPanel() {
     drawButton(22, 377, 140, 31, "BUSCAR OTA", WHITE);
     drawButton(170, 377, 132, 31, "COMMIT", WHITE);
     drawButton(310, 377, 146, 31, "INSTALAR", WHITE);
+  } else if (homePanel == HomePanel::History) {
+    display->setCursor(28, 307);
+    display->print(String("Reciente (15 min): ") + String(historyTotal)
+                   + (historyTotal ? String(" | ") + String(historyOffset + 1) : ""));
+    display->setCursor(28, 325);
+    display->print(String("Estado: ") + (
+        historyStatus == "applied" ? "APLICADO" :
+        historyStatus == "rejected" ? "RECHAZADO" :
+        historyStatus == "pending_confirmation" ? "PENDIENTE WEB" :
+        historyStatus == "error" ? "ERROR" : "SIN REGISTROS"));
+    display->setCursor(28, 343);
+    display->print(String("Orden: ") + historyText.substring(0, 60));
+    display->setCursor(28, 361);
+    const String outcome = historyStatus == "applied"
+        ? (historyChanges.length() ? historyChanges : "Aplicado sin detalle de celdas")
+        : historyStatus == "pending_confirmation" ? "Sin cambios confirmados"
+        : historyResult;
+    display->print(String("Cambio: ") + outcome.substring(0, 60));
+    drawButton(22, 380, 140, 28, "ANTERIOR", WHITE);
+    drawButton(170, 380, 132, 28, "SIGUIENTE", WHITE);
+    drawButton(310, 380, 146, 28, "ACTUALIZAR", WHITE);
   } else if (homePanel == HomePanel::Wifi) {
     display->setCursor(28, 316);
     display->print("SSID: ");
@@ -449,6 +513,10 @@ void drawExpandedPanel() {
 }
 
 void drawPanel() {
+  if (commandPreviewOpen) {
+    drawCommandPreview();
+    return;
+  }
   if (commandEditorOpen) {
     drawEditor();
     return;
@@ -479,10 +547,11 @@ void drawPanel() {
               "Desplegar nueva version", homePanel == HomePanel::Firmware);
 
   if (homePanel == HomePanel::None) {
-    drawHomeRow(266, "WF", "Wi-Fi 2.4 GHz", "", false, 34);
-    drawHomeRow(302, "DB", "Nube Databricks", "", false, 34);
-    drawHomeRow(338, "DX", "Diagnostico", "", false, 34);
-    drawHomeRow(374, "ID", "Estado del dispositivo", "", false, 34);
+    drawHomeRow(266, "3C", "Historial 3C", "", false, 26);
+    drawHomeRow(295, "WF", "Wi-Fi 2.4 GHz", "", false, 26);
+    drawHomeRow(324, "DB", "Nube Databricks", "", false, 26);
+    drawHomeRow(353, "DX", "Diagnostico", "", false, 26);
+    drawHomeRow(382, "ID", "Estado del dispositivo", "", false, 26);
   } else {
     drawExpandedPanel();
   }

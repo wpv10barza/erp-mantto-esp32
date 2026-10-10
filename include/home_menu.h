@@ -30,6 +30,7 @@ enum class Action : uint8_t {
   Sheets,
   Github,
   Firmware,
+  History,
   Wifi,
   Databricks,
   Diagnostics,
@@ -45,16 +46,17 @@ struct Target {
 
 constexpr int kTouchInsetPx = 5;
 
-constexpr std::array<Target, 10> targets() {
+constexpr std::array<Target, 11> targets() {
   return {{
     {Action::Backend, {14, 62, 466, 107}},
     {Action::Sheets, {14, 111, 466, 156}},
     {Action::Github, {14, 160, 466, 205}},
     {Action::Firmware, {14, 209, 466, 254}},
-    {Action::Wifi, {14, 266, 466, 300}},
-    {Action::Databricks, {14, 302, 466, 336}},
-    {Action::Diagnostics, {14, 338, 466, 372}},
-    {Action::Device, {14, 374, 466, 408}},
+    {Action::History, {14, 266, 466, 292}},
+    {Action::Wifi, {14, 295, 466, 321}},
+    {Action::Databricks, {14, 324, 466, 350}},
+    {Action::Diagnostics, {14, 353, 466, 379}},
+    {Action::Device, {14, 382, 466, 408}},
     {Action::TestCloud, {14, 426, 234, 468}},
     {Action::Send3C, {246, 426, 466, 468}},
   }};
@@ -63,7 +65,8 @@ constexpr std::array<Target, 10> targets() {
 inline Action hitTest(int x, int y, bool detailsExpanded) {
   for (const auto& target : targets()) {
     if (detailsExpanded &&
-        (target.action == Action::Wifi ||
+        (target.action == Action::History ||
+         target.action == Action::Wifi ||
          target.action == Action::Databricks ||
          target.action == Action::Diagnostics ||
          target.action == Action::Device)) {
