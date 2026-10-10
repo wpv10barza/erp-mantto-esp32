@@ -87,3 +87,17 @@ verificado.
 
 Para futuras versiones sin secretos en binario, implementar primero un
 mecanismo seguro de provisión y persistencia local de credenciales.
+
+## Databricks CLI: `volumes read`, no `volumes get`
+En las versiones recientes de Databricks CLI el subcomando para consultar
+un volumen es `read`:
+
+```powershell
+databricks volumes read workspace.default.esp32_firmware --profile asistente-cloud-erp --output json
+```
+
+Antes de iniciar la compilación, el script comprueba que el volumen existe y
+que el perfil CLI tiene acceso. Esto evita recompilar innecesariamente si la
+configuración Unity Catalog aún está incompleta. `databricks fs mkdir` y
+`databricks fs cp` permanecen igual. El script no puede configurar
+`ota_firmware_volume` por sí solo: ese recurso debe vincularse a la App.

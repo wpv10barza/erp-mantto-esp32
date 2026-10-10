@@ -30,4 +30,7 @@ for needle in (
     assert needle in script, needle
 assert script.index('"$directory/firmware.bin"') < script.index('"$directory/manifest.json"')
 assert re.search(r'if \(-not \$Publish\)', script)
+assert '"volumes", "read", $Volume' in script
+assert '"volumes", "get", $Volume' not in script
+assert script.index('Invoke-Checked "databricks" @("volumes", "read"') < script.index('Invoke-Checked "pio" @("run", "-e", $envName)')
 print("OTA 2.5.1 provenance, build, safe publish gate and manifest contract: PASS")

@@ -32,7 +32,7 @@ function Invoke-Checked {
     param([string]$Executable, [string[]]$Arguments)
     & $Executable @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "$Executable falló (exit $LASTEXITCODE)."
+        throw "$Executable failed (exit $LASTEXITCODE). Revise el mensaje anterior."
     }
 }
 
@@ -99,6 +99,14 @@ try {
     if (-not (Get-Command pio -ErrorAction SilentlyContinue)) {
         throw "Instale PlatformIO CLI (pio) antes de compilar."
     }
+    if ($Publish) {
+        if (-not (Get-Command databricks -ErrorAction SilentlyContinue)) {
+            throw "Falta Databricks CLI."
+        }
+        # The new Databricks CLI uses `volumes read`, not `volumes get`.
+        # Check the volume and permissions BEFORE the expensive clean build.
+        Invoke-Checked "databricks" @("volumes", "read", $Volume, "--profile", $Profile, "--output", "json")
+    }
     # Force recompilation so all private local_config.h macros are embedded.
     Invoke-Checked "pio" @("run", "-e", $envName, "-t", "clean")
     Invoke-Checked "pio" @("run", "-e", $envName)
@@ -152,12 +160,8 @@ try {
         Write-Host "No se ha publicado ni instalado firmware. Para publicar revise los permisos de UC Volume y use -Publish -AcknowledgeEmbeddedSecrets."
         return
     }
-    if (-not (Get-Command databricks -ErrorAction SilentlyContinue)) {
-        throw "Falta Databricks CLI."
-    }
-
+    # This point is reached only after the early UC Volume preflight.
     # Do not overwrite an existing published release.
-    Invoke-Checked "databricks" @("volumes", "get", $Volume, "--profile", $Profile, "--output", "json")
     $dbfs = "dbfs:/Volumes/" + ($Volume -replace '\.', '/')
     $directory = "$dbfs/stable/$version"
     Invoke-Checked "databricks" @("fs", "mkdir", $directory, "--profile", $Profile)
