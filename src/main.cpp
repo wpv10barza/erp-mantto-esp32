@@ -461,11 +461,9 @@ void drawHistoryWrapped(const String& message, int top, int lines = 3) {
 
 void drawHistoryScreen() {
   if (!displayReady) return;
-  HistorySnapshot local{};
   portENTER_CRITICAL(&historyMux);
-  local = historyCache;
+  const int count = historySheetTab ? historyCache.sheetCount : historyCache.orderCount;
   portEXIT_CRITICAL(&historyMux);
-  const int count = historySheetTab ? local.sheetCount : local.orderCount;
 
   display->fillScreen(WHITE);
   display->setTextColor(BLACK);
@@ -480,7 +478,10 @@ void drawHistoryScreen() {
   display->print(historySheetTab ? "Cambios ejecutados" : "Ordenes / vista previa");
 
   if (historyDetailOpen && historySelected < count) {
-    const HistoryItem& item = historySheetTab ? local.sheets[historySelected] : local.orders[historySelected];
+    HistoryItem item{};
+    portENTER_CRITICAL(&historyMux);
+    item = historySheetTab ? historyCache.sheets[historySelected] : historyCache.orders[historySelected];
+    portEXIT_CRITICAL(&historyMux);
     display->drawRoundRect(14, 124, 452, 288, 12, BLACK);
     display->setTextSize(2);
     display->setCursor(24, 145);
@@ -500,7 +501,10 @@ void drawHistoryScreen() {
     for (int row = 0; row < 3; ++row) {
       const int index = historyPage * 3 + row;
       if (index >= count) break;
-      const HistoryItem& item = historySheetTab ? local.sheets[index] : local.orders[index];
+      HistoryItem item{};
+      portENTER_CRITICAL(&historyMux);
+      item = historySheetTab ? historyCache.sheets[index] : historyCache.orders[index];
+      portEXIT_CRITICAL(&historyMux);
       const int y = 126 + 94 * row;
       display->drawRoundRect(14, y, 452, 87, 10, BLACK);
       display->setTextSize(1);
@@ -558,11 +562,9 @@ void handleHistoryTap(int x, int y) {
       historyDetailOpen = false;
     } else {
       const int row = (y - 126) / 94;
-      HistorySnapshot local{};
       portENTER_CRITICAL(&historyMux);
-      local = historyCache;
+      const int count = historySheetTab ? historyCache.sheetCount : historyCache.orderCount;
       portEXIT_CRITICAL(&historyMux);
-      const int count = historySheetTab ? local.sheetCount : local.orderCount;
       const int selected = historyPage * 3 + row;
       if (row >= 3 || selected >= count) return;
       historySelected = selected;

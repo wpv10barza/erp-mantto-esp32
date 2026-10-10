@@ -25,8 +25,8 @@
     "history_panel_path": "/api/device/v1/history/panel"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "1a90587e20609fd56240b2a498287e76ca4de0d5",
-    "src/main.cpp": "1a90587e20609fd56240b2a498287e76ca4de0d5",
+    "platformio/src/panel_4848s040/main.cpp": "9f53b87e97a3372df469685619defdf72b15081e",
+    "src/main.cpp": "9f53b87e97a3372df469685619defdf72b15081e",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
