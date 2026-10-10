@@ -60,7 +60,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.5.0-white-async";
+constexpr char kFirmwareVersion[] = "2.6.0-history-3c";
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -78,7 +78,29 @@ bool audioReady = false;
 bool mdnsReady = false;
 bool wifiAnnounced = false;
 
-enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C };
+enum class NetworkAction : uint8_t { Health, CloudAndSheets, Send3C, LoadHistory };
+
+constexpr int kHistoryCapacity = 8;
+struct HistoryItem {
+  char when[28];
+  char status[26];
+  char text[146];
+  char preview[146];
+};
+struct HistorySnapshot {
+  HistoryItem orders[kHistoryCapacity];
+  HistoryItem sheets[kHistoryCapacity];
+  uint8_t orderCount = 0;
+  uint8_t sheetCount = 0;
+};
+HistorySnapshot historyCache{};
+portMUX_TYPE historyMux = portMUX_INITIALIZER_UNLOCKED;
+bool historyScreenOpen = false;
+bool historySheetTab = false;
+bool historyDetailOpen = false;
+int historyPage = 0;
+int historySelected = 0;
+std::atomic<bool> historyLoading{false};
 struct NetworkRequest {
   NetworkAction action;
   char command[241];
@@ -177,6 +199,11 @@ void drawEditorFrame() {
   display->fillScreen(WHITE);
   display->fillRect(0, 0, kScreenWidth, 42, WHITE);
   drawCentered("EDITAR ORDEN 3C", 11, 2, BLACK);
+  display->drawRoundRect(368, 3, 101, 35, 8, BLACK);
+  display->setTextSize(1);
+  display->setTextColor(BLACK);
+  display->setCursor(384, 16);
+  display->print("HISTORIAL");
 }
 
 void drawEditorTextField() {
@@ -417,7 +444,139 @@ void drawExpandedPanel() {
   }
 }
 
+bool queueNetworkRequest(NetworkAction action, const String& command = String());
+void drawPanel();
+
+void drawHistoryWrapped(const String& message, int top, int lines = 3) {
+  display->setTextSize(1);
+  display->setTextColor(BLACK);
+  for (int row = 0, offset = 0; row < lines && offset < static_cast<int>(message.length()); ++row) {
+    int end = offset + 58;
+    if (end > static_cast<int>(message.length())) end = message.length();
+    display->setCursor(24, top + 18 * row);
+    display->print(message.substring(offset, end));
+    offset = end;
+  }
+}
+
+void drawHistoryScreen() {
+  if (!displayReady) return;
+  HistorySnapshot local{};
+  portENTER_CRITICAL(&historyMux);
+  local = historyCache;
+  portEXIT_CRITICAL(&historyMux);
+  const int count = historySheetTab ? local.sheetCount : local.orderCount;
+
+  display->fillScreen(WHITE);
+  display->setTextColor(BLACK);
+  display->setTextSize(2);
+  display->setCursor(16, 13);
+  display->print("HISTORIAL");
+  drawButton(358, 5, 108, 37, "VOLVER", WHITE);
+  drawButton(14, 52, 220, 42, "ORDEN 3C", WHITE);
+  drawButton(246, 52, 220, 42, "SHEETS", WHITE);
+  display->setTextSize(1);
+  display->setCursor(16, 103);
+  display->print(historySheetTab ? "Cambios ejecutados" : "Ordenes / vista previa");
+
+  if (historyDetailOpen && historySelected < count) {
+    const HistoryItem& item = historySheetTab ? local.sheets[historySelected] : local.orders[historySelected];
+    display->drawRoundRect(14, 124, 452, 288, 12, BLACK);
+    display->setTextSize(2);
+    display->setCursor(24, 145);
+    display->print(historySheetTab ? "SHEETS APLICADO" : "ORDEN 3C");
+    drawHistoryWrapped(String(item.when), 180, 1);
+    drawHistoryWrapped(String("Estado: ") + item.status, 210, 2);
+    drawHistoryWrapped(String(item.text), 255, 4);
+    drawHistoryWrapped(String("Detalle: ") + item.preview, 348, 3);
+    display->setCursor(24, 397);
+    display->print("Toque para regresar a la lista");
+  } else if (count == 0) {
+    display->setTextSize(2);
+    display->setCursor(25, 185);
+    display->print(historyLoading ? "Consultando..." : "Sin registros");
+    drawHistoryWrapped(String(panelDetail), 230, 2);
+  } else {
+    for (int row = 0; row < 3; ++row) {
+      const int index = historyPage * 3 + row;
+      if (index >= count) break;
+      const HistoryItem& item = historySheetTab ? local.sheets[index] : local.orders[index];
+      const int y = 126 + 94 * row;
+      display->drawRoundRect(14, y, 452, 87, 10, BLACK);
+      display->setTextSize(1);
+      display->setCursor(26, y + 9);
+      display->print(String(item.when).substring(0, 16));
+      display->setCursor(232, y + 9);
+      display->print(String(item.status).substring(0, 23));
+      drawHistoryWrapped(String(item.text), y + 27, 2);
+      display->setTextSize(1);
+      display->setCursor(24, y + 75);
+      display->print(String(item.preview).substring(0, 60));
+    }
+  }
+  drawButton(14, 426, 138, 42, "ANT", WHITE);
+  drawButton(162, 426, 156, 42, "ACTUALIZAR", WHITE);
+  drawButton(328, 426, 138, 42, "SIG", WHITE);
+}
+
+void showHistoryScreen(bool sheets) {
+  historyScreenOpen = true;
+  historySheetTab = sheets;
+  historyDetailOpen = false;
+  historyPage = 0;
+  historyLoading = true;
+  drawHistoryScreen();
+  queueNetworkRequest(NetworkAction::LoadHistory);
+}
+
+void handleHistoryTap(int x, int y) {
+  if (y < 43 && x >= 350) {
+    historyScreenOpen = false;
+    historyDetailOpen = false;
+    drawPanel();
+  } else if (y >= 52 && y < 95) {
+    historySheetTab = x >= 240;
+    historyDetailOpen = false;
+    historyPage = 0;
+    drawHistoryScreen();
+  } else if (y >= 426) {
+    if (x >= 162 && x < 318) {
+      historyLoading = true;
+      drawHistoryScreen();
+      queueNetworkRequest(NetworkAction::LoadHistory);
+    } else if (x < 160 && historyPage > 0) {
+      historyDetailOpen = false;
+      --historyPage;
+      drawHistoryScreen();
+    } else if (x >= 325 && historyPage < 2) {
+      historyDetailOpen = false;
+      ++historyPage;
+      drawHistoryScreen();
+    }
+  } else if (y >= 126 && y < 413) {
+    if (historyDetailOpen) {
+      historyDetailOpen = false;
+    } else {
+      const int row = (y - 126) / 94;
+      HistorySnapshot local{};
+      portENTER_CRITICAL(&historyMux);
+      local = historyCache;
+      portEXIT_CRITICAL(&historyMux);
+      const int count = historySheetTab ? local.sheetCount : local.orderCount;
+      const int selected = historyPage * 3 + row;
+      if (row >= 3 || selected >= count) return;
+      historySelected = selected;
+      historyDetailOpen = true;
+    }
+    drawHistoryScreen();
+  }
+}
+
 void drawPanel() {
+  if (historyScreenOpen) {
+    drawHistoryScreen();
+    return;
+  }
   if (commandEditorOpen) {
     drawEditor();
     return;
@@ -437,6 +596,10 @@ void drawPanel() {
 
   const uint16_t statusColor = BLACK;
   display->fillCircle(438, 48, 5, statusColor);
+  display->drawRoundRect(358, 7, 108, 30, 9, BLACK);
+  display->setTextSize(1);
+  display->setCursor(373, 18);
+  display->print("HISTORIAL");
 
   drawHomeRow(62, "DB", "Conexion al backend",
               "Conectar y validar el sistema", homePanel == HomePanel::Backend);
@@ -498,7 +661,7 @@ void updatePanel(PanelState state, const String& detail, bool sound = false) {
   const bool changed = state != panelState;
   panelState = state;
   panelDetail = detail;
-  if (!commandEditorOpen) drawPanel();
+  if (!commandEditorOpen || historyScreenOpen) drawPanel();
   Serial.printf("PANEL STATE -> %s | %s\n", stateLabel(panelState), panelDetail.c_str());
   if (!sound || !changed) return;
   if (state == PanelState::Applied || state == PanelState::Ready) playTone(880, 70);
@@ -903,6 +1066,65 @@ bool checkCloudStack() {
   return checkGoogleSheetsVerify();
 }
 
+void fetchHistory() {
+  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) {
+    historyLoading = false;
+    updatePanel(PanelState::Offline, "Historial: sin conexion");
+    return;
+  }
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  if (!http.begin(endpoint("/api/device/v1/history/panel?device_id=" +
+                             String(app_config::deviceId) + "&limit=8"))) {
+    historyLoading = false;
+    updatePanel(PanelState::Error, "Historial: URL invalida");
+    return;
+  }
+  addRequestAuth(http);
+  const int code = http.GET();
+  const String body = code == 200 ? http.getString() : "";
+  http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code != 200) {
+    historyLoading = false;
+    updatePanel(PanelState::Error, String("Historial HTTP ") + code);
+    return;
+  }
+  HistorySnapshot loaded{};
+  int position = 0;
+  while (position < static_cast<int>(body.length())) {
+    const int newline = body.indexOf('\n', position);
+    const String line = body.substring(position, newline < 0 ? body.length() : newline);
+    position = newline < 0 ? body.length() : newline + 1;
+    if (!line.length()) continue;
+    String fields[5];
+    int start = 0;
+    for (int i = 0; i < 5; ++i) {
+      const int tab = line.indexOf('\t', start);
+      fields[i] = line.substring(start, tab < 0 ? line.length() : tab);
+      if (tab < 0) break;
+      start = tab + 1;
+    }
+    HistoryItem* item = nullptr;
+    if (fields[0] == "O" && loaded.orderCount < kHistoryCapacity)
+      item = &loaded.orders[loaded.orderCount++];
+    if (fields[0] == "S" && loaded.sheetCount < kHistoryCapacity)
+      item = &loaded.sheets[loaded.sheetCount++];
+    if (!item) continue;
+    fields[1].toCharArray(item->when, sizeof(item->when));
+    fields[2].toCharArray(item->status, sizeof(item->status));
+    fields[3].toCharArray(item->text, sizeof(item->text));
+    fields[4].toCharArray(item->preview, sizeof(item->preview));
+  }
+  portENTER_CRITICAL(&historyMux);
+  historyCache = loaded;
+  portEXIT_CRITICAL(&historyMux);
+  historyLoading = false;
+  Serial.printf("HISTORY 3C -> %u orders, %u Sheets changes\n",
+    loaded.orderCount, loaded.sheetCount);
+  updatePanel(PanelState::Ready, "Historial actualizado");
+}
+
 int send3CCommand(const String& rawCommand) {
   String command = rawCommand;
   command.trim();
@@ -1010,7 +1232,7 @@ void pollCommandStatus() {
 }
 
 
-bool queueNetworkRequest(NetworkAction action, const String& command = String()) {
+bool queueNetworkRequest(NetworkAction action, const String& command) {
   if (!networkQueue) {
     updatePanel(PanelState::Error, "Red no inicializada");
     return false;
@@ -1057,6 +1279,9 @@ void networkWorker(void* parameter) {
           break;
         case NetworkAction::Send3C:
           send3CCommand(String(request.command));
+          break;
+        case NetworkAction::LoadHistory:
+          fetchHistory();
           break;
       }
       lastHealthCheck = millis();
@@ -1165,7 +1390,15 @@ void handleTouch() {
   if (millis() - lastHandledTapMs < kTouchDebounceMs) return;
   lastHandledTapMs = millis();
   {
+    if (historyScreenOpen) {
+      handleHistoryTap(tap.x, tap.y);
+      return;
+    }
     if (commandEditorOpen) {
+      if (tap.y < 43 && tap.x >= 358) {
+        showHistoryScreen(false);
+        return;
+      }
       virtual_keyboard::Key key{};
       if (virtual_keyboard::hitTest(keyboardMode, tap.x, tap.y, &key)) {
         using virtual_keyboard::KeyKind;
@@ -1242,6 +1475,10 @@ void handleTouch() {
         }
       }
     } else {
+      if (tap.y < 43 && tap.x >= 350) {
+        showHistoryScreen(false);
+        return;
+      }
       auto togglePanel = [](HomePanel requested) {
         homePanel = homePanel == requested ? HomePanel::None : requested;
         drawPanel();
