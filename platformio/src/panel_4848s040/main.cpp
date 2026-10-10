@@ -124,7 +124,7 @@ bool mdnsReady = false;
 bool wifiAnnounced = false;
 
 enum class NetworkAction : uint8_t {
-  Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta
+  Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta, AckVoiceDraft
 };
 
 // OTA is intentionally commit-selectable only among published Databricks builds.
@@ -216,6 +216,21 @@ QueueHandle_t networkQueue = nullptr;
 QueueHandle_t uiQueue = nullptr;
 TaskHandle_t networkTaskHandle = nullptr;
 std::atomic<bool> pendingCommand{false};
+// 0=not checked, 1=checking, 2=actual Google Sheets read succeeded,
+// 3=failed. Show this on the HOME screen after PROBAR CLOUD.
+std::atomic<int> sheetsVerifyState{0};
+std::atomic<int> sheetsVerifyHttp{0};
+unsigned long lastVoicePollMs = 0;
+constexpr unsigned long kVoicePollIntervalMs = 9000UL;
+struct VoiceMailbox {
+  bool available = false;
+  char id[40] = {};
+  char text[240] = {};
+};
+VoiceMailbox incomingVoice{};
+portMUX_TYPE voiceMux = portMUX_INITIALIZER_UNLOCKED;
+String lastVoiceDraftId; // network worker only; avoids duplicate while ACK is in flight.
+
 unsigned long lastTouchActivityMs = 0;
 unsigned long lastHandledTapMs = 0;
 constexpr unsigned long kMissingReleaseMs = 80;
@@ -510,11 +525,18 @@ void drawExpandedPanel() {
     display->print("Usa PROBAR CLOUD para validar extremo a extremo.");
   } else if (homePanel == HomePanel::Sheets) {
     display->setCursor(28, 316);
-    display->print("Lectura y control mediante backend Databricks.");
+    const int verified = sheetsVerifyState.load();
+    display->print("Estado: ");
+    display->print(verified == 2 ? "CONECTADO (lectura real)" :
+                   verified == 1 ? "VERIFICANDO..." :
+                   verified == 3 ? "NO VERIFICADO" : "SIN PROBAR");
     display->setCursor(28, 336);
-    display->print("Cambios sujetos a revision humana.");
+    display->print("Plantilla: Data!A4:AF4");
     display->setCursor(28, 356);
-    display->print("El ESP32 nunca escribe Sheets directamente.");
+    display->print("HTTP Sheets: ");
+    display->print(sheetsVerifyHttp.load());
+    display->setCursor(28, 377);
+    display->print("Cambios solo tras aprobacion humana.");
   } else if (homePanel == HomePanel::Github) {
     display->setCursor(28, 316);
     display->print("GitHub Actions valida contratos y compilacion.");
@@ -748,6 +770,12 @@ void drawPanel() {
   display->setTextColor(BLACK);
   display->setCursor(20, 44);
   display->print("Opciones del sistema");
+  display->setCursor(310, 44);
+  const int sheetState = sheetsVerifyState.load();
+  display->print(sheetState == 2 ? "SHEETS: OK" :
+                 sheetState == 1 ? "SHEETS: ..." :
+                 sheetState == 3 ? "SHEETS: ERROR" : "SHEETS: ?");
+
 
   const uint16_t statusColor = BLACK;
   display->fillCircle(438, 48, 5, statusColor);
@@ -1186,33 +1214,46 @@ bool checkBackendHealth() {
 }
 
 bool checkGoogleSheetsVerify() {
+  sheetsVerifyState = 1;
+  sheetsVerifyHttp = 0;
+  updatePanel(PanelState::Busy, "Google Sheets: verificando lectura REAL");
   if (WiFi.status() != WL_CONNECTED) {
-    updatePanel(PanelState::Offline, "Wi-Fi desconectado", true);
+    sheetsVerifyState = 3;
+    updatePanel(PanelState::Offline, "SHEETS: Wi-Fi desconectado", true);
     return false;
   }
   if (!backendBaseUrl().length() || !ensureDatabricksAccessToken()) {
-    updatePanel(PanelState::Error, "Backend no disponible", true);
+    sheetsVerifyState = 3;
+    updatePanel(PanelState::Error, "SHEETS: sin OAuth/endpoint", true);
     return false;
   }
-
   HTTPClient http;
   http.setTimeout(app_config::httpTimeoutMs);
-  if (!http.begin(endpoint("/api/sheet/verify"))) {
-    updatePanel(PanelState::Error, "No se pudo verificar Sheets", true);
+  if (!http.begin(endpoint("/api/device/v1/cloud/verify"))) {
+    sheetsVerifyState = 3;
+    updatePanel(PanelState::Error, "SHEETS: URL invalida", true);
     return false;
   }
   addRequestAuth(http);
   const int code = http.GET();
-  lastBackendMessage = code > 0 ? http.getString() : http.errorToString(code);
+  const String body = code > 0 ? http.getString() : http.errorToString(code);
   http.end();
   if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
-
-  if (code == 200) {
-    backendAvailable = true;
-    updatePanel(PanelState::Ready, "Cloud + Google Sheets OK", true);
+  sheetsVerifyHttp = code;
+  const bool connected =
+      code == 200 && body.indexOf("\"connected\":true") >= 0 &&
+      body.indexOf("\"ok\":true") >= 0 &&
+      jsonStringValue(body, "sheet_name") == "Data" &&
+      jsonUnsignedLongValue(body, "header_row", 0UL) == 4UL;
+  sheetsVerifyState = connected ? 2 : 3;
+  Serial.printf("SHEETS VERIFY -> HTTP=%d connected=%s Data!A4:AF4=%s\n",
+                code, connected ? "true" : "false",
+                connected ? "OK" : "FAIL");
+  if (connected) {
+    updatePanel(PanelState::Ready, "Cloud + Google Sheets Data A4:AF4 OK", true);
     return true;
   }
-  updatePanel(PanelState::Error, String("Sheets HTTP ") + code, true);
+  updatePanel(PanelState::Error, String("SHEETS fallo HTTP ") + code, true);
   return false;
 }
 
@@ -1463,6 +1504,78 @@ bool installSelectedOta() {
   return true;
 }
 
+
+void pollVoiceDraft() {
+  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) return;
+  portENTER_CRITICAL(&voiceMux);
+  const bool occupied = incomingVoice.available;
+  portEXIT_CRITICAL(&voiceMux);
+  if (occupied) return;
+
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  if (!http.begin(endpoint("/api/device/v1/voice/inbox/panel?device_id=" +
+                           String(app_config::deviceId)))) return;
+  addRequestAuth(http);
+  const int code = http.GET();
+  const String line = code == 200 ? http.getString() : "";
+  http.end();
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code != 200 || line.length() == 0) return;
+  const int tab = line.indexOf('\t');
+  if (tab <= 0 || tab > 40) return;
+  const String id = line.substring(0, tab);
+  String text = line.substring(tab + 1);
+  text.trim();
+  if (id == lastVoiceDraftId || id.length() != 36 ||
+      !text.length() || text.length() >= kCommandCapacity) return;
+
+  // Do not overwrite an active editor; main loop will open it when idle.
+  portENTER_CRITICAL(&voiceMux);
+  if (!incomingVoice.available) {
+    id.toCharArray(incomingVoice.id, sizeof(incomingVoice.id));
+    text.toCharArray(incomingVoice.text, sizeof(incomingVoice.text));
+    incomingVoice.available = true;
+  }
+  portEXIT_CRITICAL(&voiceMux);
+  lastVoiceDraftId = id;
+  Serial.printf("VOICE 3C RECEIVED draft=%s bytes=%u (no Sheets write)\n",
+                id.c_str(), static_cast<unsigned>(text.length()));
+}
+
+void acknowledgeVoiceDraft(const String& id) {
+  if (id.length() != 36 || !ensureDatabricksAccessToken()) return;
+  HTTPClient http;
+  if (!http.begin(endpoint("/api/device/v1/voice/drafts/" + id + "/ack"))) return;
+  http.setTimeout(app_config::httpTimeoutMs);
+  addRequestAuth(http);
+  http.addHeader("Content-Type", "application/json");
+  const String payload = String("{\"device_id\":\"") + app_config::deviceId + "\"}";
+  const int code = http.POST(payload);
+  http.end();
+  Serial.printf("VOICE 3C ACK HTTP=%d draft=%s\n", code, id.c_str());
+}
+
+// Called only by Arduino UI loop, not from the HTTPS worker.
+void openReceivedVoiceInEditor() {
+  if (commandEditorOpen || otaCommitEditorOpen || historyScreenOpen) return;
+  VoiceMailbox mailbox{};
+  portENTER_CRITICAL(&voiceMux);
+  if (incomingVoice.available) {
+    mailbox = incomingVoice;
+    incomingVoice.available = false;
+  }
+  portEXIT_CRITICAL(&voiceMux);
+  if (!mailbox.available || !mailbox.text[0]) return;
+  commandBuffer.set(mailbox.text);
+  commandEditorOpen = true;
+  homePanel = HomePanel::None;
+  keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
+  drawEditor();
+  Serial.printf("VOICE 3C -> EDITAR ORDEN 3C (preview only, draft=%s)\n", mailbox.id);
+  queueNetworkRequest(NetworkAction::AckVoiceDraft, String(mailbox.id));
+}
+
 int send3CCommand(const String& rawCommand) {
   String command = rawCommand;
   command.trim();
@@ -1577,7 +1690,9 @@ bool queueNetworkRequest(NetworkAction action, const String& command) {
   }
   NetworkRequest request{};
   request.action = action;
-  if (action == NetworkAction::Send3C || action == NetworkAction::CheckOtaCommit) {
+  if (action == NetworkAction::Send3C ||
+      action == NetworkAction::CheckOtaCommit ||
+      action == NetworkAction::AckVoiceDraft) {
     if (!command.length() || command.length() >= sizeof(request.command)) {
       updatePanel(PanelState::Error, "Orden 3C vacia o muy larga");
       return false;
@@ -1630,6 +1745,9 @@ void networkWorker(void* parameter) {
         case NetworkAction::InstallOta:
           installSelectedOta();
           break;
+        case NetworkAction::AckVoiceDraft:
+          acknowledgeVoiceDraft(String(request.command));
+          break;
       }
       lastHealthCheck = millis();
     }
@@ -1643,6 +1761,10 @@ void networkWorker(void* parameter) {
       lastHealthCheck = millis();
       checkBackendHealth();
       continue;
+    }
+    if (millis() - lastVoicePollMs >= kVoicePollIntervalMs) {
+      lastVoicePollMs = millis();
+      pollVoiceDraft();
     }
     if (lastCommandId.length() &&
         millis() - lastCommandPoll >= app_config::commandPollMs) {
@@ -2018,6 +2140,7 @@ void setup() {
 
 void loop() {
   processNetworkUiUpdates();
+  openReceivedVoiceInEditor();
   web.handleClient();
   handleTouch();
   processNetworkUiUpdates();
