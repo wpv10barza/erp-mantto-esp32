@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <HTTPClient.h>
+#include <Preferences.h>
+#include <ctype.h>
 #include <Update.h>
 #include <mbedtls/sha256.h>
 #include <esp_ota_ops.h>
@@ -64,6 +66,41 @@ enum class HomePanel {
 
 HomePanel homePanel = HomePanel::None;
 constexpr char kFirmwareVersion[] = "2.7.0-ota-commit";
+// Credentials are provisioned once over USB and then loaded from ESP32 NVS
+// on subsequent credential-free OTA builds. NVS persists across OTA slots.
+String runtimeWifiSsid, runtimeWifiPassword;
+String runtimeDatabricksClientId, runtimeDatabricksClientSecret, runtimeApiToken;
+
+void loadDeviceCredentials() {
+  runtimeWifiSsid = app_config::wifiSsid;
+  runtimeWifiPassword = app_config::wifiPassword;
+  runtimeDatabricksClientId = app_config::databricksClientId;
+  runtimeDatabricksClientSecret = app_config::databricksClientSecret;
+  runtimeApiToken = app_config::apiToken;
+  Preferences prefs;
+  if (!prefs.begin("ota3c", false)) {
+    Serial.println("[WARN] OTA NVS sin acceso; requiere configuracion embebida");
+    return;
+  }
+  auto stored = [&prefs](const char* key, const char* compiled) -> String {
+    if (compiled && strlen(compiled)) {
+      prefs.putString(key, String(compiled));
+      return String(compiled);
+    }
+    return prefs.getString(key, "");
+  };
+  runtimeWifiSsid = stored("wifi_ssid", app_config::wifiSsid);
+  runtimeWifiPassword = stored("wifi_pass", app_config::wifiPassword);
+  runtimeDatabricksClientId = stored("sp_id", app_config::databricksClientId);
+  runtimeDatabricksClientSecret = stored("sp_secret", app_config::databricksClientSecret);
+  runtimeApiToken = stored("device_key", app_config::apiToken);
+  prefs.end();
+  Serial.printf("OTA NVS: Wi-Fi=%s cloud_auth=%s device_token=%s (valores ocultos)\n",
+    runtimeWifiSsid.length() ? "OK" : "NO",
+    (runtimeDatabricksClientId.length() && runtimeDatabricksClientSecret.length()) ? "OK" : "NO",
+    runtimeApiToken.length() ? "OK" : "NO");
+}
+
 
 PanelState panelState = PanelState::Booting;
 String panelDetail = "Iniciando";
@@ -503,7 +540,7 @@ void drawExpandedPanel() {
   } else if (homePanel == HomePanel::Wifi) {
     display->setCursor(28, 316);
     display->print("SSID: ");
-    display->print(strlen(app_config::wifiSsid) ? app_config::wifiSsid : "No configurado");
+    display->print(runtimeWifiSsid.length() ? runtimeWifiSsid : "No configurado");
     display->setCursor(28, 336);
     display->print("Estado: ");
     display->print(WiFi.status() == WL_CONNECTED ? "Conectado" : "Desconectado");
@@ -1015,8 +1052,8 @@ void clearDatabricksAccessToken() {
 
 bool databricksOAuthConfigured() {
   return strlen(app_config::databricksWorkspaceUrl) > 0 &&
-         strlen(app_config::databricksClientId) > 0 &&
-         strlen(app_config::databricksClientSecret) > 0;
+         runtimeDatabricksClientId.length() > 0 &&
+         runtimeDatabricksClientSecret.length() > 0;
 }
 
 bool ensureDatabricksAccessToken() {
@@ -1039,7 +1076,7 @@ bool ensureDatabricksAccessToken() {
     lastBackendMessage = "No se pudo abrir OAuth Databricks";
     return false;
   }
-  authHttp.setAuthorization(app_config::databricksClientId, app_config::databricksClientSecret);
+  authHttp.setAuthorization(runtimeDatabricksClientId.c_str(), runtimeDatabricksClientSecret.c_str());
   authHttp.addHeader("Content-Type", "application/x-www-form-urlencoded");
   const String form = String("grant_type=client_credentials&scope=") + app_config::databricksOauthScope;
   const int code = authHttp.POST(form);
@@ -1077,8 +1114,8 @@ void addRequestAuth(HTTPClient& http) {
   if (databricksAccessToken.length()) {
     http.addHeader("Authorization", String("Bearer ") + databricksAccessToken);
   }
-  if (strlen(app_config::apiToken)) {
-    http.addHeader("X-3C-Device-Token", app_config::apiToken);
+  if (runtimeApiToken.length()) {
+    http.addHeader("X-3C-Device-Token", runtimeApiToken);
   }
 }
 
@@ -1659,7 +1696,7 @@ void configureWifi() {
 }
 
 void connectWifi() {
-  if (!strlen(app_config::wifiSsid)) {
+  if (!runtimeWifiSsid.length()) {
     updatePanel(PanelState::Offline, "Configure local_config.h");
     Serial.println("Configure include/local_config.h antes de usar Wi-Fi.");
     return;
@@ -1667,7 +1704,7 @@ void connectWifi() {
   configureWifi();
   Serial.printf("Wi-Fi: iniciando STA, credenciales presentes, status=%d (%s)\n",
     static_cast<int>(WiFi.status()), wifiStatusLabel(WiFi.status()));
-  WiFi.begin(app_config::wifiSsid, app_config::wifiPassword);
+  WiFi.begin(runtimeWifiSsid.c_str(), runtimeWifiPassword.c_str());
   lastWifiAttempt = millis();
   updatePanel(PanelState::Busy, "Conectando Wi-Fi");
 }
@@ -1836,6 +1873,7 @@ void handleTouch() {
         if (tap.x >= 26 && tap.x < 228) {
           otaCommitEditorOpen = true;
           otaConfirmArmed = false;
+          setOtaStatus("Ingrese SHA publicado", true);
           keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
           drawOtaCommitEditor();
           return;
@@ -1948,6 +1986,7 @@ void setup() {
   const uint8_t touchProbe = Wire.endTransmission();
   Serial.printf("GT911 I2C probe addr=0x%02X result=%u bus=400kHz\n", kTouchAddress, touchProbe);
   audioReady = initializeAudio();
+  loadDeviceCredentials();
   commandBuffer.set(app_config::commandBuffer.c_str());
   networkQueue = xQueueCreate(4, sizeof(NetworkRequest));
   uiQueue = xQueueCreate(1, sizeof(UiNotification));
@@ -1977,7 +2016,7 @@ void loop() {
     }
   } else {
     wifiAnnounced = false;
-    if (strlen(app_config::wifiSsid) &&
+    if (runtimeWifiSsid.length() &&
         millis() - lastWifiAttempt >= app_config::wifiRetryMs) {
       lastWifiAttempt = millis();
       const wl_status_t status = WiFi.status();
