@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: wpv10barza/asistente-de-databricks--erp
-          ref: 347d1ce7b9536bf7de84125bfbf65704f95ffa5c
+          ref: 662fd1cd4d7fdc9806996af8a506a920ba6a2b2a
           path: cloud
 
       - uses: actions/setup-python@v5
@@ -51,6 +51,9 @@ jobs:
           grep -q '/api/device/v1/commands' cloud/app/main.py
           grep -q 'requires_human_confirmation' cloud/app/main.py
           grep -q 'get_device_history_panel' cloud/app/main.py
+          grep -q 'sheet_apply_attempt' cloud/app/main.py
+          grep -q 'sheet_apply_blocked' cloud/app/main.py
+          grep -q 'proposal_approved' cloud/app/main.py
           grep -q 'firmware_by_commit' cloud/app/main.py
           grep -q 'device_cloud_verify' cloud/app/main.py
           grep -q 'voice_panel_inbox' cloud/app/main.py
