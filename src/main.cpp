@@ -254,6 +254,7 @@ std::atomic<bool> editorTextTouched{false};
 std::atomic<bool> voicePcRequested{false};
 std::atomic<int> voicePcRequestHttp{0};
 std::atomic<bool> voicePcUiDirty{false};
+std::atomic<unsigned long> voicePcRequestStartedMs{0};
 
 unsigned long lastTouchActivityMs = 0;
 unsigned long lastHandledTapMs = 0;
@@ -2011,6 +2012,8 @@ void configureWebServer() {
       ",\"voice_poll_count\":" + String(voicePollAttempts.load()) +
       ",\"voice_poll_http\":" + String(voicePollHttp.load()) +
       ",\"voice_ack_http\":" + String(voiceAckHttp.load()) +
+      ",\"voice_pc_request_http\":" + String(voicePcRequestHttp.load()) +
+      ",\"voice_pc_waiting\":" + (voicePcRequested.load() ? "true" : "false") +
       ",\"voice_editor_deliveries\":" + String(voiceEditorDeliveries.load()) +
       ",\"voice_waiting\":" + (voiceWaiting ? "true" : "false") +
       ",\"voice_ack_pending\":" + (ackWaiting ? "true" : "false") +
@@ -2156,6 +2159,7 @@ void handleTouch() {
             commandBuffer.clear();  // Remove the default 3C task immediately.
             editorTextTouched = false;
             voicePcRequested = true;
+            voicePcRequestStartedMs = millis();
             drawEditorFrame();
             drawEditorTextField();
             Serial.println("VOICE PC: tactile capture requested; no command submitted");
@@ -2393,6 +2397,13 @@ void setup() {
 
 void loop() {
   processNetworkUiUpdates();
+  // A PC may be offline: do not leave the editor button stuck forever.
+  if (voicePcRequested.load() &&
+      millis() - voicePcRequestStartedMs.load() > 120000UL) {
+    voicePcRequested = false;
+    voicePcUiDirty = true;
+    Serial.println("VOICE PC REQUEST: waiting timed out; button re-enabled");
+  }
   if (voicePcUiDirty.exchange(false) && commandEditorOpen && !otaCommitEditorOpen &&
       !historyScreenOpen) drawEditorFrame();
   openReceivedVoiceInEditor();
