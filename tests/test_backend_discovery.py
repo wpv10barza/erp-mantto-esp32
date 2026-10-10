@@ -36,7 +36,7 @@ require(MAIN, "bool ensureDatabricksAccessToken()", "M2M token refresh")
 require(MAIN, 'workspace + "/oidc/v1/token"', "workspace OAuth token endpoint")
 require(MAIN, '"grant_type=client_credentials&scope="', "OAuth client credentials grant")
 require(MAIN, 'http.addHeader("Authorization", String("Bearer ") + databricksAccessToken)', "Bearer header")
-require(MAIN, 'http.addHeader("X-3C-Device-Token", app_config::apiToken)', "device token header")
+require(MAIN, 'http.addHeader("X-3C-Device-Token", runtimeApiToken)', "device token header")
 require(MAIN, 'endpoint("/api/device/v1/commands")', "command endpoint")
 require(MAIN, 'endpoint("/api/device/v1/commands/" + lastCommandId)', "poll endpoint")
 require(MAIN, '"DATABRICKS LISTO"', "cloud-ready UI state")
@@ -44,7 +44,7 @@ require(MAIN, '"PROBAR CLOUD"', "cloud test button")
 require(MAIN, '"CLOUD HTTPS"', "cloud transport display")
 
 for forbidden in [
-    "ESPmDNS", "Preferences", "MDNS.queryService", "MDNS.queryHost",
+    "ESPmDNS", "MDNS.queryService", "MDNS.queryHost",
     "BackendEndpoint", "3c-backend.local", "_3c._tcp", "backendEndpoint",
 ]:
     if forbidden in MAIN:
