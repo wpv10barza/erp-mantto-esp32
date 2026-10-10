@@ -1761,7 +1761,7 @@ void handleTouch() {
             commandBuffer.insert(' ');
             drawEditorTextField();
             break;
-          case KeyKind::Enter:
+          case KeyKind::Enter: {
             if (editingFirmwareCommit) {
               String commitRef(commandBuffer.c_str());
               commitRef.trim();
@@ -1789,6 +1789,7 @@ void handleTouch() {
             commandPreviewOpen = true;
             drawPanel();
             return;
+          }
           case KeyKind::ToggleAlphaNumeric:
             keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
                 ? virtual_keyboard::KeyboardMode::NumericSymbols
