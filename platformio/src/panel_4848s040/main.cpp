@@ -66,7 +66,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.7.0-ota-commit";
+constexpr char kFirmwareVersion[] = "2.7.1-pc-dictation";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // This 40-character commit is EMBEDDED by PlatformIO at build time.
 // It identifies the running binary, not whatever the user typed into OTA.
@@ -125,7 +125,7 @@ bool mdnsReady = false;
 bool wifiAnnounced = false;
 
 enum class NetworkAction : uint8_t {
-  Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta, AckVoiceDraft
+  Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta, AckVoiceDraft, RequestPcVoice
 };
 
 // OTA is intentionally commit-selectable only among published Databricks builds.
@@ -251,6 +251,9 @@ std::atomic<unsigned long> voiceEditorDeliveries{0};
 // A remotely delivered voice draft can replace the default prompt but must
 // not overwrite a command the operator has started typing on the touchscreen.
 std::atomic<bool> editorTextTouched{false};
+std::atomic<bool> voicePcRequested{false};
+std::atomic<int> voicePcRequestHttp{0};
+std::atomic<bool> voicePcUiDirty{false};
 
 unsigned long lastTouchActivityMs = 0;
 unsigned long lastHandledTapMs = 0;
@@ -342,9 +345,11 @@ void drawEditorFrame() {
   display->setTextColor(BLACK);
   display->setCursor(384, 16);
   display->print("HISTORIAL");
+  // Real touch button, never an unverified "PC ready" claim.
+  display->drawRoundRect(5, 4, 132, 34, 8, BLACK);
   display->setTextSize(1);
-  display->setCursor(10, 16);
-  display->print("VOZ PC: LISTO");
+  display->setCursor(13, 17);
+  display->print(voicePcRequested.load() ? "PC: ESPERANDO" : "DICTAR PC");
 }
 
 void drawEditorTextField() {
@@ -1605,6 +1610,45 @@ bool installSelectedOta() {
 }
 
 
+void requestPcVoiceCapture() {
+  if (WiFi.status() != WL_CONNECTED) {
+    voicePcRequestHttp = -10;
+    voicePcRequested = false;
+    voicePcUiDirty = true;
+    Serial.println("VOICE PC REQUEST: Wi-Fi disconnected");
+    return;
+  }
+  if (!ensureDatabricksAccessToken()) {
+    voicePcRequestHttp = -11;
+    voicePcRequested = false;
+    voicePcUiDirty = true;
+    Serial.println("VOICE PC REQUEST: OAuth unavailable");
+    return;
+  }
+  HTTPClient http;
+  http.setTimeout(app_config::httpTimeoutMs);
+  if (!http.begin(endpoint("/api/device/v1/voice/capture/request"))) {
+    voicePcRequestHttp = -12;
+    voicePcRequested = false;
+    voicePcUiDirty = true;
+    return;
+  }
+  addRequestAuth(http);
+  http.addHeader("Content-Type", "application/json");
+  const String body = String("{\"device_id\":\"") + jsonEscape(app_config::deviceId) + "\"}";
+  const int code = http.POST(body);
+  http.end();
+  voicePcRequestHttp = code;
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code != 202) {
+    voicePcRequested = false;
+    voicePcUiDirty = true;
+    Serial.printf("VOICE PC REQUEST HTTP=%d (PC mic not activated)\n", code);
+  } else {
+    Serial.println("VOICE PC REQUEST HTTP=202; Windows agent must be running");
+  }
+}
+
 void pollVoiceDraft() {
   voicePollAttempts.fetch_add(1);
   if (WiFi.status() != WL_CONNECTED) {
@@ -1711,6 +1755,8 @@ void openReceivedVoiceInEditor() {
   }
   commandEditorOpen = true;
   editorTextTouched = false;
+  voicePcRequested = false;
+  voicePcUiDirty = false;
   homePanel = HomePanel::None;
   keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
   drawEditor();
@@ -1894,6 +1940,9 @@ void networkWorker(void* parameter) {
           break;
         case NetworkAction::AckVoiceDraft:
           acknowledgeVoiceDraft(String(request.command));
+          break;
+        case NetworkAction::RequestPcVoice:
+          requestPcVoiceCapture();
           break;
       }
       lastHealthCheck = millis();
@@ -2100,6 +2149,20 @@ void handleTouch() {
       return;
     }
     if (commandEditorOpen) {
+      if (tap.y < 43 && tap.x < 139) {
+        // An explicit touch is consent to replace the current editor preview.
+        if (!voicePcRequested.load()) {
+          if (queueNetworkRequest(NetworkAction::RequestPcVoice)) {
+            commandBuffer.clear();  // Remove the default 3C task immediately.
+            editorTextTouched = false;
+            voicePcRequested = true;
+            drawEditorFrame();
+            drawEditorTextField();
+            Serial.println("VOICE PC: tactile capture requested; no command submitted");
+          }
+        }
+        return;
+      }
       if (tap.y < 43 && tap.x >= 358) {
         showHistoryScreen(false);
         return;
@@ -2330,6 +2393,8 @@ void setup() {
 
 void loop() {
   processNetworkUiUpdates();
+  if (voicePcUiDirty.exchange(false) && commandEditorOpen && !otaCommitEditorOpen &&
+      !historyScreenOpen) drawEditorFrame();
   openReceivedVoiceInEditor();
   web.handleClient();
   handleTouch();
