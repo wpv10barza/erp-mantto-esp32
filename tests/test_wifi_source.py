@@ -26,14 +26,16 @@ require(MAIN, "WiFi.reconnect();", "network reconnect path")
 require(MAIN, '"Reconectando Internet"', "Internet reconnect state")
 require(MAIN, '"CLOUD HTTPS"', "cloud status display")
 
-# Do not expose or depend on local network addressing.
+# Never depend on local networking to discover the backend; displaying the
+# device DHCP address for operator diagnostics is explicitly allowed.
 for forbidden in [
-    "WiFi.localIP()", "WiFi.gatewayIP()", "192.168.", "3c-backend.local",
+    "WiFi.gatewayIP()", "192.168.", "3c-backend.local",
     "MDNS.queryService", "MDNS.queryHost", "PROBAR WSL", "WSL DISPONIBLE",
 ]:
     if forbidden in MAIN or forbidden in APP:
         raise AssertionError(f"local-network dependency remains: {forbidden}")
 
+require(MAIN, 'WiFi.localIP().toString()', "visible DHCP IP for PC read-only diagnostics")
 require(MAIN, "st7701_type9_init_operations", "ST7701 type9 init sequence")
 require(MAIN, "kScreenWidth, kScreenHeight, rgbPanel, 1, true", "rotation/RGB display contract")
 require(MAIN, "ensureDatabricksAccessToken()", "Databricks OAuth M2M")
@@ -41,6 +43,6 @@ require(PLATFORMIO, "[env:panel_4848s040]", "panel_4848s040 environment")
 
 print("Network/cloud source contract: PASS")
 print("- Wi-Fi is only the ESP32 Internet transport")
-print("- no same-LAN, local IP, mDNS or WSL backend dependency")
+print("- DHCP IP is only displayed for optional PC diagnostics; no LAN/WSL backend dependency")
 print("- Databricks Apps is the production endpoint")
 print("- ST7701 type9 Guition init preserved")
