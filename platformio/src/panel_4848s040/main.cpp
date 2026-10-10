@@ -405,7 +405,7 @@ void drawOtaCommitField() {
   display->print(content.substring(start));
   display->setTextSize(1);
   display->setCursor(24, 131);
-  display->print("ENTER = buscar version firmada/publicada");
+  display->print("ENTER = buscar OTA publicada");
 }
 
 void drawOtaCommitEditor() {

@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "063b29a2f5b143733ee28c9f2ca7772049e1c642",
+    "validated_commit": "017c3f62445ef64911f08b429961e7a0661ba55f",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
@@ -26,8 +26,8 @@
     "ota_lookup_path": "/api/device/v1/firmware/by-commit/{sha}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "05813813d27bc23d9b64616bb614dfdfa32fae9c",
-    "src/main.cpp": "05813813d27bc23d9b64616bb614dfdfa32fae9c",
+    "platformio/src/panel_4848s040/main.cpp": "ac9abdc9d6ee6df799991e1b8a27130c9f88f865",
+    "src/main.cpp": "ac9abdc9d6ee6df799991e1b8a27130c9f88f865",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
