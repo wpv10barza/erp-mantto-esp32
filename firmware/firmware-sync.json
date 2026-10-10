@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "88213be4fa8eebf194a1f0014de0c681d56e9b9c",
+    "validated_commit": "063b29a2f5b143733ee28c9f2ca7772049e1c642",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
@@ -22,11 +22,12 @@
     "command_path": "/api/device/v1/commands",
     "status_path": "/api/device/v1/commands/{command_id}",
     "history_path": "/api/device/v1/history",
-    "history_panel_path": "/api/device/v1/history/panel"
+    "history_panel_path": "/api/device/v1/history/panel",
+    "ota_lookup_path": "/api/device/v1/firmware/by-commit/{sha}"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "9f53b87e97a3372df469685619defdf72b15081e",
-    "src/main.cpp": "9f53b87e97a3372df469685619defdf72b15081e",
+    "platformio/src/panel_4848s040/main.cpp": "3a03d253bf58174ee61d5fba38ea1e3a9e624eb9",
+    "src/main.cpp": "3a03d253bf58174ee61d5fba38ea1e3a9e624eb9",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -34,7 +35,8 @@
     "include/panel_gpio.h": "5439ae00de14e9b3e3cb407a913f9e417f5546b8",
     "include/touch_input.h": "859e2ee6d4f3e17d34c4909ae385a69c8ebdcfc2",
     "include/home_menu.h": "177c6d8028bc26badd888bfa8b2dd0c6bca87a3e",
-    "platformio/src/panel_4848s040/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b"
+    "platformio/src/panel_4848s040/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
+    "platformio.ini": "f743ef1db21646bdefe52d73e6b6705bc7fd33fc"
   },
   "production": {
     "platformio_env": "panel_4848s040",
@@ -44,8 +46,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.6.0-history-3c",
-    "role": "final_main_interface_with_3c_preview_and_confirmed_sheet_history",
+    "version": "2.7.0-ota-commit",
+    "role": "final_interface_commit_picker_and_guarded_OTA",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -81,6 +83,15 @@
       "sheets_only_confirmed": true,
       "background_fetch": true,
       "durability": "optional backend HISTORY_LOG_PATH"
+    },
+    "ota": {
+      "input": "Touch keyboard SHA 7..40 hex",
+      "lookup": "matching published Databricks Volume artifact only",
+      "dual_slots": "otadata,ota_0,ota_1",
+      "verification": "commit + version + exact size + SHA-256",
+      "confirmation": "two taps",
+      "bootstrap": "USB first from v2.6 non-OTA partitions",
+      "note": "Git SHA is not itself a flashable binary"
     }
   }
 }
