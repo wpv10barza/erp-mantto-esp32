@@ -21,6 +21,6 @@ for needle in (
     'checkCloudStack();\n      fetchHistory();',
 ):
     assert needle in source, needle
-assert source.count('sheetVerifyState = 3') >= 3
+assert source.count('sheetsVerifyState = 3') >= 3
 assert source.count('sheetsWriteMode = 0;') >= 2
 print("Sheets audit, live connection, and monitor history contract: PASS")
