@@ -48,7 +48,8 @@ for needle, label in [
 ]:
     require(MAIN, needle, label)
 
-char_case = MAIN[MAIN.index("case KeyKind::Character:"):MAIN.index("case KeyKind::Backspace:")]
+editor_touch = MAIN[MAIN.index("    if (commandEditorOpen) {", MAIN.index("void handleTouch()")):]
+char_case = editor_touch[editor_touch.index("case KeyKind::Character:"):editor_touch.index("case KeyKind::Backspace:")]
 require(char_case, "drawEditorTextField();", "partial text redraw")
 if "drawEditor();" in char_case:
     raise AssertionError("character input must not redraw the complete editor")
