@@ -369,3 +369,26 @@ La bandeja actual tiene TTL 15 min y almacén en memoria de proceso:
 es una prueba funcional, no entrega garantizada entre reinicios/réplicas.
 Primero despliegue el backend actualizado y posteriormente flashee el
 firmware aprobado por GitHub Actions.
+
+## Dictado desde PowerShell con EDITAR ORDEN 3C abierto
+
+El micrófono es el de Windows, no el del ESP32.
+Deje **EDITAR ORDEN 3C** abierto (indicador `VOZ PC: LISTO`).
+Una orden enviada como borrador desde `Enviar-Voz3C.ps1` puede
+reemplazar el texto predeterminado mientras la pantalla está abierta;
+`openReceivedVoiceInEditor` recarga el campo y envía el ACK a Databricks
+sin enviar la orden 3C ni escribir Google Sheets. Si el operador ya
+comenzó a modificar el texto manualmente, no se sobrescribe el editor
+con una orden de voz inesperada. Puede volver a INICIO y abrir
+nuevamente el editor para esperar el siguiente dictado.
+
+En el PC, desde
+`voice-embeding-in-databricks-for-esp32`:
+`./scripts/Enviar-Voz3C.ps1 -Microfono -EsperarEntrega`,
+o `./scripts/Activar-Microfono3C.ps1` para varias órdenes.
+`-Microfono` hace reconocimiento de voz local en Windows y usa
+Databricks para la entrega; `-AudioFile` sí usa Gemini alojado por API
+desde Databricks para la transcripción.
+
+Solo funciona cuando este firmware está instalado en el ESP32 real;
+compilar en PlatformIO no equivale a cargarlo por COM9.

@@ -46,3 +46,12 @@ assert "acknowledgeVoiceDraft(String(pending))" in worker
 assert "kVoiceAckRetryMs" in worker
 assert 'web.on("/health", HTTP_GET' in MAIN
 assert '"voice_poll_http"' not in MAIN or 'voice_poll_http' in MAIN
+
+# Dictation from PowerShell fills the on-screen 3C editor even if it was
+# already open, but never overwrites text manually edited on the touchscreen.
+assert 'if (commandEditorOpen || otaCommitEditorOpen || historyScreenOpen) return;' not in MAIN
+assert '(commandEditorOpen && editorTextTouched.load())' in MAIN
+assert 'display->print("VOZ PC: LISTO")' in MAIN
+assert 'editorTextTouched = true' in MAIN
+assert 'editorTextTouched = false' in MAIN
+assert "voiceEditorDeliveries.fetch_add(1)" in MAIN

@@ -238,6 +238,9 @@ std::atomic<unsigned long> voicePollAttempts{0};
 std::atomic<int> voicePollHttp{0};
 std::atomic<int> voiceAckHttp{0};
 std::atomic<unsigned long> voiceEditorDeliveries{0};
+// A remotely delivered voice draft can replace the default prompt but must
+// not overwrite a command the operator has started typing on the touchscreen.
+std::atomic<bool> editorTextTouched{false};
 
 unsigned long lastTouchActivityMs = 0;
 unsigned long lastHandledTapMs = 0;
@@ -329,6 +332,9 @@ void drawEditorFrame() {
   display->setTextColor(BLACK);
   display->setCursor(384, 16);
   display->print("HISTORIAL");
+  display->setTextSize(1);
+  display->setCursor(10, 16);
+  display->print("VOZ PC: LISTO");
 }
 
 void drawEditorTextField() {
@@ -1604,7 +1610,8 @@ bool acknowledgeVoiceDraft(const String& id) {
 
 // Called only by Arduino UI loop, not from the HTTPS worker.
 void openReceivedVoiceInEditor() {
-  if (commandEditorOpen || otaCommitEditorOpen || historyScreenOpen) return;
+  if (otaCommitEditorOpen || historyScreenOpen ||
+      (commandEditorOpen && editorTextTouched.load())) return;
   VoiceMailbox mailbox{};
   portENTER_CRITICAL(&voiceMux);
   if (incomingVoice.available) {
@@ -1618,6 +1625,7 @@ void openReceivedVoiceInEditor() {
     return;
   }
   commandEditorOpen = true;
+  editorTextTouched = false;
   homePanel = HomePanel::None;
   keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
   drawEditor();
@@ -2012,14 +2020,17 @@ void handleTouch() {
         using virtual_keyboard::KeyKind;
         switch (key.definition.kind) {
           case KeyKind::Character:
+            editorTextTouched = true;
             commandBuffer.insert(key.definition.label);
             drawEditorTextField();
             break;
           case KeyKind::Backspace:
+            editorTextTouched = true;
             commandBuffer.backspace();
             drawEditorTextField();
             break;
           case KeyKind::Space:
+            editorTextTouched = true;
             commandBuffer.insert(' ');
             drawEditorTextField();
             break;
@@ -2045,18 +2056,22 @@ void handleTouch() {
             drawPanel();
             break;
           case editor_ui::ToolbarAction::MoveLeft:
+            editorTextTouched = true;
             commandBuffer.moveLeft();
             drawEditorTextField();
             break;
           case editor_ui::ToolbarAction::MoveRight:
+            editorTextTouched = true;
             commandBuffer.moveRight();
             drawEditorTextField();
             break;
           case editor_ui::ToolbarAction::DeleteForward:
+            editorTextTouched = true;
             commandBuffer.deleteForward();
             drawEditorTextField();
             break;
           case editor_ui::ToolbarAction::Clear:
+            editorTextTouched = true;
             commandBuffer.clear();
             drawEditorTextField();
             break;
@@ -2132,6 +2147,7 @@ void handleTouch() {
         case home_ui::Action::Send3C:
           homePanel = HomePanel::None;
           commandEditorOpen = true;
+          editorTextTouched = false;
           keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
           drawEditor();
           break;
