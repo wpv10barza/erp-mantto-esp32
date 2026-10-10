@@ -231,6 +231,13 @@ struct VoiceMailbox {
 VoiceMailbox incomingVoice{};
 portMUX_TYPE voiceMux = portMUX_INITIALIZER_UNLOCKED;
 String lastVoiceDraftId; // network worker only; avoids duplicate while ACK is in flight.
+char voiceAckPendingId[40] = {};
+unsigned long lastVoiceAckAttemptMs = 0;
+constexpr unsigned long kVoiceAckRetryMs = 6000UL;
+std::atomic<unsigned long> voicePollAttempts{0};
+std::atomic<int> voicePollHttp{0};
+std::atomic<int> voiceAckHttp{0};
+std::atomic<unsigned long> voiceEditorDeliveries{0};
 
 unsigned long lastTouchActivityMs = 0;
 unsigned long lastHandledTapMs = 0;
@@ -1508,9 +1515,19 @@ bool installSelectedOta() {
 
 
 void pollVoiceDraft() {
-  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) return;
+  voicePollAttempts.fetch_add(1);
+  if (WiFi.status() != WL_CONNECTED) {
+    voicePollHttp = -10;
+    Serial.println("VOICE POLL: Wi-Fi disconnected");
+    return;
+  }
+  if (!ensureDatabricksAccessToken()) {
+    voicePollHttp = -11;
+    Serial.println("VOICE POLL: OAuth M2M unavailable");
+    return;
+  }
   portENTER_CRITICAL(&voiceMux);
-  const bool occupied = incomingVoice.available;
+  const bool occupied = incomingVoice.available || voiceAckPendingId[0] != '\0';
   portEXIT_CRITICAL(&voiceMux);
   if (occupied) return;
 
@@ -1522,8 +1539,17 @@ void pollVoiceDraft() {
   const int code = http.GET();
   const String line = code == 200 ? http.getString() : "";
   http.end();
+  voicePollHttp = code;
   if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
-  if (code != 200 || line.length() == 0) return;
+  if (code != 200) {
+    Serial.printf("VOICE POLL HTTP=%d device=%s (response omitted)\n",
+                  code, app_config::deviceId);
+    return;
+  }
+  if (!line.length()) {
+    Serial.printf("VOICE POLL HTTP=200 empty inbox device=%s\n", app_config::deviceId);
+    return;
+  }
   const int tab = line.indexOf('\t');
   if (tab <= 0 || tab > 40) return;
   const String id = line.substring(0, tab);
@@ -1545,17 +1571,35 @@ void pollVoiceDraft() {
                 id.c_str(), static_cast<unsigned>(text.length()));
 }
 
-void acknowledgeVoiceDraft(const String& id) {
-  if (id.length() != 36 || !ensureDatabricksAccessToken()) return;
+bool acknowledgeVoiceDraft(const String& id) {
+  if (id.length() != 36) return false;
+  if (!ensureDatabricksAccessToken()) {
+    voiceAckHttp = -11;
+    Serial.println("VOICE ACK: OAuth M2M unavailable; will retry");
+    return false;
+  }
   HTTPClient http;
-  if (!http.begin(endpoint("/api/device/v1/voice/drafts/" + id + "/ack"))) return;
+  if (!http.begin(endpoint("/api/device/v1/voice/drafts/" + id + "/ack"))) {
+    voiceAckHttp = -12;
+    Serial.println("VOICE ACK: invalid URL; will retry");
+    return false;
+  }
   http.setTimeout(app_config::httpTimeoutMs);
   addRequestAuth(http);
   http.addHeader("Content-Type", "application/json");
   const String payload = String("{\"device_id\":\"") + app_config::deviceId + "\"}";
   const int code = http.POST(payload);
   http.end();
+  voiceAckHttp = code;
+  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
   Serial.printf("VOICE 3C ACK HTTP=%d draft=%s\n", code, id.c_str());
+  if (code != 200) return false;
+  portENTER_CRITICAL(&voiceMux);
+  if (strncmp(voiceAckPendingId, id.c_str(), sizeof(voiceAckPendingId)) == 0) {
+    voiceAckPendingId[0] = '\0';
+  }
+  portEXIT_CRITICAL(&voiceMux);
+  return true;
 }
 
 // Called only by Arduino UI loop, not from the HTTPS worker.
@@ -1569,13 +1613,21 @@ void openReceivedVoiceInEditor() {
   }
   portEXIT_CRITICAL(&voiceMux);
   if (!mailbox.available || !mailbox.text[0]) return;
-  commandBuffer.set(mailbox.text);
+  if (!commandBuffer.set(mailbox.text)) {
+    Serial.println("VOICE 3C: editor refused the draft; no ACK");
+    return;
+  }
   commandEditorOpen = true;
   homePanel = HomePanel::None;
   keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
   drawEditor();
+  voiceEditorDeliveries.fetch_add(1);
+  portENTER_CRITICAL(&voiceMux);
+  strncpy(voiceAckPendingId, mailbox.id, sizeof(voiceAckPendingId) - 1);
+  voiceAckPendingId[sizeof(voiceAckPendingId) - 1] = '\0';
+  portEXIT_CRITICAL(&voiceMux);
   Serial.printf("VOICE 3C -> EDITAR ORDEN 3C (preview only, draft=%s)\n", mailbox.id);
-  queueNetworkRequest(NetworkAction::AckVoiceDraft, String(mailbox.id));
+  // Worker retries ACK until HTTP 200. A queue-full event cannot lose the ACK.
 }
 
 int send3CCommand(const String& rawCommand) {
@@ -1768,6 +1820,16 @@ void networkWorker(void* parameter) {
       lastVoicePollMs = millis();
       pollVoiceDraft();
     }
+    if (millis() - lastVoiceAckAttemptMs >= kVoiceAckRetryMs) {
+      char pending[40]{};
+      portENTER_CRITICAL(&voiceMux);
+      memcpy(pending, voiceAckPendingId, sizeof(pending));
+      portEXIT_CRITICAL(&voiceMux);
+      if (pending[0]) {
+        lastVoiceAckAttemptMs = millis();
+        acknowledgeVoiceDraft(String(pending));
+      }
+    }
     if (lastCommandId.length() &&
         millis() - lastCommandPoll >= app_config::commandPollMs) {
       lastCommandPoll = millis();
@@ -1790,10 +1852,25 @@ const char controlPage[] PROGMEM = R"HTML(
 void configureWebServer() {
   web.on("/", HTTP_GET, [] { web.send_P(200, "text/html; charset=utf-8", controlPage); });
   web.on("/health", HTTP_GET, [] {
+    bool voiceWaiting = false;
+    bool ackWaiting = false;
+    portENTER_CRITICAL(&voiceMux);
+    voiceWaiting = incomingVoice.available;
+    ackWaiting = voiceAckPendingId[0] != '\0';
+    portEXIT_CRITICAL(&voiceMux);
     const String body = String("{\"ok\":true,\"board\":\"ESP32-4848S040\",\"wifi\":") +
       (WiFi.status() == WL_CONNECTED ? "true" : "false") +
       ",\"backend\":" + (backendAvailable ? "true" : "false") +
       ",\"pending\":" + (pendingCommand ? "true" : "false") +
+      ",\"device_id\":\"" + String(app_config::deviceId) + "\"" +
+      ",\"fw_version\":\"" + String(kFirmwareVersion) + "\"" +
+      ",\"fw_commit\":\"" + String(kInstalledCommit) + "\"" +
+      ",\"voice_poll_count\":" + String(voicePollAttempts.load()) +
+      ",\"voice_poll_http\":" + String(voicePollHttp.load()) +
+      ",\"voice_ack_http\":" + String(voiceAckHttp.load()) +
+      ",\"voice_editor_deliveries\":" + String(voiceEditorDeliveries.load()) +
+      ",\"voice_waiting\":" + (voiceWaiting ? "true" : "false") +
+      ",\"voice_ack_pending\":" + (ackWaiting ? "true" : "false") +
       ",\"transport\":\"internet\"}";
     web.send(200, "application/json", body);
   });
@@ -2125,6 +2202,8 @@ void setup() {
   Serial.printf("GT911 I2C probe addr=0x%02X result=%u bus=400kHz\n", kTouchAddress, touchProbe);
   audioReady = initializeAudio();
   loadDeviceCredentials();
+  Serial.printf("FIRMWARE INSTALLED git_commit=%s fw=%s device_id=%s\n",
+                kInstalledCommit, kFirmwareVersion, app_config::deviceId);
   commandBuffer.set(app_config::commandBuffer.c_str());
   networkQueue = xQueueCreate(4, sizeof(NetworkRequest));
   uiQueue = xQueueCreate(1, sizeof(UiNotification));
