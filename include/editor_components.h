@@ -41,7 +41,7 @@ class EditorLayout {
   // Visible touch target in the top-right of the editor title bar.
   // Keep it separate from the lower toolbar and keyboard hitboxes.
   static constexpr Rect topRightHome() { return {378, 4, 470, 39}; }
-  static constexpr bool topRightHomeHit(int x, int y) {
+  static inline bool topRightHomeHit(int x, int y) {
     const Rect button = topRightHome();
     constexpr int inset = 3;
     return x >= button.left + inset && x < button.right - inset &&
