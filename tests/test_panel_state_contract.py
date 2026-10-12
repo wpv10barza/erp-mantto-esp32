@@ -32,12 +32,12 @@ require(MAIN, 'else {\n    setProtocolError("POLL", status.length() ? String("es
 # Success/rejection are terminal and visible; pending is the only polling state that remains active.
 require(MAIN, 'updatePanel(PanelState::Applied, result.length() ? result : "Confirmado en backend 3C", true);')
 require(MAIN, 'updatePanel(PanelState::Rejected, result.length() ? result : "Rechazado en backend 3C", true);')
-require(MAIN, 'emitCommandFlow(PanelState::Pending, "Flujo activo / Procesando...");')
+require(MAIN, 'emitCommandFlow(PanelState::Pending, "PENDIENTE: REVISION WEB");')
 require(MAIN, 'updatePanel(PanelState::Pending, "Flujo activo / Procesando...");')
-require(MAIN, 'emitCommandFlow(PanelState::Applied, "Aprobado / Applied", true);')
-require(MAIN, 'emitCommandFlow(PanelState::Rejected, "Desaprobado / Rejected", true);')
+require(MAIN, 'emitCommandFlow(PanelState::Applied, "APLICADO: SHEETS ACTUALIZADO", true);')
+require(MAIN, 'emitCommandFlow(PanelState::Rejected, "RECHAZADO: SIN CAMBIOS", true);')
 require(MAIN, 'status == "approved"')
-require(MAIN, 'Aprobado / Sin aplicar')
+require(MAIN, 'APROBADO: SIN APLICAR')
 
 print("Panel state contract: PASS")
 print("- health/POST/poll failures -> visible ERROR")
