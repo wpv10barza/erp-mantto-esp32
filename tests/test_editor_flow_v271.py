@@ -53,6 +53,7 @@ for expected in (
 assert 'emitCommandFlow(PanelState::Applied, "Aprobado / Applied", true)' in cpp
 assert 'emitCommandFlow(PanelState::Rejected, "Desaprobado / Rejected", true)' in cpp
 assert "status == \"approved\"" in cpp
+assert "if (editorFlowPending || otaCommitEditorOpen || historyScreenOpen ||" in cpp
 assert "lastCommandId = \"\";" in cpp
 assert '"pipeline' not in cpp.lower()
 

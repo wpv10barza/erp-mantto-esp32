@@ -30,8 +30,8 @@
     "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "d31292cabd63c603fb2a0bf297da305343af4c61",
-    "src/main.cpp": "d31292cabd63c603fb2a0bf297da305343af4c61",
+    "platformio/src/panel_4848s040/main.cpp": "aa2ffd5f86aa16551e1d26eef00d0a9197ab276d",
+    "src/main.cpp": "aa2ffd5f86aa16551e1d26eef00d0a9197ab276d",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -155,7 +155,8 @@
       "status_text_rejected": "Desaprobado / Rejected",
       "approvals_not_equated_to_sheet_writes": true,
       "state_notifications": "dedicated FreeRTOS queue; drawn only by UI task",
-      "keyboard_partial_redraw": true
+      "keyboard_partial_redraw": true,
+      "no_voice_overwrite_while_pending": true
     }
   }
 }

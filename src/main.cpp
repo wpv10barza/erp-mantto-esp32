@@ -1802,7 +1802,8 @@ bool acknowledgeVoiceDraft(const String& id) {
 
 // Called only by Arduino UI loop, not from the HTTPS worker.
 void openReceivedVoiceInEditor() {
-  if (otaCommitEditorOpen || historyScreenOpen ||
+  // Never replace the submitted command before Device API terminal status.
+  if (editorFlowPending || otaCommitEditorOpen || historyScreenOpen ||
       (commandEditorOpen && editorTextTouched.load())) return;
   VoiceMailbox mailbox{};
   portENTER_CRITICAL(&voiceMux);
