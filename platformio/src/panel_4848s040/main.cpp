@@ -287,7 +287,7 @@ bool commandEditorOpen = false;
 // until a terminal API response or a local send/transport failure.
 bool editorFlowPending = false;
 PanelState editorFlowState = PanelState::Ready;
-String editorFlowMessage = "Flujo: listo para enviar";
+String editorFlowMessage = "3C: listo para enviar";
 
 struct TouchSample {
   bool ready = false;
@@ -1823,6 +1823,7 @@ void openReceivedVoiceInEditor() {
   voicePcUiDirty = false;
   homePanel = HomePanel::None;
   keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
+  setEditorFlowStatus(PanelState::Ready, "3C: borrador listo", true);
   drawEditor();
   voiceEditorDeliveries.fetch_add(1);
   portENTER_CRITICAL(&voiceMux);
@@ -1891,7 +1892,7 @@ int send3CCommand(const String& rawCommand) {
     }
     lastCommandPoll = millis();
     pendingCommand = true;
-    emitCommandFlow(PanelState::Pending, "Flujo activo / Procesando...");
+    emitCommandFlow(PanelState::Pending, "PENDIENTE: REVISION WEB");
     updatePanel(PanelState::Pending, "CONFIRMACIÓN REQUERIDA EN WEB", true);
   } else {
     setTransportError("POST", code, lastBackendMessage, true);
@@ -1929,12 +1930,12 @@ void pollCommandStatus() {
   Serial.printf("GET command status -> %d status=%s result=%s\n", code, status.c_str(), result.c_str());
 
   if (status == "applied") {
-    emitCommandFlow(PanelState::Applied, "Aprobado / Applied", true);
+    emitCommandFlow(PanelState::Applied, "APLICADO: SHEETS ACTUALIZADO", true);
     updatePanel(PanelState::Applied, result.length() ? result : "Confirmado en backend 3C", true);
     lastCommandId = "";
     pendingCommand = false;
   } else if (status == "rejected") {
-    emitCommandFlow(PanelState::Rejected, "Desaprobado / Rejected", true);
+    emitCommandFlow(PanelState::Rejected, "RECHAZADO: SIN CAMBIOS", true);
     updatePanel(PanelState::Rejected, result.length() ? result : "Rechazado en backend 3C", true);
     lastCommandId = "";
     pendingCommand = false;
@@ -1943,14 +1944,14 @@ void pollCommandStatus() {
   } else if (status == "approved" || status == "approved_not_applied") {
     // Approval alone is NOT a successful Sheets write; keep polling.
     backendAvailable = true;
-    emitCommandFlow(PanelState::Pending, "Aprobado / Sin aplicar");
+    emitCommandFlow(PanelState::Pending, "APROBADO: SIN APLICAR");
     updatePanel(PanelState::Pending, "Aprobado, aun no aplicado");
   } else if (status == "pending_confirmation" || status == "pending" ||
              status == "pendiente" || status == "running" ||
              status == "processing" || status == "in_progress" ||
              status == "queued" || status == "proposed") {
     backendAvailable = true;
-    emitCommandFlow(PanelState::Pending, "Flujo activo / Procesando...");
+    emitCommandFlow(PanelState::Pending, "PENDIENTE: REVISION WEB");
     updatePanel(PanelState::Pending, "Flujo activo / Procesando...");
   } else {
     setProtocolError("POLL", status.length() ? String("estado desconocido '") + status + "'" : "falta status");
@@ -2259,6 +2260,8 @@ void handleTouch() {
         return;
       }
       if (tap.y < 43 && tap.x >= 358) {
+        // Keep the command and status visible until the remote outcome is known.
+        if (editorFlowPending) return;
         showHistoryScreen(false);
         return;
       }
@@ -2308,6 +2311,8 @@ void handleTouch() {
         const auto action = editor_ui::ToolbarComponent::hitTest(tap.x, tap.y);
         switch (action) {
           case editor_ui::ToolbarAction::Home:
+            // A pending command must not vanish from the touchscreen.
+            if (editorFlowPending) break;
             commandEditorOpen = false;
             homePanel = HomePanel::None;
             drawPanel();
@@ -2411,6 +2416,7 @@ void handleTouch() {
           commandEditorOpen = true;
           editorTextTouched = false;
           keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
+          setEditorFlowStatus(PanelState::Ready, "3C: listo para enviar", true);
           drawEditor();
           break;
         case home_ui::Action::Backend:

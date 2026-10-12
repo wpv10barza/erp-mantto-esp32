@@ -33,6 +33,13 @@ for needle, label in [
     ('"ENVIAR 3C"', "3C action"),
     ("drawExpandedPanel()", "expandable detail renderer"),
     ("drawEditorTextField()", "partial editor redraw"),
+    ('"PENDIENTE: REVISION WEB"', "explicit awaiting human review"),
+    ('"APROBADO: SIN APLICAR"', "approval is not a Sheets write"),
+    ('"APLICADO: SHEETS ACTUALIZADO"', "successful applied status"),
+    ('"RECHAZADO: SIN CAMBIOS"', "rejected order feedback"),
+    ('if (editorFlowPending) break;', "pending command cannot dismiss editor"),
+    ('if (editorFlowPending) return;', "pending command cannot open history"),
+
     ("checkCloudStack()", "cloud plus Sheets verifier"),
     ('endpoint("/api/device/v1/cloud/verify")', "read-only Sheets verification"),
     ('kFirmwareVersion[] = "2.7.1-flow-status"', "final firmware identity"),

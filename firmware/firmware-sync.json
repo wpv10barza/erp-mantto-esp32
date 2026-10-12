@@ -30,8 +30,8 @@
     "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "aa2ffd5f86aa16551e1d26eef00d0a9197ab276d",
-    "src/main.cpp": "aa2ffd5f86aa16551e1d26eef00d0a9197ab276d",
+    "platformio/src/panel_4848s040/main.cpp": "7dfa8dca040b7208fea46651c39979c5475a0d26",
+    "src/main.cpp": "7dfa8dca040b7208fea46651c39979c5475a0d26",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -150,13 +150,16 @@
         "right": 468,
         "bottom": 164
       },
-      "status_text_active": "Flujo activo / Procesando...",
-      "status_text_applied": "Aprobado / Applied",
-      "status_text_rejected": "Desaprobado / Rejected",
+      "status_text_active": "PENDIENTE: REVISION WEB",
+      "status_text_applied": "APLICADO: SHEETS ACTUALIZADO",
+      "status_text_rejected": "RECHAZADO: SIN CAMBIOS",
       "approvals_not_equated_to_sheet_writes": true,
       "state_notifications": "dedicated FreeRTOS queue; drawn only by UI task",
       "keyboard_partial_redraw": true,
-      "no_voice_overwrite_while_pending": true
+      "no_voice_overwrite_while_pending": true,
+      "status_text_approved_unapplied": "APROBADO: SIN APLICAR",
+      "pending_keeps_editor_visible": true,
+      "approval_not_a_sheet_write": true
     }
   }
 }
