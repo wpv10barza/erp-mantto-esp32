@@ -30,12 +30,12 @@
     "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "51fc6ceb859320979aa5b794de80b54a91f36736",
-    "src/main.cpp": "51fc6ceb859320979aa5b794de80b54a91f36736",
+    "platformio/src/panel_4848s040/main.cpp": "d31292cabd63c603fb2a0bf297da305343af4c61",
+    "src/main.cpp": "d31292cabd63c603fb2a0bf297da305343af4c61",
     "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
-    "include/editor_components.h": "020f12663522ddf1eed0ecb28ab2a5e36eda9f54",
+    "include/editor_components.h": "0f5a47a4e77e8afff3a67876af4ad2327be55959",
     "include/panel_gpio.h": "5439ae00de14e9b3e3cb407a913f9e417f5546b8",
     "include/touch_input.h": "859e2ee6d4f3e17d34c4909ae385a69c8ebdcfc2",
     "include/home_menu.h": "177c6d8028bc26badd888bfa8b2dd0c6bca87a3e",
@@ -50,11 +50,12 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.1-pc-dictation",
+    "version": "2.7.1-flow-status",
     "role": "final_interface_commit_picker_and_guarded_OTA_with_pc_dictation",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
+      "flow_status_display",
       "toolbar",
       "virtual_keyboard"
     ],
@@ -139,6 +140,22 @@
       "capture_request_endpoint": "/api/device/v1/voice/capture/request",
       "windows_consent_agent_required": true,
       "removes_default_editor_text_on_capture": true
+    },
+    "editor_flow": {
+      "enter_keeps_editor": true,
+      "command_and_viewport_frozen_while_pending": true,
+      "status_rect_px": {
+        "left": 12,
+        "top": 146,
+        "right": 468,
+        "bottom": 164
+      },
+      "status_text_active": "Flujo activo / Procesando...",
+      "status_text_applied": "Aprobado / Applied",
+      "status_text_rejected": "Desaprobado / Rejected",
+      "approvals_not_equated_to_sheet_writes": true,
+      "state_notifications": "dedicated FreeRTOS queue; drawn only by UI task",
+      "keyboard_partial_redraw": true
     }
   }
 }

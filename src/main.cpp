@@ -66,7 +66,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.7.1-pc-dictation";
+constexpr char kFirmwareVersion[] = "2.7.1-flow-status";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // This 40-character commit is EMBEDDED by PlatformIO at build time.
 // It identifies the running binary, not whatever the user typed into OTA.
@@ -221,8 +221,25 @@ struct UiNotification {
   char detail[160];
   bool sound;
 };
+// Separate one-slot queue: health/history notices must never overwrite a
+// 3C transaction result. Only Arduino loop owns framebuffer drawing.
+struct CommandFlowNotification {
+  PanelState state;
+  bool terminal;
+  char message[64];
+};
 QueueHandle_t networkQueue = nullptr;
 QueueHandle_t uiQueue = nullptr;
+QueueHandle_t commandFlowQueue = nullptr;
+
+void emitCommandFlow(PanelState state, const char* message, bool terminal = false) {
+  if (!commandFlowQueue) return;
+  CommandFlowNotification notice{};
+  notice.state = state;
+  notice.terminal = terminal;
+  strncpy(notice.message, message, sizeof(notice.message) - 1);
+  xQueueOverwrite(commandFlowQueue, &notice);
+}
 TaskHandle_t networkTaskHandle = nullptr;
 std::atomic<bool> pendingCommand{false};
 // 0=not checked, 1=checking, 2=actual Google Sheets read succeeded,
@@ -266,6 +283,11 @@ constexpr size_t kCommandCapacity = 240;
 CommandBuffer<kCommandCapacity> commandBuffer;
 virtual_keyboard::KeyboardMode keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
 bool commandEditorOpen = false;
+// UI-owned state; the 3C command and horizontal text viewport are frozen
+// until a terminal API response or a local send/transport failure.
+bool editorFlowPending = false;
+PanelState editorFlowState = PanelState::Ready;
+String editorFlowMessage = "Flujo: listo para enviar";
 
 struct TouchSample {
   bool ready = false;
@@ -378,6 +400,43 @@ void drawEditorTextField() {
   display->drawFastVLine(cursorX, field.top + 24, 28, BLACK);
 }
 
+// The 18px reserved strip sits below the input (bottom=146) and above
+// the toolbar (top=164). No keyboard or viewport redraw on status changes.
+void drawStatusDisplay(const char* message, uint16_t color) {
+  if (!displayReady || !commandEditorOpen || otaCommitEditorOpen) return;
+  const auto area = editor_ui::EditorLayout::statusDisplay();
+  display->fillRect(area.left, area.top, area.width(), area.height(), WHITE);
+  display->setTextColor(color);
+  display->setTextSize(2);  // 12px wide, 16px high: readable on 480x480.
+  display->setCursor(area.left + 6, area.top + 1);
+  display->print(message);
+}
+
+uint16_t editorFlowColor(PanelState state) {
+  // Dark yellow/green/red ink matches the thesis' restrained light palette.
+  // Yellow is deep amber to maintain contrast on a white status strip.
+  switch (state) {
+    case PanelState::Busy:
+    case PanelState::Pending:  return color565(153, 99, 0);
+    case PanelState::Applied:  return color565(14, 110, 48);
+    case PanelState::Rejected:
+    case PanelState::Error:    return color565(169, 38, 46);
+    default:                   return BLACK;
+  }
+}
+
+void setEditorFlowStatus(PanelState state, const char* message, bool terminal) {
+  const String next(message ? message : "");
+  const bool changed = editorFlowState != state || editorFlowMessage != next;
+  editorFlowState = state;
+  editorFlowMessage = next;
+  editorFlowPending = !terminal;
+  if (changed && commandEditorOpen && !historyScreenOpen &&
+      !otaCommitEditorOpen) {
+    drawStatusDisplay(editorFlowMessage.c_str(), editorFlowColor(state));
+  }
+}
+
 void drawEditorToolbar() {
   if (!displayReady) return;
   for (const auto& button : editor_ui::ToolbarComponent::buttons()) {
@@ -435,6 +494,7 @@ void drawEditor() {
   if (!displayReady) return;
   drawEditorFrame();
   drawEditorTextField();
+  drawStatusDisplay(editorFlowMessage.c_str(), editorFlowColor(editorFlowState));
   drawEditorToolbar();
   drawEditorKeyboard();
 }
@@ -938,6 +998,7 @@ String normalizedStatus(String status) {
 
 void setTransportError(const char* phase, int code, const String& detail, bool clearCommand) {
   backendAvailable = false;
+  emitCommandFlow(PanelState::Error, "Flujo: error de red", true);
   if (clearCommand) { lastCommandId = ""; pendingCommand = false; }
   const String message = String(phase) + " HTTP " + code;
   updatePanel(PanelState::Error, message, true);
@@ -946,6 +1007,7 @@ void setTransportError(const char* phase, int code, const String& detail, bool c
 
 void setProtocolError(const char* phase, const String& detail) {
   backendAvailable = false;
+  emitCommandFlow(PanelState::Error, "Flujo: respuesta invalida", true);
   lastCommandId = "";
   pendingCommand = false;
   const String message = String(phase) + ": " + (detail.length() ? detail : "respuesta invalida");
@@ -1774,20 +1836,25 @@ int send3CCommand(const String& rawCommand) {
   String command = rawCommand;
   command.trim();
   if (!command.length()) {
+    emitCommandFlow(PanelState::Error, "Flujo: comando vacio", true);
     updatePanel(PanelState::Error, "Comando vacio", true);
     return 400;
   }
   if (WiFi.status() != WL_CONNECTED) {
+    emitCommandFlow(PanelState::Error, "Flujo: sin Internet", true);
     updatePanel(PanelState::Offline, "Sin acceso a Internet", true);
     return 503;
   }
 
+  emitCommandFlow(PanelState::Busy, "Flujo activo / Procesando...");
   updatePanel(PanelState::Busy, "Enviando a Databricks", true);
   if (!backendBaseUrl().length()) {
+    emitCommandFlow(PanelState::Error, "Flujo: URL no configurada", true);
     updatePanel(PanelState::Error, "Endpoint no configurado", true);
     return 503;
   }
   if (!ensureDatabricksAccessToken()) {
+    emitCommandFlow(PanelState::Error, "Flujo: sin autorizacion", true);
     updatePanel(PanelState::Error, lastBackendMessage, true);
     return 503;
   }
@@ -1795,6 +1862,7 @@ int send3CCommand(const String& rawCommand) {
   HTTPClient http;
   http.setTimeout(app_config::httpTimeoutMs);
   if (!http.begin(endpoint("/api/device/v1/commands"))) {
+    emitCommandFlow(PanelState::Error, "Flujo: endpoint invalido", true);
     updatePanel(PanelState::Error, "No se pudo abrir endpoint 3C", true);
     return 503;
   }
@@ -1822,6 +1890,7 @@ int send3CCommand(const String& rawCommand) {
     }
     lastCommandPoll = millis();
     pendingCommand = true;
+    emitCommandFlow(PanelState::Pending, "Flujo activo / Procesando...");
     updatePanel(PanelState::Pending, "CONFIRMACIÓN REQUERIDA EN WEB", true);
   } else {
     setTransportError("POST", code, lastBackendMessage, true);
@@ -1859,18 +1928,29 @@ void pollCommandStatus() {
   Serial.printf("GET command status -> %d status=%s result=%s\n", code, status.c_str(), result.c_str());
 
   if (status == "applied") {
+    emitCommandFlow(PanelState::Applied, "Aprobado / Applied", true);
     updatePanel(PanelState::Applied, result.length() ? result : "Confirmado en backend 3C", true);
     lastCommandId = "";
     pendingCommand = false;
   } else if (status == "rejected") {
+    emitCommandFlow(PanelState::Rejected, "Desaprobado / Rejected", true);
     updatePanel(PanelState::Rejected, result.length() ? result : "Rechazado en backend 3C", true);
     lastCommandId = "";
     pendingCommand = false;
   } else if (status == "error" || status == "failed" || status == "fallido") {
     setProtocolError("POLL", result.length() ? result : "Error reportado por backend 3C");
-  } else if (status == "pending_confirmation" || status == "pending" || status == "pendiente") {
+  } else if (status == "approved" || status == "approved_not_applied") {
+    // Approval alone is NOT a successful Sheets write; keep polling.
     backendAvailable = true;
-    updatePanel(PanelState::Pending, "CONFIRMACIÓN REQUERIDA EN WEB");
+    emitCommandFlow(PanelState::Pending, "Aprobado / Sin aplicar");
+    updatePanel(PanelState::Pending, "Aprobado, aun no aplicado");
+  } else if (status == "pending_confirmation" || status == "pending" ||
+             status == "pendiente" || status == "running" ||
+             status == "processing" || status == "in_progress" ||
+             status == "queued" || status == "proposed") {
+    backendAvailable = true;
+    emitCommandFlow(PanelState::Pending, "Flujo activo / Procesando...");
+    updatePanel(PanelState::Pending, "Flujo activo / Procesando...");
   } else {
     setProtocolError("POLL", status.length() ? String("estado desconocido '") + status + "'" : "falta status");
   }
@@ -1906,10 +1986,17 @@ bool queueNetworkRequest(NetworkAction action, const String& command) {
 }
 
 void processNetworkUiUpdates() {
-  if (!uiQueue) return;
-  UiNotification notice{};
-  if (xQueueReceive(uiQueue, &notice, 0) == pdTRUE) {
-    updatePanel(notice.state, String(notice.detail), notice.sound);
+  if (uiQueue) {
+    UiNotification notice{};
+    if (xQueueReceive(uiQueue, &notice, 0) == pdTRUE) {
+      updatePanel(notice.state, String(notice.detail), notice.sound);
+    }
+  }
+  if (commandFlowQueue) {
+    CommandFlowNotification flow{};
+    if (xQueueReceive(commandFlowQueue, &flow, 0) == pdTRUE) {
+      setEditorFlowStatus(flow.state, flow.message, flow.terminal);
+    }
   }
 }
 
@@ -2103,6 +2190,7 @@ void handleTouch() {
           case KeyKind::Space:
             break;  // a commit SHA never contains spaces
           case KeyKind::ToggleAlphaNumeric:
+            if (editorFlowPending) break;
             keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
               ? virtual_keyboard::KeyboardMode::NumericSymbols :
                 virtual_keyboard::KeyboardMode::Alpha;
@@ -2153,6 +2241,8 @@ void handleTouch() {
     }
     if (commandEditorOpen) {
       if (tap.y < 43 && tap.x < 139) {
+        // Never replace a command while Databricks is still processing it.
+        if (editorFlowPending) return;
         // An explicit touch is consent to replace the current editor preview.
         if (!voicePcRequested.load()) {
           if (queueNetworkRequest(NetworkAction::RequestPcVoice)) {
@@ -2176,25 +2266,35 @@ void handleTouch() {
         using virtual_keyboard::KeyKind;
         switch (key.definition.kind) {
           case KeyKind::Character:
+            if (editorFlowPending) break;
             editorTextTouched = true;
             commandBuffer.insert(key.definition.label);
             drawEditorTextField();
             break;
           case KeyKind::Backspace:
+            if (editorFlowPending) break;
             editorTextTouched = true;
             commandBuffer.backspace();
             drawEditorTextField();
             break;
           case KeyKind::Space:
+            if (editorFlowPending) break;
             editorTextTouched = true;
             commandBuffer.insert(' ');
             drawEditorTextField();
             break;
           case KeyKind::Enter:
+            // Keep editor visible. Lock command/viewport until API is terminal.
+            if (editorFlowPending) break;
             app_config::commandBuffer = commandBuffer.c_str();
-            commandEditorOpen = false;
-            drawPanel();
-            queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);
+            if (queueNetworkRequest(NetworkAction::Send3C,
+                                    app_config::commandBuffer)) {
+              setEditorFlowStatus(PanelState::Busy,
+                                  "Flujo activo / Procesando...", false);
+            } else {
+              setEditorFlowStatus(PanelState::Error,
+                                  "Flujo: no se pudo enviar", true);
+            }
             return;
           case KeyKind::ToggleAlphaNumeric:
             keyboardMode = keyboardMode == virtual_keyboard::KeyboardMode::Alpha
@@ -2212,26 +2312,31 @@ void handleTouch() {
             drawPanel();
             break;
           case editor_ui::ToolbarAction::MoveLeft:
+            if (editorFlowPending) break;
             editorTextTouched = true;
             commandBuffer.moveLeft();
             drawEditorTextField();
             break;
           case editor_ui::ToolbarAction::MoveRight:
+            if (editorFlowPending) break;
             editorTextTouched = true;
             commandBuffer.moveRight();
             drawEditorTextField();
             break;
           case editor_ui::ToolbarAction::DeleteForward:
+            if (editorFlowPending) break;
             editorTextTouched = true;
             commandBuffer.deleteForward();
             drawEditorTextField();
             break;
           case editor_ui::ToolbarAction::Clear:
+            if (editorFlowPending) break;
             editorTextTouched = true;
             commandBuffer.clear();
             drawEditorTextField();
             break;
           case editor_ui::ToolbarAction::None:
+            if (editorFlowPending) break;
             if (editor_ui::EditorLayout::inTextField(tap.x, tap.y)) {
               String text(commandBuffer.c_str());
               if (text.length()) {
@@ -2383,7 +2488,8 @@ void setup() {
   commandBuffer.set(app_config::commandBuffer.c_str());
   networkQueue = xQueueCreate(4, sizeof(NetworkRequest));
   uiQueue = xQueueCreate(1, sizeof(UiNotification));
-  if (!networkQueue || !uiQueue ||
+  commandFlowQueue = xQueueCreate(1, sizeof(CommandFlowNotification));
+  if (!networkQueue || !uiQueue || !commandFlowQueue ||
       xTaskCreatePinnedToCore(networkWorker, "3c_network", 16384, nullptr, 1,
                               &networkTaskHandle, 0) != pdPASS) {
     Serial.println("[ERROR] no se pudo iniciar task HTTPS");

@@ -11,7 +11,7 @@ assert "board_build.partitions = partitions_ota_16mb.csv" in PIO
 for name in ("otadata", "ota_0", "ota_1"):
     assert name in PARTITIONS, f"missing OTA partition {name}"
 required = [
-    'kFirmwareVersion[] = "2.7.1-pc-dictation"',
+    'kFirmwareVersion[] = "2.7.1-flow-status"',
     'kInstalledCommit[] = FIRMWARE_SOURCE_COMMIT',
     'void drawOtaCommitEditor()',
     'display->print(kInstalledCommit)',

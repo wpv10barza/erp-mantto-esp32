@@ -12,7 +12,7 @@ for expected in (
     'constexpr unsigned long kMissingReleaseMs = 80',
     'display->fillScreen(WHITE)',
     'display->setTextColor(BLACK)',
-    'kFirmwareVersion[] = "2.7.1-pc-dictation"',
+    'kFirmwareVersion[] = "2.7.1-flow-status"',
 ):
     assert expected in MAIN, f"missing async/white UI invariant: {expected}"
 loop = MAIN[MAIN.index("void loop() {"):]
@@ -20,5 +20,9 @@ for forbidden in ("checkBackendHealth();", "pollCommandStatus();", "send3CComman
     assert forbidden not in loop, f"UI loop still has blocking code: {forbidden}"
 renderer = MAIN[MAIN.index("void drawButton("):MAIN.index("void playTone(")]
 assert "setTextColor(WHITE)" not in renderer
-assert "color565(" not in renderer
+# Color is permitted ONLY in the independent 18px editor status strip.
+status_colors = renderer[renderer.index("uint16_t editorFlowColor("):
+                         renderer.index("void drawEditorToolbar()")]
+assert "color565(" in status_colors
+assert "color565(" not in renderer.replace(status_colors, "")
 print("Async Databricks worker and white/black touchscreen: PASS")

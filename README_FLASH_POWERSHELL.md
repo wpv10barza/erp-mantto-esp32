@@ -392,3 +392,36 @@ desde Databricks para la transcripción.
 
 Solo funciona cuando este firmware está instalado en el ESP32 real;
 compilar en PlatformIO no equivale a cargarlo por COM9.
+
+
+## Firmware v2.7.1: el editor permanece abierto tras ENTER
+
+En el panel táctil **EDITAR ORDEN 3C**, ENTER pone en cola el comando
+sin llamar a `drawPanel()`, sin cerrar el editor y sin limpiar ni
+mover el viewport del `commandBuffer`. Mientras Databricks responde,
+la edición se bloquea para preservar exactamente la solicitud enviada
+y evitar dobles envíos. Al recibir un estado terminal, se desbloquea.
+
+La nueva zona fija de estado ocupa `x=12..468, y=146..164`, entre
+el campo de texto (hasta y=146) y el toolbar (desde y=164), fuera del
+teclado (y>=224). Solamente esa banda se refresca al cambiar el estado,
+sin parpadeos ni redibujado del campo o las teclas. Estados:
+
+- Amarillo oscuro: `Flujo activo / Procesando...` (incluye pendiente).
+- Verde: `Aprobado / Applied` (solo si Device API devuelve `applied`).
+- Rojo: `Desaprobado / Rejected` (solo si devuelve `rejected`).
+- Amarillo oscuro: `Aprobado / Sin aplicar` si devuelve `approved`;
+  no debe confundirse aprobación con escritura confirmada de Sheets.
+- Rojo: `Flujo: error de red` o error de protocolo; conserva el texto
+  para reintentar.
+
+Los colores se limitan al estado, con tinta oscura sobre blanco para
+legibilidad, inspirados en la paleta pastel de la referencia visual;
+la pantalla conserva el diseño en blanco/negro. Los textos de pantalla
+emplean «Flujo», nunca «pipeline».
+
+**Importante:** el código de GitHub, la CI y la compilación no demuestran
+que esté ejecutándose el firmware en el ESP32 físico. Tras confirmar
+la compilación, instalar por USB/OTA siguiendo las precauciones de
+credenciales y particiones; después probar un borrador no destructivo.
+La solicitud a Device API NO modifica Google Sheets por sí misma.

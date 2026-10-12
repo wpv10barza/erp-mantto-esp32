@@ -40,6 +40,8 @@ class EditorLayout {
   static constexpr Rect title() { return {0, 0, 480, 42}; }
   static constexpr Rect textField() { return {12, 48, 468, 146}; }
   static constexpr Rect toolbar() { return {12, 164, 468, 212}; }
+  // 18px gap between input and toolbar. No key hit zones overlap.
+  static constexpr Rect statusDisplay() { return {12, 146, 468, 164}; }
 
   static constexpr bool inTextField(int x, int y) {
     return textField().contains(x, y);
