@@ -73,3 +73,4 @@ jobs:
           python tests/test_touch_gpio_contract.py
           python test/command_buffer_regression.py
           python tests/test_production_firmware.py
+          python tests/test_flash_powershell_contract.py

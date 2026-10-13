@@ -11,6 +11,32 @@ Este procedimiento actualiza el repositorio `wpv10barza/erp-mantto-esp32` desde 
 
 El cuaderno contiene una guía Markdown para consultar desde Colab/Drive. Los comandos PowerShell se ejecutan en Windows, donde está conectado el ESP32; el runtime remoto de Colab no accede al puerto COM de tu equipo. Esta guía versionada es la referencia actual si el cuaderno conserva instrucciones anteriores.
 
+## Ruta recomendada: flasheo Windows con autodetección y log (2026-10-12)
+
+El firmware `panel_4848s040` puede compilar correctamente y fallar al cargarlo si se indica un puerto inexistente, por ejemplo `COM9`. El **push a GitHub no flashea** el hardware: la carga USB debe ejecutarse en Windows, con el ESP32 conectado. Este script no utiliza WSL, no borra NVS y no modifica Databricks ni Google Sheets.
+
+En el repositorio local actualizado a `main`:
+
+```powershell
+cd C:\Users\ASUS\erp-mantto-esp32
+git pull --ff-only origin main
+.\scripts\Flash-ESP32-3C.ps1 -ListPorts
+```
+
+Si Windows identifica **un solo** dispositivo USB-serie reconocido como ESP32/CP210x/CH340/FTDI, el script selecciona su COM automáticamente. Si hay varios candidatos, o ninguno, **no intenta flashear** y solicita indicar el puerto explícitamente. Un COM Bluetooth aislado nunca se elige como ESP32.
+
+```powershell
+# Flashear al puerto USB identificado y guardar 20 segundos de salida serie:
+.\scripts\Flash-ESP32-3C.ps1 -SerialSeconds 20
+
+# O bien, si el diagnóstico confirma COM5:
+.\scripts\Flash-ESP32-3C.ps1 -Port COM5 -SerialSeconds 20
+```
+
+El registro queda en `flash-logs/flash-AAAAMMDD-HHMMSS.log`, **ignorado por Git**. Contiene commit local, puertos, resultado real de PlatformIO y, opcionalmente, datos serie. Revísalo y elimina tokens o datos sensibles antes de compartirlo. `SUCCESS` en compilación no significa que la carga USB haya sido exitosa: el script exige que el proceso `upload` termine con código cero.
+
+Por seguridad exige `include/local_config.h` local. Si las credenciales ya fueron verificadas y guardadas en NVS y no existe ese archivo, se puede permitir explícitamente con `-AllowMissingConfig`; no lo utilices para una primera instalación. Si el puerto no aparece, comprueba el cable de datos, el Administrador de dispositivos de Windows y el modo BOOT/RESET. Los directorios locales no versionados, incluido el repositorio de voz anidado, no se borran ni se agregan al commit.
+
 ## 1. Requisitos en Windows
 
 Instala Git for Windows, Python 3.12 o compatible y el controlador USB del ESP32-S3 si Windows no crea un puerto COM. Después abre **PowerShell**:
@@ -38,7 +64,7 @@ Si ya existe el repositorio:
 cd $HOME\erp-mantto-esp32
 git status --short
 # Si aparecen cambios locales, consérvalos antes de continuar.
-if (git status --porcelain) { throw "Hay cambios locales; guárdalos antes de actualizar." }
+if (git status --porcelain --untracked-files=no) { throw "Hay cambios en archivos versionados; revísalos antes de actualizar." }
 git fetch origin main --prune
 if ($LASTEXITCODE -ne 0) { throw "Falló git fetch." }
 git checkout main

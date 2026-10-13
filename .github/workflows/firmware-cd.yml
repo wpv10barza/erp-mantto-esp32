@@ -47,6 +47,7 @@ jobs:
           python tests/test_history_ui_contract.py
           python tests/test_async_white_ui_contract.py
           python tests/test_production_firmware.py
+          python tests/test_flash_powershell_contract.py
           grep -q '/api/device/v1/health' cloud/app/main.py
           grep -q '/api/device/v1/commands' cloud/app/main.py
           grep -q 'requires_human_confirmation' cloud/app/main.py
@@ -68,6 +69,7 @@ jobs:
           grep -q 'origin/main' PCU-ERP-MANTTO-ESP32.ps1
           grep -q 'firmware\\firmware-sync.json' PCU-ERP-MANTTO-ESP32.ps1
           pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("PCU-ERP-MANTTO-ESP32.ps1",[ref]$tokens,[ref]$errors) > $null; if($errors.Count){$errors | ForEach-Object { Write-Error $_.Message }; exit 1}'
+          pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/Flash-ESP32-3C.ps1",[ref]$tokens,[ref]$errors) > $null; if($errors.Count){$errors | ForEach-Object { Write-Error $_.Message }; exit 1}'
 
       - name: Block 2 - tools
         env:
