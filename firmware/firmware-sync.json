@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "0bec2b70a36b975322564a1b003e893bbe0218c0",
+    "validated_commit": "f6e5715c87c92894a9731ee1e73004b287fb1809",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
@@ -30,8 +30,8 @@
     "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
-    "src/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
+    "platformio/src/panel_4848s040/main.cpp": "8db2457a77cc5a1a2203579787d43c42fdcfb55e",
+    "src/main.cpp": "8db2457a77cc5a1a2203579787d43c42fdcfb55e",
     "include/app_config.h": "038de00706de85bb418393bfa67eef1a86783c2a",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -124,7 +124,7 @@
     "voice": {
       "source": "PowerShell PC WAV/MP3 or Windows dictation",
       "transcription": "Databricks Gemini via app/voice_3c.py",
-      "inbox": "async 9s polling into EDITAR ORDEN 3C",
+      "inbox": "async adaptive polling 2.5s when awaiting PC dictation, 9s idle",
       "automatic_sheet_write": false,
       "automatic_command_send": false,
       "local_confirmation": true,
