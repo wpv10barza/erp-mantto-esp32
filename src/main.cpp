@@ -251,7 +251,9 @@ std::atomic<int> sheetsVerifyHttp{0};
 // 0: backend write capability not verified, 1: writes disabled, 2: writes enabled.
 std::atomic<int> sheetsWriteMode{0};
 unsigned long lastVoicePollMs = 0;
+// Keep idle traffic as before; poll faster only during an explicit PC dictation.
 constexpr unsigned long kVoicePollIntervalMs = 9000UL;
+constexpr unsigned long kVoicePollActiveIntervalMs = 2500UL;
 struct VoiceMailbox {
   bool available = false;
   char id[40] = {};
@@ -2072,7 +2074,10 @@ void networkWorker(void* parameter) {
       fetchHistory();
       continue;
     }
-    if (millis() - lastVoicePollMs >= kVoicePollIntervalMs) {
+    // A touch-initiated voice capture is time-sensitive; normal idle poll remains 9 s.
+    const unsigned long voiceInterval = voicePcRequested.load()
+      ? kVoicePollActiveIntervalMs : kVoicePollIntervalMs;
+    if (millis() - lastVoicePollMs >= voiceInterval) {
       lastVoicePollMs = millis();
       pollVoiceDraft();
     }
