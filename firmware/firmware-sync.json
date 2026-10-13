@@ -11,7 +11,7 @@
   },
   "backend": {
     "repository": "wpv10barza/asistente-de-databricks--erp",
-    "validated_commit": "483abf8d73623c550ac64842383eb056f82e2056",
+    "validated_commit": "0bec2b70a36b975322564a1b003e893bbe0218c0",
     "production_provider": "Databricks Apps",
     "transport": "HTTPS",
     "oauth": "service-principal M2M",
@@ -30,9 +30,9 @@
     "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "7dfa8dca040b7208fea46651c39979c5475a0d26",
-    "src/main.cpp": "7dfa8dca040b7208fea46651c39979c5475a0d26",
-    "include/app_config.h": "2acab87c1ffc8da46e6dc6f2ebd0fbdfcdeda55f",
+    "platformio/src/panel_4848s040/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
+    "src/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
+    "include/app_config.h": "038de00706de85bb418393bfa67eef1a86783c2a",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
     "include/editor_components.h": "0f5a47a4e77e8afff3a67876af4ad2327be55959",
