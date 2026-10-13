@@ -74,3 +74,4 @@ jobs:
           python test/command_buffer_regression.py
           python tests/test_production_firmware.py
           python tests/test_flash_powershell_contract.py
+          python tests/test_command_flow_contract.py

@@ -67,6 +67,7 @@ static constexpr uint8_t panelBrightness = PANEL_BRIGHTNESS_VALUE;
 static constexpr unsigned long wifiRetryMs = 10000UL;
 static constexpr unsigned long healthCheckMs = 30000UL;
 static constexpr unsigned long commandPollMs = 2500UL;
+static constexpr unsigned long commandIdlePollMs = 10000UL;
 static constexpr unsigned long httpTimeoutMs = 12000UL;
 static constexpr unsigned long oauthRefreshSkewMs = 300000UL;
 }

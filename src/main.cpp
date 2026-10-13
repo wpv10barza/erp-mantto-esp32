@@ -118,6 +118,8 @@ unsigned long databricksTokenLifetimeMs = 0;
 unsigned long lastWifiAttempt = 0;
 unsigned long lastHealthCheck = 0;
 unsigned long lastCommandPoll = 0;
+unsigned long commandSentAtMs = 0;
+String lastObservedCommandStatus;
 std::atomic<bool> backendAvailable{false};
 bool displayReady = false;
 bool audioReady = false;
@@ -1891,6 +1893,8 @@ int send3CCommand(const String& rawCommand) {
       return code;
     }
     lastCommandPoll = millis();
+    commandSentAtMs = lastCommandPoll;
+    lastObservedCommandStatus = "";
     pendingCommand = true;
     emitCommandFlow(PanelState::Pending, "PENDIENTE: REVISION WEB");
     updatePanel(PanelState::Pending, "CONFIRMACIÓN REQUERIDA EN WEB", true);
@@ -1920,6 +1924,14 @@ void pollCommandStatus() {
   lastBackendMessage = body;
   http.end();
   if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
+  if (code == 404) {
+    Serial.println("GET command status -> 404 command expired or backend restarted");
+    emitCommandFlow(PanelState::Error, "EXPIRADO: REENVIAR", true);
+    updatePanel(PanelState::Error, "Comando vencido; reenvie", true);
+    lastCommandId = "";
+    pendingCommand = false;
+    return;
+  }
   if (code != 200) {
     setTransportError("POLL", code, body, true);
     return;
@@ -1927,7 +1939,12 @@ void pollCommandStatus() {
 
   String status = normalizedStatus(jsonStringValue(body, "status"));
   const String result = jsonStringValue(body, "result");
-  Serial.printf("GET command status -> %d status=%s result=%s\n", code, status.c_str(), result.c_str());
+  const bool statusChanged = status != lastObservedCommandStatus;
+  if (statusChanged) {
+    Serial.printf("GET command status -> %d status=%s result=%s\n",
+                  code, status.c_str(), result.c_str());
+    lastObservedCommandStatus = status;
+  }
 
   if (status == "applied") {
     emitCommandFlow(PanelState::Applied, "APLICADO: SHEETS ACTUALIZADO", true);
@@ -1944,15 +1961,21 @@ void pollCommandStatus() {
   } else if (status == "approved" || status == "approved_not_applied") {
     // Approval alone is NOT a successful Sheets write; keep polling.
     backendAvailable = true;
-    emitCommandFlow(PanelState::Pending, "APROBADO: SIN APLICAR");
-    updatePanel(PanelState::Pending, "Aprobado, aun no aplicado");
-  } else if (status == "pending_confirmation" || status == "pending" ||
-             status == "pendiente" || status == "running" ||
-             status == "processing" || status == "in_progress" ||
-             status == "queued" || status == "proposed") {
+    if (statusChanged) {
+      emitCommandFlow(PanelState::Pending, "APROBADO: SIN APLICAR");
+      updatePanel(PanelState::Pending, "Aprobado, aun no aplicado");
+    }
+  } else if (status == "pending_review" || status == "pending_confirmation" ||
+             status == "pending" || status == "pendiente" ||
+             status == "running" || status == "processing" ||
+             status == "in_progress" || status == "queued" || status == "proposed") {
     backendAvailable = true;
-    emitCommandFlow(PanelState::Pending, "PENDIENTE: REVISION WEB");
-    updatePanel(PanelState::Pending, "Flujo activo / Procesando...");
+    if (statusChanged) {
+      emitCommandFlow(PanelState::Pending, "PENDIENTE: REVISION WEB");
+      updatePanel(PanelState::Pending,
+                  status == "pending_review" ? "Propuesta lista para revision"
+                  : "Recibido; requiere revision web");
+    }
   } else {
     setProtocolError("POLL", status.length() ? String("estado desconocido '") + status + "'" : "falta status");
   }
@@ -2063,8 +2086,12 @@ void networkWorker(void* parameter) {
         acknowledgeVoiceDraft(String(pending));
       }
     }
+    // Fast initial acknowledgement, then back off while awaiting a human.
+    const unsigned long commandPollInterval =
+      millis() - commandSentAtMs < 30000UL
+        ? app_config::commandPollMs : app_config::commandIdlePollMs;
     if (lastCommandId.length() &&
-        millis() - lastCommandPoll >= app_config::commandPollMs) {
+        millis() - lastCommandPoll >= commandPollInterval) {
       lastCommandPoll = millis();
       pollCommandStatus();
     } else if (!lastCommandId.length() &&

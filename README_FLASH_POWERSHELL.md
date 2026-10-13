@@ -451,3 +451,16 @@ que esté ejecutándose el firmware en el ESP32 físico. Tras confirmar
 la compilación, instalar por USB/OTA siguiendo las precauciones de
 credenciales y particiones; después probar un borrador no destructivo.
 La solicitud a Device API NO modifica Google Sheets por sí misma.
+
+## Estados del flujo 3C y comprobacion de latencia (2026-10-12)
+
+Despues de ENVIAR, Databricks confirma inmediatamente la recepcion; no ejecuta ni escribe automaticamente. La pantalla diferencia:
+- `pending_confirmation`: comando recibido, requiere revision web;
+- `pending_review`: propuesta vinculada lista para revision;
+- `approved_not_applied`: aprobada por una persona, todavia sin escribir en Sheets;
+- `rejected`: rechazada;
+- `applied`: solo despues de confirmacion del backend de escritura en Sheets.
+
+El firmware consulta cada 2.5 segundos durante los primeros 30 segundos y luego cada 10 segundos mientras espera intervencion humana. La reduccion de consultas no acelera la revision; evita cientos de GET repetidos y deja logs legibles. Un HTTP 404 (comando caducado o backend reiniciado) termina el seguimiento con `EXPIRADO: REENVIAR`, en lugar de mantener una espera indefinida. La consola serie registra cada **cambio de estado**, no cada GET 200 repetido.
+
+El backend y el firmware se despliegan **por separado**: primero publicar el commit del backend en Databricks Apps; luego actualizar y flashear el ESP32 mediante `scripts/Flash-ESP32-3C.ps1`. GitHub Actions solo compila; no demuestra que el panel haya recibido el nuevo firmware. Mantener `ALLOW_SHEET_WRITE=false` para diagnostico seguro.
