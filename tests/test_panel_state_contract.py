@@ -29,11 +29,14 @@ require(MAIN, 'setProtocolError("POLL", result.length() ? result : "Error report
 # Unknown or missing backend status must not silently remain PENDING.
 require(MAIN, 'else {\n    setProtocolError("POLL", status.length() ? String("estado desconocido \'") + status + "\'" : "falta status");')
 
-# Success/rejection are terminal and visible; pending is the only polling state that remains active.
+# Applied/rejected are terminal. Pending review is a human wait, not continuous processing.
 require(MAIN, 'updatePanel(PanelState::Applied, result.length() ? result : "Confirmado en backend 3C", true);')
 require(MAIN, 'updatePanel(PanelState::Rejected, result.length() ? result : "Rechazado en backend 3C", true);')
 require(MAIN, 'emitCommandFlow(PanelState::Pending, "PENDIENTE: REVISION WEB");')
-require(MAIN, 'updatePanel(PanelState::Pending, "Flujo activo / Procesando...");')
+require(MAIN, 'status == "pending_review"')
+require(MAIN, '"Propuesta lista para revision"')
+require(MAIN, '"Recibido; requiere revision web"')
+require(MAIN, 'status == "approved_not_applied"')
 require(MAIN, 'emitCommandFlow(PanelState::Applied, "APLICADO: SHEETS ACTUALIZADO", true);')
 require(MAIN, 'emitCommandFlow(PanelState::Rejected, "RECHAZADO: SIN CAMBIOS", true);')
 require(MAIN, 'status == "approved"')
