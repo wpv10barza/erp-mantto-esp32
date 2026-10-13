@@ -64,7 +64,8 @@ jobs:
         run: |
           python tests/test_panel_state_contract.py
           python tests/test_final_ui_contract.py
-          python tests/test_voice_cloud_contract.py
+          python tests/test_voice_cloud_contract.py | tee voice-cloud-contract.log
+          python tests/test_voice_adaptive_poll_contract.py | tee -a voice-cloud-contract.log
           python tests/test_ota_commit_contract.py
           python tests/test_history_ui_contract.py
           python tests/test_async_white_ui_contract.py
@@ -75,3 +76,14 @@ jobs:
           python tests/test_production_firmware.py
           python tests/test_flash_powershell_contract.py
           python tests/test_command_flow_contract.py
+
+      - name: Upload firmware CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-voice-poll-ci-${{ github.run_id }}
+          path: |
+            native-test.log
+            voice-cloud-contract.log
+          if-no-files-found: warn
+          retention-days: 14
