@@ -30,8 +30,8 @@
     "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
-    "src/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
+    "platformio/src/panel_4848s040/main.cpp": "fc93d2a41496e689135f6e6d3c2394c87a67a0cb",
+    "src/main.cpp": "fc93d2a41496e689135f6e6d3c2394c87a67a0cb",
     "include/app_config.h": "038de00706de85bb418393bfa67eef1a86783c2a",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",

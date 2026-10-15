@@ -2103,13 +2103,59 @@ void networkWorker(void* parameter) {
 }
 
 const char controlPage[] PROGMEM = R"HTML(
-<!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{font-family:system-ui;max-width:680px;margin:auto;padding:24px;background:#eef3f7}section{background:white;padding:20px;border-radius:16px;box-shadow:0 5px 20px #0001}button,textarea{font:inherit}button{padding:13px 18px;border:0;border-radius:10px;background:#08784f;color:white}textarea{box-sizing:border-box;width:100%;min-height:120px;padding:12px;margin:8px 0 12px}.warn{color:#805500}</style>
-<h1>Panel ESP32-4848S040 3C</h1><section><p class="warn">La orden se envía a Databricks Apps y queda pendiente de confirmación humana. Google Sheets cambia solo después de la confirmación web.</p><textarea id="text" placeholder="Cambia la tarea J10 a mensual"></textarea><button onclick="send3c()">Enviar al asistente</button><button onclick="health()">Probar Databricks</button><pre id="result"></pre></section>
-<script>async function send3c(){const b=new URLSearchParams({text:document.querySelector('#text').value});const r=await fetch('/api/3c',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});result.textContent=r.status+' '+await r.text()}async function health(){const r=await fetch('/api/backend-health',{method:'POST'});result.textContent=r.status+' '+await r.text()}</script></html>
+<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Activaciones ESP32 · Databricks</title>
+<style>body{font-family:system-ui;max-width:760px;margin:auto;padding:24px;background:#eef3f7}section{background:white;padding:20px;border-radius:16px;margin:16px 0}button,input,textarea{font:inherit;padding:12px;box-sizing:border-box}button{margin:4px;border:0;border-radius:10px;background:#08784f;color:white}button:disabled{opacity:.5}input,textarea{width:100%;margin:8px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>
+<h1>Activaciones ESP32 · Databricks</h1>
+<section><label>Token del dispositivo (solo en memoria)<input id="token" type="password" autocomplete="off"></label><p>Conexión HTTP local: usar únicamente una red de confianza. Las consultas cloud requieren Internet.</p>
+<button data-path="/health" data-method="GET">Estado ESP32</button>
+<button data-path="/api/backend-health">Probar Databricks</button>
+<button data-path="/api/cloud-verify">Verificar servicios y Sheets</button>
+<button data-path="/api/history">Actualizar historial del panel</button>
+<button data-path="/api/voice-capture">Solicitar micrófono PC</button>
+<p>La voz requiere el agente de captura ejecutándose en el PC.</p></section>
+<section><label>Orden 3C<textarea id="text" placeholder="Cambia la tarea J10 a mensual"></textarea></label><button data-path="/api/3c" data-field="text">Enviar al asistente</button><p>La aplicación en Sheets requiere revisión y confirmación web.</p></section>
+<section><label>Commit completo del firmware<input id="commit" maxlength="40" placeholder="40 caracteres hexadecimales"></label><button data-path="/api/ota/check" data-field="commit">Consultar firmware</button><p>Consulta la versión publicada. Confirma la instalación desde la pantalla física del ESP32.</p></section>
+<pre id="result" role="status" aria-live="polite"></pre>
+<script>
+const output=document.getElementById('result');
+document.querySelectorAll('button[data-path]').forEach(button=>button.addEventListener('click',async()=>{
+ const buttons=document.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
+ const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),10000);
+ try{const method=button.dataset.method||'POST';const headers={};
+ if(method==='POST')headers['X-3C-Device-Token']=document.getElementById('token').value;
+ const options={method,headers,signal:controller.signal};
+ if(button.dataset.field)options.body=new URLSearchParams({[button.dataset.field]:document.getElementById(button.dataset.field).value});
+ const response=await fetch(button.dataset.path,options);output.textContent=response.status+' '+await response.text();
+ if(response.status===202)output.textContent+='\nSolicitud en cola; consulta el resultado en el panel. No significa ejecución completada.';
+ }catch(error){output.textContent='No se pudo confirmar la recepción. Consulta el panel antes de repetir: '+error.message;}
+ finally{clearTimeout(timeout);buttons.forEach(b=>b.disabled=false);}
+}));
+</script></html>
 )HTML";
 
+// Require explicit device authentication for every LAN mutation, including old routes.
+bool authorizeLocalAction() {
+  if (!runtimeApiToken.length()) {
+    web.send(503, "application/json", "{\"error\":\"device_token_not_configured\"}");
+    return false;
+  }
+  if (web.header("X-3C-Device-Token") != runtimeApiToken) {
+    web.send(401, "application/json", "{\"error\":\"unauthorized\"}");
+    return false;
+  }
+  return true;
+}
+
+void sendQueuedAction(NetworkAction action, const String& value = String()) {
+  const bool queued = queueNetworkRequest(action, value);
+  web.send(queued ? 202 : 503, "application/json",
+           queued ? "{\"status\":\"queued\"}" : "{\"error\":\"queue_unavailable\"}");
+}
+
 void configureWebServer() {
+  const char* headers[] = {"X-3C-Device-Token"};
+  web.collectHeaders(headers, 1);
   web.on("/", HTTP_GET, [] { web.send_P(200, "text/html; charset=utf-8", controlPage); });
   web.on("/health", HTTP_GET, [] {
     bool voiceWaiting = false;
@@ -2140,15 +2186,37 @@ void configureWebServer() {
     web.send(200, "application/json", body);
   });
   web.on("/api/backend-health", HTTP_POST, [] {
-        const bool queued = queueNetworkRequest(NetworkAction::Health);
-    web.send(queued ? 202 : 503, "application/json",
-             queued ? "{\"status\":\"queued\"}" : "{\"error\":\"queue_full\"}");
+    if (authorizeLocalAction()) sendQueuedAction(NetworkAction::Health);
+  });
+  web.on("/api/cloud-verify", HTTP_POST, [] {
+    if (authorizeLocalAction()) sendQueuedAction(NetworkAction::CloudAndSheets);
+  });
+  web.on("/api/history", HTTP_POST, [] {
+    if (authorizeLocalAction()) sendQueuedAction(NetworkAction::LoadHistory);
+  });
+  web.on("/api/voice-capture", HTTP_POST, [] {
+    if (authorizeLocalAction()) sendQueuedAction(NetworkAction::RequestPcVoice);
+  });
+  web.on("/api/ota/check", HTTP_POST, [] {
+    if (!authorizeLocalAction()) return;
+    String commit = web.arg("commit");
+    commit.trim();
+    commit.toLowerCase();
+    if (!validFullCommit(commit)) {
+      web.send(400, "application/json", "{\"error\":\"expected_full_commit\"}");
+      return;
+    }
+    sendQueuedAction(NetworkAction::CheckOtaCommit, commit);
   });
   web.on("/api/3c", HTTP_POST, [] {
-    app_config::commandBuffer = web.arg("text");
-    const bool queued = queueNetworkRequest(NetworkAction::Send3C, app_config::commandBuffer);
-    web.send(queued ? 202 : 503, "application/json",
-             queued ? "{\"status\":\"queued\"}" : "{\"error\":\"queue_full\"}");
+    if (!authorizeLocalAction()) return;
+    String command = web.arg("text");
+    command.trim();
+    if (!command.length() || command.length() >= sizeof(NetworkRequest{}.command)) {
+      web.send(400, "application/json", "{\"error\":\"expected_1_to_240_utf8_bytes\"}");
+      return;
+    }
+    sendQueuedAction(NetworkAction::Send3C, command);
   });
   web.onNotFound([] { web.send(404, "application/json", "{\"error\":\"not found\"}"); });
   web.begin();
