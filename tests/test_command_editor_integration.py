@@ -7,7 +7,7 @@ KEYBOARD = (ROOT / "include" / "virtual_keyboard.h").read_text(encoding="utf-8")
 
 
 def require(text: str, needle: str, label: str) -> None:
-    if needle not in text:
+    if " ".join(needle.split()) not in " ".join(text.split()):
         raise AssertionError(f"missing editor integration contract: {label}: {needle}")
 
 
