@@ -75,3 +75,15 @@ jobs:
           python tests/test_production_firmware.py
           python tests/test_flash_powershell_contract.py
           python tests/test_command_flow_contract.py
+
+  powershell:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate REST client and main menu
+        shell: ${{ matrix.shell }}
+        run: ./tests/Test-ESP32Rest.ps1
