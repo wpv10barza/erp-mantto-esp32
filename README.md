@@ -81,3 +81,7 @@ Cada comprobación debe registrar su contexto, versión de firmware, identificad
 La puesta en marcha se realiza sobre una versión identificada del firmware y una configuración local válida que no exponga credenciales. Antes de la carga se revisan las dependencias de PlatformIO, la correspondencia con el objetivo de placa y la disponibilidad de la interfaz de programación adecuada. Tras el arranque físico se comprueban el inicio de la pantalla, el registro táctil, la conexión a Internet, la autenticación con el servicio de aplicación y la presentación de mensajes de disponibilidad o error. La operación de prueba continúa con una instrucción controlada y el seguimiento de su estado hasta identificar un resultado terminal o una incidencia trazable.
 
 La aceptación de la puesta en marcha requiere que la revisión humana y la persistencia autorizada se verifiquen en la fuente correspondiente cuando formen parte del alcance de la prueba. La publicación de una versión o la actualización remota del firmware no sustituyen las comprobaciones posteriores al despliegue. Los resultados se incorporarán al registro de validación con sus evidencias y limitaciones; esta edición documental no afirma que se haya ejecutado una nueva carga ni una nueva prueba física.
+
+## Control desde Windows PowerShell
+
+Use `scripts/Menu-ESP32.ps1 -DeviceUrl http://IP_DEL_ESP32` para seleccionar las mismas funciones del menú principal y ejecutarlas mediante ACTIVAR. Consulte [el procedimiento HTTP REST](docs/ACTIVACION_HTTP_REST.md) para autenticación, correspondencias y límites.

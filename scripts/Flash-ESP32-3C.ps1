@@ -3,6 +3,8 @@ param(
     [ValidatePattern('^COM[1-9][0-9]*$')]
     [string]$Port = '',
     [switch]$ListPorts,
+    [ValidatePattern('^[a-fA-F0-9]{40}$')]
+    [string]$ExpectedCommit,
     [ValidateRange(0, 600)]
     [int]$SerialSeconds = 0,
     [switch]$AllowMissingConfig
@@ -108,12 +110,15 @@ try {
     }
 
     $Branch = (& git branch --show-current | Select-Object -First 1)
-    if ($LASTEXITCODE -ne 0 -or $Branch -ne 'main') {
-        throw 'El flasheo se permite desde la rama main. Compruebe git status y git branch.'
+    if ($LASTEXITCODE -ne 0 -or ($Branch -ne 'main' -and -not $ExpectedCommit)) {
+        throw 'Para una rama o commit de prueba indique -ExpectedCommit con el SHA completo validado en Actions.'
     }
     $Commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $Commit -notmatch '^[a-f0-9]{40}$') {
         throw 'No se pudo verificar el commit local.'
+    }
+    if ($ExpectedCommit -and $Commit -ne $ExpectedCommit.ToLowerInvariant()) {
+        throw 'HEAD no coincide con -ExpectedCommit. No se ha iniciado la carga.'
     }
     $TrackedChanges = @(& git status --porcelain --untracked-files=no | Where-Object { $_.Trim() })
     if ($LASTEXITCODE -ne 0 -or $TrackedChanges.Count -gt 0) {
@@ -131,6 +136,28 @@ try {
     else {
         Write-Log '[CONFIG] include/local_config.h presente; su contenido no se registrara.'
     }
+
+    # USB VID/PID identifies an adapter, not the chip behind it.
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & py -c "import esptool" 2>$null
+        $ProbeDependencyExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $PreviousPreference }
+    if ($ProbeDependencyExit -ne 0) {
+        & py -m pip install esptool==4.8.1
+        if ($LASTEXITCODE -ne 0) { throw 'No se pudo instalar esptool para verificar el chip.' }
+    }
+    $PreviousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $ChipOutput = @(& py -m esptool --chip esp32s3 --port $SelectedPort chip_id 2>&1 | ForEach-Object { [string]$_ })
+        $ChipExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $PreviousPreference }
+    if ($ChipExit -ne 0 -or ($ChipOutput -join "`n") -notmatch 'Chip is ESP32-S3') {
+        throw 'Chip no confirmado como ESP32-S3. Se bloqueo la carga; ESP32-D0WD-V3 no es compatible.'
+    }
+    Write-Log '[CHIP] ESP32-S3 confirmado por esptool. Use exclusivamente el panel 4848S040.'
 
     Write-Log ("[UPLOAD] Entorno panel_4848s040; puerto {0}; sin erase." -f $SelectedPort)
     Write-Log '[UPLOAD] PlatformIO recompila si es necesario e incluye bootloader/particiones para USB.'

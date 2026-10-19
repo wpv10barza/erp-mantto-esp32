@@ -19,6 +19,9 @@
 #ifndef DATABRICKS_WORKSPACE_URL_VALUE
 #define DATABRICKS_WORKSPACE_URL_VALUE "https://dbc-a1aca8aa-28bd.cloud.databricks.com"
 #endif
+#ifndef DATABRICKS_APP_NAME_VALUE
+#define DATABRICKS_APP_NAME_VALUE "asistente-cloud-erp"
+#endif
 #ifndef DATABRICKS_CLIENT_ID_VALUE
 #define DATABRICKS_CLIENT_ID_VALUE ""
 #endif
@@ -55,6 +58,7 @@ static constexpr char wifiSsid[] = WIFI_SSID_VALUE;
 static constexpr char wifiPassword[] = WIFI_PASSWORD_VALUE;
 static constexpr char assistantBaseUrl[] = ASSISTANT_BASE_URL_VALUE;
 static constexpr char databricksWorkspaceUrl[] = DATABRICKS_WORKSPACE_URL_VALUE;
+static constexpr char databricksAppName[] = DATABRICKS_APP_NAME_VALUE;
 static constexpr char databricksClientId[] = DATABRICKS_CLIENT_ID_VALUE;
 static constexpr char databricksClientSecret[] = DATABRICKS_CLIENT_SECRET_VALUE;
 static constexpr char databricksOauthScope[] = DATABRICKS_OAUTH_SCOPE_VALUE;

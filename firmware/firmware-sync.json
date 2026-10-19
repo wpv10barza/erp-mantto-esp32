@@ -30,17 +30,18 @@
     "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
-    "src/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
-    "include/app_config.h": "038de00706de85bb418393bfa67eef1a86783c2a",
+    "platformio/src/panel_4848s040/main.cpp": "804f95542e325fc4dc94cbd60c8c6da84adeedab",
+    "src/main.cpp": "804f95542e325fc4dc94cbd60c8c6da84adeedab",
+    "include/app_config.h": "b5037bd609537629d16de7b8bbbd6b3fd61b3310",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
     "include/editor_components.h": "0f5a47a4e77e8afff3a67876af4ad2327be55959",
     "include/panel_gpio.h": "5439ae00de14e9b3e3cb407a913f9e417f5546b8",
     "include/touch_input.h": "859e2ee6d4f3e17d34c4909ae385a69c8ebdcfc2",
-    "include/home_menu.h": "177c6d8028bc26badd888bfa8b2dd0c6bca87a3e",
+    "include/home_menu.h": "2ffb134c88882d568b372a8d123ccc19173ed83c",
     "platformio/src/panel_4848s040/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
-    "platformio.ini": "7dc05857b835fef56a1e608e6b5d5028c78d843e"
+    "platformio.ini": "7dc05857b835fef56a1e608e6b5d5028c78d843e",
+    "include/databricks_activation.h": "28313c75d801fd2aed1d002a4c68f65ee52e1ad5"
   },
   "production": {
     "platformio_env": "panel_4848s040",

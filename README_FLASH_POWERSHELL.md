@@ -464,3 +464,9 @@ Despues de ENVIAR, Databricks confirma inmediatamente la recepcion; no ejecuta n
 El firmware consulta cada 2.5 segundos durante los primeros 30 segundos y luego cada 10 segundos mientras espera intervencion humana. La reduccion de consultas no acelera la revision; evita cientos de GET repetidos y deja logs legibles. Un HTTP 404 (comando caducado o backend reiniciado) termina el seguimiento con `EXPIRADO: REENVIAR`, en lugar de mantener una espera indefinida. La consola serie registra cada **cambio de estado**, no cada GET 200 repetido.
 
 El backend y el firmware se despliegan **por separado**: primero publicar el commit del backend en Databricks Apps; luego actualizar y flashear el ESP32 mediante `scripts/Flash-ESP32-3C.ps1`. GitHub Actions solo compila; no demuestra que el panel haya recibido el nuevo firmware. Mantener `ALLOW_SHEET_WRITE=false` para diagnostico seguro.
+
+
+Para probar la rama del PR #7, use un SHA completo validado en GitHub Actions y
+`./scripts/Flash-ESP32-3C.ps1 -ExpectedCommit (git rev-parse HEAD)`.
+El script bloquea un chip distinto de ESP32-S3 mediante esptool antes de cargar.
+Solo para panel 4848S040; no usar con Waveshare AMOLED.

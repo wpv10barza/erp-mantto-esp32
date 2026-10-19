@@ -50,6 +50,7 @@ jobs:
             "native:test_virtual_keyboard"
             "native:test_editor_components"
             "native:test_touch_gpio_ui"
+            "native:test_databricks_activation"
           )
 
           for suite in "${required_suites[@]}"; do
@@ -75,3 +76,22 @@ jobs:
           python tests/test_production_firmware.py
           python tests/test_flash_powershell_contract.py
           python tests/test_command_flow_contract.py
+          python tests/test_databricks_activation_contract.py
+
+  windows-powershell:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Windows PowerShell 5.1
+        shell: powershell
+        run: ./tests/Test-ESP32Rest.ps1
+
+  powershell-core:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PowerShell 7
+        shell: pwsh
+        run: ./tests/Test-ESP32Rest.ps1

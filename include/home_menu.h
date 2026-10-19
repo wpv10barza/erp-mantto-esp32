@@ -60,6 +60,10 @@ constexpr std::array<Target, 10> targets() {
   }};
 }
 
+inline bool databricksStartHit(int x, int y) {
+  return Rect{26, 361, 453, 404}.inset(kTouchInsetPx).contains(x, y);
+}
+
 inline Action hitTest(int x, int y, bool detailsExpanded) {
   for (const auto& target : targets()) {
     if (detailsExpanded &&
