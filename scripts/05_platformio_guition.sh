@@ -31,6 +31,7 @@ required_suites=(
   "native:test_virtual_keyboard"
   "native:test_editor_components"
   "native:test_touch_gpio_ui"
+            "native:test_databricks_activation"
 )
 
 for suite in "${required_suites[@]}"; do

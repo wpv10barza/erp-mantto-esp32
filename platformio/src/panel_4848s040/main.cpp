@@ -26,6 +26,7 @@
 #include "touch_input.h"
 #include "panel_gpio.h"
 #include "home_menu.h"
+#include "databricks_activation.h"
 #include "virtual_keyboard.h"
 
 namespace pins = panel_gpio;
@@ -127,8 +128,13 @@ bool mdnsReady = false;
 bool wifiAnnounced = false;
 
 enum class NetworkAction : uint8_t {
-  Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta, AckVoiceDraft, RequestPcVoice
+  StartDatabricks, Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta, AckVoiceDraft, RequestPcVoice
 };
+
+databricks_activation::Activation appActivation;
+std::atomic<databricks_activation::State> appActivationState{databricks_activation::State::Idle};
+std::atomic<bool> appActivationBusy{false};
+std::atomic<int> appActivationHttp{0};
 
 // OTA is intentionally commit-selectable only among published Databricks builds.
 // Never fetch raw commits or write flash without validating size and SHA-256.
@@ -704,11 +710,11 @@ void drawExpandedPanel() {
     display->print("Backend: asistente-cloud-erp");
     display->setCursor(28, 336);
     display->print("Estado: ");
-    display->print(backendAvailable ? "Conectado" : "Sin verificar");
-    display->setCursor(28, 356);
+    display->print(databricks_activation::label(appActivationState.load()));
+    display->setCursor(28, 350);
     display->print("CLOUD HTTPS");
-    display->setCursor(28, 376);
-    display->print("OAuth 2.0 M2M");
+    drawButton(26, 361, 427, 43,
+               appActivationBusy.load() ? "INICIANDO..." : "INICIAR APP", WHITE);
   } else if (homePanel == HomePanel::Diagnostics) {
     display->setCursor(28, 316);
     display->print("PSRAM: ");
@@ -1344,6 +1350,47 @@ bool checkBackendHealthOnce() {
   Serial.printf("GET health -> %d %s endpoint=%s\n",
     code, lastBackendMessage.c_str(), backendBaseUrl().c_str());
   return backendAvailable;
+}
+
+// Calls the workspace control plane: it works even when the App is stopped.
+// The service principal needs existing CAN_MANAGE on this App; no grants here.
+struct DatabricksStartTransport {
+  bool authenticate() {
+    if (WiFi.status() != WL_CONNECTED || !databricksAppEndpoint() ||
+        !databricksOAuthConfigured()) return false;
+    String workspace = app_config::databricksWorkspaceUrl;
+    if (!workspace.startsWith("https://")) return false;
+    String name = app_config::databricksAppName;
+    if (name.length() < 2 || name.length() > 30) return false;
+    for (size_t i = 0; i < name.length(); ++i)
+      if (!((name[i] >= 'a' && name[i] <= 'z') ||
+            (name[i] >= '0' && name[i] <= '9') || name[i] == '-')) return false;
+    return ensureDatabricksAccessToken() && databricksAccessToken.length();
+  }
+  int start() {
+    String workspace = app_config::databricksWorkspaceUrl;
+    while (workspace.endsWith("/")) workspace.remove(workspace.length() - 1);
+    HTTPClient http;
+    http.setTimeout(app_config::httpTimeoutMs);
+    if (!http.begin(workspace + "/api/2.0/apps/" + app_config::databricksAppName + "/start")) return -1;
+    http.addHeader("Authorization", String("Bearer ") + databricksAccessToken);
+    http.addHeader("Content-Type", "application/json");
+    const int code = http.POST("{}");
+    http.end(); // Never log OAuth tokens or the control-plane response.
+    if (code == 401) clearDatabricksAccessToken();
+    return code;
+  }
+  bool healthy() { return checkBackendHealthOnce(); }
+};
+DatabricksStartTransport appStartTransport;
+void publishAppActivation() {
+  appActivationState = appActivation.state;
+  appActivationHttp = appActivation.http;
+  const bool waiting = appActivation.state == databricks_activation::State::Starting;
+  appActivationBusy = waiting;
+  updatePanel(waiting ? PanelState::Busy :
+              appActivation.state == databricks_activation::State::Ready ? PanelState::Ready : PanelState::Error,
+              databricks_activation::label(appActivation.state));
 }
 
 bool checkBackendHealth() {
@@ -1987,6 +2034,7 @@ bool queueNetworkRequest(NetworkAction action, const String& command) {
     updatePanel(PanelState::Error, "Red no inicializada");
     return false;
   }
+  if (action == NetworkAction::StartDatabricks && appActivationBusy.exchange(true)) return false;
   NetworkRequest request{};
   request.action = action;
   if (action == NetworkAction::Send3C ||
@@ -1999,6 +2047,7 @@ bool queueNetworkRequest(NetworkAction action, const String& command) {
     command.toCharArray(request.command, sizeof(request.command));
   }
   if (xQueueSend(networkQueue, &request, 0) != pdTRUE) {
+    if (action == NetworkAction::StartDatabricks) appActivationBusy = false;
     updatePanel(PanelState::Error, "Solicitudes en espera; intente nuevamente");
     return false;
   }
@@ -2033,6 +2082,10 @@ void networkWorker(void* parameter) {
     NetworkRequest request{};
     if (xQueueReceive(networkQueue, &request, pdMS_TO_TICKS(40)) == pdTRUE) {
       switch (request.action) {
+        case NetworkAction::StartDatabricks:
+          appActivation.begin(appStartTransport, millis());
+          publishAppActivation();
+          break;
         case NetworkAction::Health:
           checkBackendHealth();
           break;
@@ -2059,6 +2112,11 @@ void networkWorker(void* parameter) {
           break;
       }
       lastHealthCheck = millis();
+    }
+    if (appActivation.state == databricks_activation::State::Starting) {
+      appActivation.tick(appStartTransport, millis());
+      if (appActivation.state != databricks_activation::State::Starting) publishAppActivation();
+      continue; // UI stays responsive; do not hammer a starting App with other polls.
     }
     if (WiFi.status() != WL_CONNECTED) {
       sawWifi = false;
@@ -2109,6 +2167,7 @@ const char controlPage[] PROGMEM = R"HTML(
 <h1>Activaciones ESP32 · Databricks</h1>
 <section><label>Token del dispositivo (solo en memoria)<input id="token" type="password" autocomplete="off"></label><p>Conexión HTTP local: usar únicamente una red de confianza. Las consultas cloud requieren Internet.</p>
 <button data-path="/health" data-method="GET">Estado ESP32</button>
+<button data-path="/api/databricks/start">Iniciar App Databricks</button>
 <button data-path="/api/backend-health">Probar Databricks</button>
 <button data-path="/api/cloud-verify">Verificar servicios y Sheets</button>
 <button data-path="/api/history">Actualizar historial del panel</button>
@@ -2182,8 +2241,14 @@ void configureWebServer() {
       ",\"sheet_verify_state\":" + String(sheetsVerifyState.load()) +
       ",\"sheet_verify_http\":" + String(sheetsVerifyHttp.load()) +
       ",\"sheet_write_mode\":" + String(sheetsWriteMode.load()) +
+      ",\"databricks_start_state\":\"" + databricks_activation::label(appActivationState.load()) + "\"" +
+      ",\"databricks_start_http\":" + String(appActivationHttp.load()) +
+      ",\"databricks_start_busy\":" + (appActivationBusy.load() ? "true" : "false") +
       ",\"transport\":\"internet\"}";
     web.send(200, "application/json", body);
+  });
+  web.on("/api/databricks/start", HTTP_POST, [] {
+    if (authorizeLocalAction()) sendQueuedAction(NetworkAction::StartDatabricks);
   });
   web.on("/api/backend-health", HTTP_POST, [] {
     if (authorizeLocalAction()) sendQueuedAction(NetworkAction::Health);
@@ -2460,6 +2525,11 @@ void handleTouch() {
         }
       }
     } else {
+      if (homePanel == HomePanel::Databricks &&
+          home_ui::databricksStartHit(tap.x, tap.y)) {
+        queueNetworkRequest(NetworkAction::StartDatabricks);
+        return;
+      }
       if (homePanel == HomePanel::Firmware &&
           tap.y >= 361 && tap.y < 405) {
         if (tap.x >= 26 && tap.x < 228) {

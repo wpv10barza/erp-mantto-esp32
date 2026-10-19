@@ -17,7 +17,7 @@ function global:Invoke-RestMethod {
     if ($global:failRequest) { throw 'Simulated timeout' }
     return [pscustomobject]@{status='queued'}
 }
-$routes=@{Estado='/health';Databricks='/api/backend-health';Servicios='/api/cloud-verify';Historial='/api/history';VozPC='/api/voice-capture';Enviar3C='/api/3c';ConsultarFirmware='/api/ota/check'}
+$routes=@{IniciarDatabricks='/api/databricks/start';Estado='/health';Databricks='/api/backend-health';Servicios='/api/cloud-verify';Historial='/api/history';VozPC='/api/voice-capture';Enviar3C='/api/3c';ConsultarFirmware='/api/ota/check'}
 foreach ($action in $routes.Keys) {
     $argsForClient=@{DeviceUrl='http://192.0.2.1';Action=$action;DeviceToken='test-only';Text='Orden de prueba';Commit=('a'*40)}
     $null=& $client @argsForClient
@@ -63,4 +63,6 @@ Assert ($global:requests.Count -eq $before) 'Cancelled selection executed'
 Run-Menu @('1','S','0')
 Assert ($global:requests.Count -eq $before+1) 'Confirmed selection not executed exactly once'
 Assert ($global:requests[$before].Uri -eq 'http://192.0.2.1/api/backend-health') 'Menu dispatch mismatch'
+Run-Menu @('6','S','0')
+Assert ($global:requests[$global:requests.Count-1].Uri -eq 'http://192.0.2.1/api/databricks/start') 'Databricks menu must start App'
 Write-Host 'PASS: PowerShell parser, routes, auth, validation, timeout and menu consent'

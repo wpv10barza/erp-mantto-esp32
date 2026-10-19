@@ -49,6 +49,7 @@ jobs:
           python tests/test_production_firmware.py
           python tests/test_flash_powershell_contract.py
           python tests/test_command_flow_contract.py
+          python tests/test_databricks_activation_contract.py
           grep -q '/api/device/v1/health' cloud/app/main.py
           grep -q '/api/device/v1/commands' cloud/app/main.py
           grep -q 'requires_human_confirmation' cloud/app/main.py

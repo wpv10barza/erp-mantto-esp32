@@ -2,7 +2,7 @@
 param(
     [Parameter(Mandatory=$true)][uri]$DeviceUrl,
     [Parameter(Mandatory=$true)]
-    [ValidateSet('Estado','Databricks','Servicios','Historial','VozPC','Enviar3C','ConsultarFirmware')]
+    [ValidateSet('Estado','IniciarDatabricks','Databricks','Servicios','Historial','VozPC','Enviar3C','ConsultarFirmware')]
     [string]$Action,
     [string]$Text,
     [string]$Commit,
@@ -13,7 +13,7 @@ if ($DeviceUrl.Scheme -notin @('http','https') -or $DeviceUrl.UserInfo -or $Devi
     throw 'DeviceUrl debe ser el origen del ESP32, por ejemplo http://192.168.1.50'
 }
 $routes = @{
-    Estado='/health'; Databricks='/api/backend-health'; Servicios='/api/cloud-verify'
+    IniciarDatabricks='/api/databricks/start'; Estado='/health'; Databricks='/api/backend-health'; Servicios='/api/cloud-verify'
     Historial='/api/history'; VozPC='/api/voice-capture'; Enviar3C='/api/3c'; ConsultarFirmware='/api/ota/check'
 }
 $request = @{

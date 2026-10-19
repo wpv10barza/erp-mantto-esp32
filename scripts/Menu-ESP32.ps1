@@ -13,7 +13,7 @@ $items = @(
     @{Name='GitHub Actions - abrir ejecuciones'; Action='GitHub'},
     @{Name='Actualizar firmware - consultar commit'; Action='ConsultarFirmware'},
     @{Name='Wi-Fi 2.4 GHz - consultar estado'; Action='Estado'},
-    @{Name='Nube Databricks - comprobar conexion'; Action='Databricks'},
+    @{Name='Nube Databricks - iniciar App'; Action='IniciarDatabricks'},
     @{Name='Diagnostico - estado y contadores'; Action='Estado'},
     @{Name='Estado del dispositivo'; Action='Estado'},
     @{Name='PROBAR CLOUD'; Action='Servicios'},

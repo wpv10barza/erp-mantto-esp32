@@ -7,6 +7,7 @@ Este cambio corresponde al panel Guition ESP32-S3-4848S040, entorno PlatformIO `
 | Botón / acción PowerShell | Método y ruta local | Efecto |
 |---|---|---|
 | Estado ESP32 / Estado | GET /health | Estado y contadores del dispositivo |
+| Iniciar App Databricks / IniciarDatabricks | POST /api/databricks/start | Solicita inicio en el workspace y verifica disponibilidad |
 | Probar Databricks / Databricks | POST /api/backend-health | Encola comprobación de backend |
 | Verificar servicios y Sheets / Servicios | POST /api/cloud-verify | Encola diagnóstico cloud existente |
 | Actualizar historial / Historial | POST /api/history | Carga historial en el panel |
@@ -53,7 +54,7 @@ Seleccione una opción y confirme en el único paso **ACTIVAR**. El menú perman
 | GitHub Actions | Abrir ejecuciones del repositorio; no dispara workflows |
 | Actualizar firmware | Consultar commit publicado; instalación se confirma en ESP32 |
 | Wi-Fi 2.4 GHz | Leer conectividad reportada; no cambia credenciales |
-| Nube Databricks | Comprobar conexión; no inicia ni despliega una App detenida |
+| Nube Databricks → INICIAR APP | Iniciar la App existente y comprobar el backend; no crea ni despliega otra App |
 | Diagnóstico / Estado del dispositivo | Leer estado y contadores de `/health` |
 | PROBAR CLOUD | Encolar verificación cloud y Sheets |
 | ENVIAR 3C | Solicitar texto y enviar propuesta; aprobación web posterior |
@@ -61,3 +62,31 @@ Seleccione una opción y confirme en el único paso **ACTIVAR**. El menú perman
 | DICTAR PC | Solicitar captura al agente Windows ya iniciado |
 
 **ACTIVAR** ejecuta la opción seleccionada, no todas las opciones juntas. La navegación física (INICIO, VOLVER, ANT, SIG, flechas y teclado) sigue siendo local al ESP32. No se simulan pulsaciones táctiles mediante REST. Los errores fotografiados de red/Sheets requieren diagnóstico con el equipo en su red; estos cambios no acreditan su resolución.
+
+## Inicio de la App desde el firmware
+
+En la pantalla: **Nube Databricks → INICIAR APP**. Abrir la sección no inicia cómputo.
+PowerShell: `./scripts/Activar-ESP32-REST.ps1 -DeviceUrl http://IP_DEL_ESP32 -Action IniciarDatabricks`.
+El worker llama `POST /api/2.0/apps/asistente-cloud-erp/start` al workspace HTTPS,
+con OAuth M2M ya configurado. El principal necesita CAN_MANAGE en esa App; este cambio
+no concede permisos. El inicio puede reanudar consumo de cómputo.
+El nombre puede ajustarse con DATABRICKS_APP_NAME_VALUE en local_config.h.
+Una respuesta 2xx indica solicitud aceptada, no servicio listo. Durante hasta 180 s
+se verifica health cada 5 s, sin bloquear el táctil ni repetir el POST. `/health`
+expone databricks_start_state, databricks_start_http y databricks_start_busy.
+401/403 exige revisar credenciales/permisos; timeout significa resultado desconocido.
+Los POST duplicados se rechazan mientras la activación está en cola o iniciándose.
+
+GitHub Actions ejecuta la máquina de estados real con transporte simulado (aceptado,
+OAuth/403, red, 5xx, timeout, doble pulsación y reloj desbordado), los contratos de
+conexión UI/REST y las pruebas PowerShell 5.1/7, además de compilar el firmware.
+Estas pruebas no arrancan la App real ni sustituyen la verificación física.
+
+## Flash de un commit validado
+
+Con el panel **4848S040** conectado, checkout del SHA de la rama del PR y ejecutar:
+`./scripts/Flash-ESP32-3C.ps1 -ExpectedCommit (git rev-parse HEAD)`.
+El script exige árbol versionado limpio, configuración local o NVS explícita,
+puerto único y chip ESP32-S3 verificado antes de escribir. Si hay varios puertos,
+añada `-Port COMx`. Un ESP32-S3 por sí solo no identifica el modelo de pantalla:
+no usar este firmware en Waveshare AMOLED. No se borra NVS.
