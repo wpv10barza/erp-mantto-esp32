@@ -1950,7 +1950,7 @@ void pollCommandStatus() {
     // A read-back-verified backend supplies the exact task and cell values.
     // Render those values, not just a generic check mark in the editor.
     const String verifiedDetail = result.indexOf("VERIFICADO") >= 0
-      ? result.substring(0, 62) : "APLICADO: SHEETS ACTUALIZADO";
+      ? result.substring(0, 35) : "APLICADO: SHEETS ACTUALIZADO";
     emitCommandFlow(PanelState::Applied, verifiedDetail.c_str(), true);
     updatePanel(PanelState::Applied, result.length() ? result : "Confirmado en backend 3C", true);
     lastCommandId = "";
