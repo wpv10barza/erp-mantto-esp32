@@ -30,8 +30,8 @@
     "voice_capture_request_path": "/api/device/v1/voice/capture/request"
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
-    "src/main.cpp": "e9ba5d6d07d32863262765616a3fde61c660119d",
+    "platformio/src/panel_4848s040/main.cpp": "3483a92ab9453c0c0b100d3bc01865f9c1497b1e",
+    "src/main.cpp": "3483a92ab9453c0c0b100d3bc01865f9c1497b1e",
     "include/app_config.h": "038de00706de85bb418393bfa67eef1a86783c2a",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -151,7 +151,7 @@
         "bottom": 164
       },
       "status_text_active": "PENDIENTE: REVISION WEB",
-      "status_text_applied": "APLICADO: SHEETS ACTUALIZADO",
+      "status_text_applied": "Verified task/frequency/unit detail or legacy generic applied",
       "status_text_rejected": "RECHAZADO: SIN CAMBIOS",
       "approvals_not_equated_to_sheet_writes": true,
       "state_notifications": "dedicated FreeRTOS queue; drawn only by UI task",
