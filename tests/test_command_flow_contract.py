@@ -18,6 +18,8 @@ for text in (
     'app_config::commandIdlePollMs',
 ):
     assert text in MAIN, f"Missing flow requirement: {text}"
+assert 'result.indexOf("VERIFICADO")' in MAIN
+assert 'emitCommandFlow(PanelState::Applied, verifiedDetail.c_str(), true)' in MAIN
 assert "commandPollMs = 2500UL" in CONFIG
 assert "commandIdlePollMs = 10000UL" in CONFIG
 print("3C command flow state + polling contract: PASS")
