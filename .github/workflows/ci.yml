@@ -60,6 +60,19 @@ jobs:
             fi
           done
 
+      - name: Validate versioned PowerShell updater syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            'scripts/Actualizar-3C-DesdeGit.ps1', [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-Table
+            exit 1
+          }
+
       - name: Python contracts
         run: |
           python tests/test_panel_state_contract.py
@@ -75,3 +88,4 @@ jobs:
           python tests/test_production_firmware.py
           python tests/test_flash_powershell_contract.py
           python tests/test_command_flow_contract.py
+          python tests/test_git_databricks_updater_contract.py
