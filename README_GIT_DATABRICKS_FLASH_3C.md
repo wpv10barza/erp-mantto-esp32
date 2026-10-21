@@ -1,5 +1,83 @@
 # Desde Git: Databricks Apps + firmware ESP32-S3 4848S040
 
+## Recuperación 21/oct/2026: main divergente + script ausente + sin COM
+
+Si en C:\Users\ASUS\erp-mantto-esp32 aparece:
+- git pull --ff-only origin main: fatal: Not possible to fast-forward
+- scripts/Actualizar-3C-DesdeGit.ps1 no se reconoce
+- Flash-ESP32-3C.ps1 -ListPorts: Windows no detecta ningun puerto COM
+
+**No fuerce el pull ni flashee COM9.** La causa del script ausente es que
+la actualización no se completó. Las carpetas untracked (logs/,
+ota-release/, voice-embeding-in-databricks-for-esp32/) pertenecen al
+checkout local y se conservan. El fallo de USB es independiente de Git.
+
+### Recuperación sin tocar los commits y archivos de la carpeta original
+
+Primero registre la evidencia de la rama local (sin alterar archivos):
+
+~~~powershell
+cd C:\Users\ASUS\erp-mantto-esp32
+git fetch origin main
+$respaldo = "backup/local-$(Get-Date -Format yyyyMMdd-HHmmss)"
+git branch $respaldo HEAD
+git log --left-right --cherry-pick --oneline HEAD...origin/main
+~~~
+
+Para usar **exactamente origin/main sin alterar el checkout anterior**,
+clone a una nueva carpeta en el mismo equipo:
+
+~~~powershell
+cd C:\Users\ASUS
+git clone --branch main https://github.com/wpv10barza/erp-mantto-esp32.git erp-mantto-esp32-deploy
+if ($LASTEXITCODE -ne 0) { throw 'No se pudo clonar el firmware Git' }
+cd .\erp-mantto-esp32-deploy
+git rev-parse HEAD
+Test-Path .\scripts\Actualizar-3C-DesdeGit.ps1
+~~~
+
+Esta carpeta **no incluye local_config.h privado**, que fue excluido
+de Git correctamente. Antes del flash, si el archivo anterior existe,
+cópielo de manera local, sin imprimirlo ni agregarlo a Git:
+
+~~~powershell
+$anterior = 'C:\Users\ASUS\erp-mantto-esp32\include\local_config.h'
+if (Test-Path -LiteralPath $anterior) {
+    Copy-Item -LiteralPath $anterior -Destination .\include\local_config.h
+}
+git check-ignore .\include\local_config.h
+~~~
+
+Con los secretos de Databricks ya vinculados, primero ejecute la etapa
+backend (solo nube, sin puerto COM):
+
+~~~powershell
+.\scripts\Actualizar-3C-DesdeGit.ps1 -Modo Backend -RevisorVinculado
+~~~
+
+No utilice -RevisorVinculado antes de configurar efectivamente el
+recurso review_approval_token en la App. Si el despliegue falla, no
+continúe al firmware.
+
+Una vez que Windows detecte realmente el ESP32 USB, reutilice el flash
+habitual desde esta carpeta de Git:
+
+~~~powershell
+.\scripts\Flash-ESP32-3C.ps1 -ListPorts
+py -m platformio device list
+.\scripts\Actualizar-3C-DesdeGit.ps1 -Modo Firmware -Puerto COM9
+~~~
+
+Sustituya COM9 por el puerto detectado; con cero puertos, ese último
+comando **no debe ejecutarse**. Pruebe cable de datos, conexión física,
+administrador de dispositivos y modo BOOT/RESET/EN. No borre NVS.
+
+Para conciliar más adelante los commits de la carpeta original,
+compare primero git log --left-right; no use reset --hard ni rebase
+a ciegas. La carpeta de despliegue es independiente y permite continuar
+sin perder los trabajos locales.
+
+
 ## Orden verificado: primero Databricks, luego pull y flash
 
 Siempre desde el archivo versionado del repositorio firmware (no use un
