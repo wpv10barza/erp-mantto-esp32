@@ -1,5 +1,31 @@
 # Desde Git: Databricks Apps + firmware ESP32-S3 4848S040
 
+## Orden verificado: primero Databricks, luego pull y flash
+
+Siempre desde el archivo versionado del repositorio firmware (no use un
+.ps1 descargado aparte), una vez creado y vinculado el secreto de revisor:
+
+    cd C:\Users\ASUS\erp-mantto-esp32
+    git status --short
+    git pull --ff-only origin main
+
+    # 1. Actualiza backend Git a su rama protegida y despliega en Databricks
+    .\scripts\Actualizar-3C-DesdeGit.ps1 -Modo Backend -RevisorVinculado
+
+    # 2. Solo si el backend responde HTTP 200:
+    #    Git pull del firmware main y flash con el procedimiento ya usado
+    .\scripts\Flash-ESP32-3C.ps1 -ListPorts
+    .\scripts\Actualizar-3C-DesdeGit.ps1 -Modo Firmware -Puerto COM9
+
+Este orden NO obtiene firmware desde Databricks: la fuente es GitHub.
+El comando Backend comprueba /api/health y que el modo Sheets esta
+habilitado. El comando Firmware reutiliza Flash-ESP32-3C.ps1;
+no borra NVS y escribe un registro de flash. El dispositivo debe
+ser revisado fisicamente para confirmar el commit instalado y la
+edicion aprobada de Google Sheets. Si Databricks devuelve HTTP 503,
+detenga el proceso antes de probar una orden real.
+
+
 La fuente unica son los repositorios GitHub de la cuenta wpv10barza. NO se usa
 ningun archivo PowerShell descargado aparte.
 
