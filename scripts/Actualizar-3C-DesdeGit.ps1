@@ -31,7 +31,7 @@ function Update-GitRepository {
     param([string]$Path, [string]$Url, [string]$Rama)
     if (-not (Test-Path -LiteralPath $Path)) {
         Write-Host "[GIT] Clonando $Url"
-        & git clone -- $Url $Path
+        & git clone -- $Url $Path | Out-Null
         Assert-Exit 'git clone'
     }
     if (-not (Test-Path -LiteralPath (Join-Path $Path '.git'))) {
@@ -48,18 +48,18 @@ function Update-GitRepository {
     if ($dirty.Count -ne 0) {
         throw "Hay cambios locales versionados en $Path. Revisar git status; no se descartan."
     }
-    & git -C $Path fetch --prune origin $Rama
+    & git -C $Path fetch --prune origin $Rama | Out-Null
     Assert-Exit 'git fetch'
     & git -C $Path show-ref --verify --quiet "refs/heads/$Rama"
     $branchExists = $LASTEXITCODE -eq 0
     if ($branchExists) {
-        & git -C $Path switch $Rama
+        & git -C $Path switch $Rama | Out-Null
         Assert-Exit 'git switch'
     } else {
-        & git -C $Path switch --track -c $Rama "origin/$Rama"
+        & git -C $Path switch --track -c $Rama "origin/$Rama" | Out-Null
         Assert-Exit 'git switch --track'
     }
-    & git -C $Path merge --ff-only "origin/$Rama"
+    & git -C $Path merge --ff-only "origin/$Rama" | Out-Null
     Assert-Exit 'git merge --ff-only'
     $sha = (& git -C $Path rev-parse HEAD).Trim()
     Assert-Exit 'git rev-parse'
