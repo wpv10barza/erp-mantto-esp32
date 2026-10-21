@@ -1,5 +1,46 @@
 # Desde Git: Databricks Apps + firmware ESP32-S3 4848S040
 
+## Error comprobado: reviewer_token contiene byte NUL
+
+Si el deploy informa `An environment variable contains an invalid character
+(NUL byte)` y una inspeccion segura del scope `asistente-cloud-erp`
+determino que `reviewer_token` tiene NUL, reemplace **solo su valor**:
+mantenga el secret scope, secret key y resource key
+`review_approval_token` vinculados a la App.
+
+En PowerShell (modo interactivo; NO pase la nueva clave como argumento
+literal `--string-value` ni publique el valor en Git):
+
+~~~powershell
+databricks secrets put-secret asistente-cloud-erp reviewer_token --profile asistente-cloud-erp
+~~~
+
+Introduzca un token ASCII aleatorio de al menos 32 caracteres, generado
+con un gestor de contrasenas. Databricks sobrescribe el valor anterior
+sin necesitar borrar ni crear el recurso. Confirme despues con una
+consulta que solo muestra estado, nunca el secreto:
+
+~~~powershell
+$r = databricks secrets get-secret asistente-cloud-erp reviewer_token --profile asistente-cloud-erp --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw "Error de lectura reviewer_token" }
+$b = [Convert]::FromBase64String($r.value)
+[PSCustomObject]@{ NUL = ($b -contains [byte]0); Bytes = $b.Length }
+~~~
+
+Solo con `NUL=False` y al menos 32 bytes ejecutar el script desde Git:
+
+~~~powershell
+cd C:\Users\ASUS\erp-mantto-esp32-deploy
+git pull --ff-only origin main
+.\scripts\Actualizar-3C-DesdeGit.ps1 -Modo Backend -RevisorVinculado
+~~~
+
+El script ahora realiza la comprobacion de codificacion del token
+revisor antes de iniciar y desplegar Databricks. Si la App
+continua fallando, consulte `databricks apps logs` sin imprimir
+ninguna credencial. Esto no cambia Google Sheets ni flashea USB.
+
+
 ## Error corregido 21/oct/2026: App not in RUNNING state
 
 Si el recurso de revision ya existe pero Databricks devuelve

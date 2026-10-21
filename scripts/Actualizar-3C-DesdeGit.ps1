@@ -90,6 +90,32 @@ function Invoke-BackendDeploy([string]$Commit) {
             throw 'No figura review_approval_token en recursos de la App.'
         }
     }
+    # Preflight: the newly bound reviewer secret must be a single-line UTF-8
+    # value. Windows/PowerShell pipelines may accidentally store UTF-16LE
+    # bytes (with embedded NUL), which Databricks rejects during app deploy.
+    # Never print, save or log the raw secret or its base64 representation.
+    $reviewResponse = & databricks secrets get-secret asistente-cloud-erp reviewer_token --profile $Perfil --output json
+    Assert-Exit 'databricks secrets get-secret reviewer_token'
+    try {
+        $reviewPayload = $reviewResponse | ConvertFrom-Json
+        if (-not $reviewPayload.value) { throw 'Secreto ausente o vacio.' }
+        $reviewBytes = [Convert]::FromBase64String([string]$reviewPayload.value)
+        if ($reviewBytes.Length -lt 32) {
+            throw 'reviewer_token demasiado corto: usar al menos 32 caracteres ASCII aleatorios.'
+        }
+        if ($reviewBytes -contains [byte]0) {
+            throw 'reviewer_token contiene NUL. Reemplazar solamente este secreto con databricks secrets put-secret asistente-cloud-erp reviewer_token --profile asistente-cloud-erp (entrada interactiva ASCII); verificar que NUL=False.'
+        }
+        $null = ([System.Text.UTF8Encoding]::new($false, $true)).GetString($reviewBytes)
+        Write-Host '[SECRET] reviewer_token valido: UTF-8, sin NUL (valor oculto).'
+    } catch {
+        throw ('Comprobacion del secreto revisor bloqueada: ' + $_.Exception.Message)
+    } finally {
+        $reviewResponse = $null
+        $reviewPayload = $null
+        $reviewBytes = $null
+    }
+
     # Databricks Apps requires the previous deployment to be RUNNING before
     # accepting a new Git commit. Only auto-start a safely STOPPED app.
     $computeState = [string]$appInfo.compute_status.state

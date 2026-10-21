@@ -52,5 +52,13 @@ assert "databricks apps start $Aplicacion --profile $Perfil --timeout 10m" in SC
 assert "if ($appState -ne 'RUNNING' -or $computeState -ne 'ACTIVE')" in SCRIPT
 assert SCRIPT.index("databricks apps start") < SCRIPT.index("databricks apps deploy")
 assert "Assert-Exit 'databricks apps start'" in SCRIPT
+# Reject the actual Oct-21 Databricks deployment blocker BEFORE attempting deploy.
+assert "databricks secrets get-secret asistente-cloud-erp reviewer_token" in SCRIPT
+assert "FromBase64String" in SCRIPT
+assert "$reviewBytes -contains [byte]0" in SCRIPT
+assert "UTF8Encoding" in SCRIPT
+assert "reviewer_token contiene NUL" in SCRIPT
+assert "reviewer_token valido: UTF-8, sin NUL" in SCRIPT
+assert SCRIPT.index("databricks secrets get-secret") < SCRIPT.index("databricks apps deploy")
 
 print("Git/Databricks/ESP32 versioned update contract: PASS")
