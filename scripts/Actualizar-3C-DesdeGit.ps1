@@ -90,6 +90,26 @@ function Invoke-BackendDeploy([string]$Commit) {
             throw 'No figura review_approval_token en recursos de la App.'
         }
     }
+    # Databricks Apps requires the previous deployment to be RUNNING before
+    # accepting a new Git commit. Only auto-start a safely STOPPED app.
+    $computeState = [string]$appInfo.compute_status.state
+    $appState = [string]$appInfo.app_status.state
+    Write-Host "[DATABRICKS] Estado previo: compute=$computeState app=$appState"
+    if ($computeState -eq 'STOPPED') {
+        Write-Host '[DATABRICKS] App detenida: iniciando el ultimo deployment existente.'
+        & databricks apps start $Aplicacion --profile $Perfil --timeout 10m
+        Assert-Exit 'databricks apps start'
+        $appInfo = (& databricks apps get $Aplicacion --profile $Perfil --output json | ConvertFrom-Json)
+        Assert-Exit 'databricks apps get after start'
+        $computeState = [string]$appInfo.compute_status.state
+        $appState = [string]$appInfo.app_status.state
+        Write-Host "[DATABRICKS] Estado tras start: compute=$computeState app=$appState"
+    }
+    if ($appState -ne 'RUNNING' -or $computeState -ne 'ACTIVE') {
+        throw (("App no lista para deploy: compute={0}, app={1}. " +
+               "Consulte Databricks Apps -> Logs y repare el proceso anterior; " +
+               "no se intentara deploy ni flash automaticamente.") -f $computeState, $appState)
+    }
     Write-Host "[DATABRICKS] Desplegando commit $Commit"
     & databricks apps deploy $Aplicacion --git-commit $Commit --profile $Perfil --timeout 10m
     Assert-Exit 'databricks apps deploy'
