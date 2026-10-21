@@ -1,5 +1,34 @@
 # Desde Git: Databricks Apps + firmware ESP32-S3 4848S040
 
+## Error corregido 21/oct/2026: App not in RUNNING state
+
+Si el recurso de revision ya existe pero Databricks devuelve
+`Cannot deploy app ... as it is not in RUNNING state`, no vuelva
+a crear recursos ni modifique credenciales. El script versionado
+`scripts/Actualizar-3C-DesdeGit.ps1` ahora consulta `compute_status.state`
+y `app_status.state`. Si el compute esta `STOPPED`, ejecuta
+`databricks apps start asistente-cloud-erp --timeout 10m`, vuelve
+a consultar ambos estados y despliega el SHA exacto unicamente cuando
+`compute_status.state=ACTIVE` y `app_status.state=RUNNING`.
+Si hay `CRASHED`, `ERROR` o estados de transicion, se detiene
+para consultar Logs, sin forzar una escritura ni el flash USB.
+
+Desde la copia limpia de firmware en PowerShell:
+
+~~~powershell
+cd C:\Users\ASUS\erp-mantto-esp32-deploy
+git pull --ff-only origin main
+.\scripts\Actualizar-3C-DesdeGit.ps1 -Modo Backend -RevisorVinculado
+~~~
+
+El switch `-RevisorVinculado` solo se utiliza si la App tiene el
+resource key `review_approval_token` realmente vinculado a un
+secreto de lectura. La imagen de Settings debe mostrarlo como otra
+fila de Secret, conservando los recursos existentes. El error de
+estado de ejecución no requiere cambiar `app.yaml` ni el branch
+`feature/voice-frequency-review-sheets-secure-20261019`.
+
+
 ## Recuperación 21/oct/2026: main divergente + script ausente + sin COM
 
 Si en C:\Users\ASUS\erp-mantto-esp32 aparece:
