@@ -19,7 +19,8 @@ Primero registre la evidencia de la rama local (sin alterar archivos):
 ~~~powershell
 cd C:\Users\ASUS\erp-mantto-esp32
 git fetch origin main
-git branch backup/local-20261021 HEAD
+$respaldo = "backup/local-$(Get-Date -Format yyyyMMdd-HHmmss)"
+git branch $respaldo HEAD
 git log --left-right --cherry-pick --oneline HEAD...origin/main
 ~~~
 
