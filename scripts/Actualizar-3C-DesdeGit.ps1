@@ -106,7 +106,7 @@ function Invoke-BackendDeploy([string]$Commit) {
         if ($reviewBytes -contains [byte]0) {
             throw 'reviewer_token contiene NUL. Reemplazar solamente este secreto con databricks secrets put-secret asistente-cloud-erp reviewer_token --profile asistente-cloud-erp (entrada interactiva ASCII); verificar que NUL=False.'
         }
-        $null = (New-Object System.Text.UTF8Encoding($false, $true)).GetString($reviewBytes)
+        $null = ([System.Text.UTF8Encoding]::new($false, $true)).GetString($reviewBytes)
         Write-Host '[SECRET] reviewer_token valido: UTF-8, sin NUL (valor oculto).'
     } catch {
         throw ('Comprobacion del secreto revisor bloqueada: ' + $_.Exception.Message)
