@@ -30,4 +30,17 @@ for forbidden in (
 
 assert "-Modo Todo -Puerto COM9 -RevisorVinculado" in README
 assert "-Modo Sincronizar" in README
+# PowerShell functions emit all unredirected stdout into the returned SHA.
+# Suppress Git stdout before passing the exact SHA to --git-commit.
+for command in (
+    "git clone -- $Url $Path | Out-Null",
+    "git -C $Path fetch --prune origin $Rama | Out-Null",
+    "git -C $Path switch $Rama | Out-Null",
+    'git -C $Path switch --track -c $Rama "origin/$Rama" | Out-Null',
+    'git -C $Path merge --ff-only "origin/$Rama" | Out-Null',
+):
+    assert command in SCRIPT, f"Git stdout leaking into SHA: {command}"
+assert '$sha = (& git -C $Path rev-parse HEAD).Trim()' in SCRIPT
+assert 'return $sha' in SCRIPT
+
 print("Git/Databricks/ESP32 versioned update contract: PASS")
