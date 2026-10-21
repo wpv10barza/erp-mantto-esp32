@@ -43,4 +43,14 @@ for command in (
 assert '$sha = (& git -C $Path rev-parse HEAD).Trim()' in SCRIPT
 assert 'return $sha' in SCRIPT
 
+# The App may be stopped even after the reviewer secret is correctly bound.
+# Auto-start only STOPPED compute and reject unhealthy states before deploying.
+assert "$appInfo.compute_status.state" in SCRIPT
+assert "$appInfo.app_status.state" in SCRIPT
+assert "if ($computeState -eq 'STOPPED')" in SCRIPT
+assert "databricks apps start $Aplicacion --profile $Perfil --timeout 10m" in SCRIPT
+assert "if ($appState -ne 'RUNNING' -or $computeState -ne 'ACTIVE')" in SCRIPT
+assert SCRIPT.index("databricks apps start") < SCRIPT.index("databricks apps deploy")
+assert "Assert-Exit 'databricks apps start'" in SCRIPT
+
 print("Git/Databricks/ESP32 versioned update contract: PASS")
