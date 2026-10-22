@@ -52,6 +52,22 @@ assert "databricks apps start $Aplicacion --profile $Perfil --timeout 10m" in SC
 assert "if ($appState -ne 'RUNNING' -or $computeState -ne 'ACTIVE')" in SCRIPT
 assert SCRIPT.index("databricks apps start") < SCRIPT.index("databricks apps deploy")
 assert "Assert-Exit 'databricks apps start'" in SCRIPT
+# Fail-closed: the App must inject the SAME secret that was validated
+# in the Databricks secret scope. Merely listing the resource name is not enough.
+for expected in (
+    "$reviewResources = @($appInfo.resources | Where-Object { $_.name -eq 'review_approval_token' })",
+    "if ($reviewResources.Count -ne 1)",
+    "$binding = $reviewResources[0].secret",
+    "[string]$binding.scope -ne 'asistente-cloud-erp'",
+    "[string]$binding.key -ne 'reviewer_token'",
+    "[string]$binding.permission -ne 'READ'",
+    "Vinculacion incorrecta: review_approval_token",
+):
+    assert expected in SCRIPT, f"Falta guardia de vinculacion App: {expected}"
+assert SCRIPT.index("$binding = $reviewResources[0].secret") < SCRIPT.index("databricks secrets get-secret")
+assert SCRIPT.index("[string]$binding.permission -ne 'READ'") < SCRIPT.index("databricks apps deploy")
+assert "if ($null -ne $appInfo.resources)" not in SCRIPT, "No saltarse controles sin resources"
+
 # Reject the actual Oct-21 Databricks deployment blocker BEFORE attempting deploy.
 assert "databricks secrets get-secret asistente-cloud-erp reviewer_token" in SCRIPT
 assert "FromBase64String" in SCRIPT
