@@ -84,12 +84,25 @@ function Invoke-BackendDeploy([string]$Commit) {
     }
     $appInfo = (& databricks apps get $Aplicacion --profile $Perfil --output json | ConvertFrom-Json)
     Assert-Exit 'databricks apps get'
-    if ($null -ne $appInfo.resources) {
-        $keys = @($appInfo.resources | ForEach-Object { [string]$_.name; [string]$_.resource_key } | Where-Object { $_ })
-        if ($keys.Count -gt 0 -and $keys -notcontains 'review_approval_token') {
-            throw 'No figura review_approval_token en recursos de la App.'
-        }
+    # Validate the ACTUAL App resource binding, not just its display name.
+    # Databricks Apps secret fields are nested: secret.scope/key/permission.
+    # Validating a different secret from the one injected via valueFrom is unsafe.
+    $reviewResources = @($appInfo.resources | Where-Object { $_.name -eq 'review_approval_token' })
+    if ($reviewResources.Count -ne 1) {
+        throw 'Se requiere exactamente un recurso App llamado review_approval_token.'
     }
+    $binding = $reviewResources[0].secret
+    if ($null -eq $binding) {
+        throw 'review_approval_token no es un recurso de tipo Secret en la App.'
+    }
+    if ([string]$binding.scope -ne 'asistente-cloud-erp' -or
+        [string]$binding.key -ne 'reviewer_token') {
+        throw 'Vinculacion incorrecta: review_approval_token debe apuntar al scope asistente-cloud-erp y key reviewer_token.'
+    }
+    if ([string]$binding.permission -ne 'READ') {
+        throw 'Permiso incorrecto: review_approval_token debe tener READ (no WRITE/MANAGE).'
+    }
+    Write-Host '[SECRET] Recurso review_approval_token vinculado: scope/key correctos; permiso READ.'
     # Preflight: the newly bound reviewer secret must be a single-line UTF-8
     # value. Windows/PowerShell pipelines may accidentally store UTF-16LE
     # bytes (with embedded NUL), which Databricks rejects during app deploy.
