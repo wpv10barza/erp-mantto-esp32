@@ -78,7 +78,7 @@ if (-not $Aplicar) {
     $matching = @($checked.access_control_list | Where-Object { $_ -and $_.user_name -ieq $Correo })
     $levels = @($matching | ForEach-Object { $_.all_permissions } | ForEach-Object { $_.permission_level })
     if ($levels -notcontains $Nivel) {
-        throw "No se verifico el permiso $Nivel para $Correo: revise la UI de Databricks."
+        throw "No se verifico el permiso $Nivel para ${Correo}: revise la UI de Databricks."
     }
     Write-Host "[OK] Permiso $Nivel verificado en $Aplicacion para $Correo."
 }
