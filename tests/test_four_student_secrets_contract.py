@@ -14,3 +14,8 @@ for dangerous in ("--string-value", "Set-Content", "Start-Process -FilePath 'not
     assert dangerous not in src, f"Credential persistence/arg risk: {dangerous}"
 assert "get-secret" not in src, "Never export a previous credential"
 print("Four student secrets protected-workflow contract: PASS")
+
+assert 'function Invoke-DbJson {' in src
+assert '& databricks @CliArgs' in src
+assert src.count('Invoke-DbJson -CliArgs @(') == 4
+assert 'Invoke-DbJson @(' not in src

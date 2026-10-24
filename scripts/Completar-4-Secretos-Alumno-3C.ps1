@@ -18,12 +18,21 @@ function Assert-Exit([string]$Contexto) {
   if ($LASTEXITCODE -ne 0) { throw "Databricks fallo en $Contexto (codigo $LASTEXITCODE)." }
 }
 
-function Invoke-DbJson([string[]]$Args, [string]$Contexto) {
-  $response = & databricks @Args
+function Invoke-DbJson {
+  param(
+    [Parameter(Mandatory=$true)][string[]]$CliArgs,
+    [Parameter(Mandatory=$true)][string]$Contexto
+  )
+  $response = & databricks @CliArgs
   Assert-Exit $Contexto
   $raw = @($response) -join [Environment]::NewLine
   if (-not $raw.Trim()) { throw "Databricks no devolvio JSON en $Contexto." }
-  return ConvertFrom-Json -InputObject $raw
+  try {
+    return ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+  } catch {
+    # Do not echo responses; CLI messages may contain sensitive details.
+    throw "Respuesta de Databricks no es JSON valido en $Contexto. Consulte CLI/auth y ejecute el comando con --output json. No se muestran datos privados."
+  }
 }
 
 function Extract-Items([object]$Source, [string]$Property) {
@@ -77,13 +86,13 @@ if (-not (Get-Command databricks -CommandType Application -ErrorAction SilentlyC
   throw 'No se encontro Databricks CLI. Instale CLI y autentique alumno-3c.'
 }
 
-$user = Invoke-DbJson @('current-user','me','--profile',$PerfilNuevo,'--output','json') 'usuario'
+$user = Invoke-DbJson -CliArgs @('current-user','me','--profile',$PerfilNuevo,'--output','json') -Contexto 'usuario'
 if ([string]$user.userName -ine $CorreoEsperado) {
   throw "Perfil incorrecto. Se esperaba $CorreoEsperado; no se altero ningun secreto."
 }
 Write-Host "[OK] Perfil $PerfilNuevo autenticado como $CorreoEsperado."
 
-$scopesResponse = Invoke-DbJson @('secrets','list-scopes','--profile',$PerfilNuevo,'--output','json') 'list-scopes'
+$scopesResponse = Invoke-DbJson -CliArgs @('secrets','list-scopes','--profile',$PerfilNuevo,'--output','json') -Contexto 'list-scopes'
 $scopes = @(Extract-Items $scopesResponse 'scopes')
 if (-not @($scopes | Where-Object { $_ -and $_.name -ieq $ScopeNuevo }).Count) {
   & databricks secrets create-scope $ScopeNuevo --profile $PerfilNuevo
@@ -93,7 +102,7 @@ if (-not @($scopes | Where-Object { $_ -and $_.name -ieq $ScopeNuevo }).Count) {
   Write-Host "[OK] Scope existente: $ScopeNuevo"
 }
 
-$items = Invoke-DbJson @('secrets','list-secrets',$ScopeNuevo,'--profile',$PerfilNuevo,'--output','json') 'list-secrets'
+$items = Invoke-DbJson -CliArgs @('secrets','list-secrets',$ScopeNuevo,'--profile',$PerfilNuevo,'--output','json') -Contexto 'list-secrets'
 $present = @(Extract-Items $items 'secrets' | ForEach-Object { [string]$_.key })
 
 $required = @('gemini_api_key','google_service_account_json','esp32_api_token','reviewer_token')
@@ -174,7 +183,7 @@ try {
   $googleValue = $null
 }
 
-$final = Invoke-DbJson @('secrets','list-secrets',$ScopeNuevo,'--profile',$PerfilNuevo,'--output','json') 'verificacion final'
+$final = Invoke-DbJson -CliArgs @('secrets','list-secrets',$ScopeNuevo,'--profile',$PerfilNuevo,'--output','json') -Contexto 'verificacion final'
 $keys = @(Extract-Items $final 'secrets' | ForEach-Object { [string]$_.key })
 $notFound = @($required | Where-Object { $keys -notcontains $_ })
 if ($notFound.Count) {
