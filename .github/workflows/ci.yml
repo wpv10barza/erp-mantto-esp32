@@ -68,6 +68,9 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile(
             'scripts/Actualizar-3C-DesdeGit.ps1', [ref]$tokens, [ref]$errors
           ) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            'scripts/Compartir-Proyecto-3C.ps1', [ref]$tokens, [ref]$errors
+          ) | Out-Null
           if ($errors.Count -gt 0) {
             $errors | Format-Table
             exit 1
@@ -89,3 +92,4 @@ jobs:
           python tests/test_flash_powershell_contract.py
           python tests/test_command_flow_contract.py
           python tests/test_git_databricks_updater_contract.py
+          python tests/test_sharing_access_contract.py
