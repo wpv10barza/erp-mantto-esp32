@@ -19,3 +19,15 @@ assert 'function Invoke-DbJson {' in src
 assert '& databricks @CliArgs' in src
 assert src.count('Invoke-DbJson -CliArgs @(') == 4
 assert 'Invoke-DbJson @(' not in src
+
+# Empty/blank user input must fail with a useful message BEFORE Test-Path;
+# otherwise Windows PowerShell throws ParameterArgumentValidationErrorEmptyStringNotAllowed.
+start = src.index("if ($missing -contains 'google_service_account_json')")
+blank_guard = src.index("if ([string]::IsNullOrWhiteSpace($GoogleJsonPath))", start)
+blank_error = src.index("Falta google_service_account_json. No se realizaron cambios.", blank_guard)
+path_check = src.index("Test-Path -LiteralPath $GoogleJsonPath -PathType Leaf", start)
+assert start < blank_guard < blank_error < path_check
+assert 'Los otros tres secretos existentes se conservan.' in src
+assert '$GoogleJsonPath = $GoogleJsonPath.Trim().Trim' in src
+assert '[IO.Path]::IsPathRooted($GoogleJsonPath)' in src
+print("Empty Google service JSON path: safely rejected before Test-Path.")
