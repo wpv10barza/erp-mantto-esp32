@@ -74,6 +74,9 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile(
             'scripts/Crear-Secrets-Alumno-3C.ps1', [ref]$tokens, [ref]$errors
           ) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            'scripts/Verificar-Secretos-Alumno-3C.ps1', [ref]$tokens, [ref]$errors
+          ) | Out-Null
           if ($errors.Count -gt 0) {
             $errors | Format-Table
             exit 1
