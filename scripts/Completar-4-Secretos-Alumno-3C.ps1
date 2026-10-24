@@ -140,14 +140,17 @@ if ($missing -contains 'google_service_account_json') {
   if ([string]::IsNullOrWhiteSpace($GoogleJsonPath)) {
     throw ("Falta google_service_account_json. No se realizaron cambios. " +
       "Primero cree/descargue el JSON de una cuenta de servicio autorizada; " +
-      "luego ejecute: .\\scripts\\Completar-4-Secretos-Alumno-3C.ps1 " +
-      '-GoogleJsonPath "C:\\ruta-privada\\google-alumno.json". ' +
+      "luego ejecute: .\scripts\Completar-4-Secretos-Alumno-3C.ps1 " +
+      '-GoogleJsonPath "C:\ruta-privada\google-alumno.json". ' +
       "Los otros tres secretos existentes se conservan.")
   }
   # Read-Host input commonly arrives surrounded by quotes after copy/paste.
   $GoogleJsonPath = $GoogleJsonPath.Trim().Trim('"')
+  if ([string]::IsNullOrWhiteSpace($GoogleJsonPath)) {
+    throw 'No se proporciono una ruta de JSON valida. No se modificaron secretos.'
+  }
   if (-not [IO.Path]::IsPathRooted($GoogleJsonPath)) {
-    throw 'La ruta del JSON debe ser absoluta (ejemplo: C:\\ruta-privada\\google-alumno.json).'
+    throw 'La ruta del JSON debe ser absoluta (ejemplo: C:\ruta-privada\google-alumno.json).'
   }
   if (-not (Test-Path -LiteralPath $GoogleJsonPath -PathType Leaf)) {
     throw "El archivo JSON indicado no existe o no es accesible. Ruta: $GoogleJsonPath"
