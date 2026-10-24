@@ -85,6 +85,10 @@ jobs:
             exit 1
           }
 
+      - name: Verify student CLI JSON arguments (PowerShell mock)
+        shell: pwsh
+        run: ./tests/test_four_secrets_databricks_args.ps1
+
       - name: Python contracts
         run: |
           python tests/test_panel_state_contract.py
