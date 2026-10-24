@@ -11,7 +11,7 @@ function Assert-Exit([string]$Paso) {
   if ($LASTEXITCODE -ne 0) { throw "Fallo en $Paso (exit $LASTEXITCODE)." }
 }
 function New-RandomHexToken {
-  $bytes = New-Object byte[] 24
+  $bytes = New-Object byte[] 32
   $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
   try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
   return (-join ($bytes | ForEach-Object { $_.ToString('x2') }))
@@ -29,7 +29,9 @@ if ([string]$identidad.userName -ine $CorreoEsperado) {
 $scopesJson = & databricks secrets list-scopes --profile $PerfilNuevo --output json
 Assert-Exit 'listar scopes'
 $scopes = $scopesJson | ConvertFrom-Json
-$found = @($scopes.scopes | Where-Object { $_ -and $_.name -ieq $ScopeNuevo })
+# Databricks puede devolver una lista JSON directa o { "scopes": [...] }.
+$listaScopes = if ($scopes -is [array]) { @($scopes) } else { @($scopes.scopes) }
+$found = @($listaScopes | Where-Object { $_ -and $_.name -ieq $ScopeNuevo })
 if ($found.Count -eq 0) {
   & databricks secrets create-scope $ScopeNuevo --profile $PerfilNuevo
   Assert-Exit 'crear scope'
@@ -37,7 +39,8 @@ if ($found.Count -eq 0) {
 $secretsJson = & databricks secrets list-secrets $ScopeNuevo --profile $PerfilNuevo --output json
 Assert-Exit 'listar secrets'
 $secrets = $secretsJson | ConvertFrom-Json
-$existing = @($secrets.secrets | Where-Object {
+$listaSecretos = if ($secrets -is [array]) { @($secrets) } else { @($secrets.secrets) }
+$existing = @($listaSecretos | Where-Object {
   $_ -and $_.key -in @('esp32_api_token', 'reviewer_token')
 })
 if ($existing.Count -gt 0) {
@@ -92,13 +95,14 @@ Send-Secret 'reviewer_token' $reviewToken
 $checkJson = & databricks secrets list-secrets $ScopeNuevo --profile $PerfilNuevo --output json
 Assert-Exit 'verificar claves'
 $check = $checkJson | ConvertFrom-Json
-$keys = @($check.secrets | ForEach-Object { $_.key })
+$listaFinal = if ($check -is [array]) { @($check) } else { @($check.secrets) }
+$keys = @($listaFinal | ForEach-Object { $_.key })
 foreach ($key in @('esp32_api_token','reviewer_token')) {
   if ($keys -notcontains $key) { throw "No se verifico $key." }
 }
 $esp32Token = $null
 $reviewToken = $null
-Write-Host '[OK] Dos tokens de 48 caracteres registrados en Databricks.'
+Write-Host '[OK] Dos tokens de 64 caracteres registrados en Databricks.'
 Write-Host "[ARCHIVO] $notePath"
 Write-Host '[PENDIENTE] Registrar gemini_api_key real de Google AI Studio.'
 Write-Host '[AVISO] notepad.txt tiene secretos en texto plano; borrelo cuando no lo necesite.'
