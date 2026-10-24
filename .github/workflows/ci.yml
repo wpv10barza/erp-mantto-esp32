@@ -77,6 +77,9 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile(
             'scripts/Verificar-Secretos-Alumno-3C.ps1', [ref]$tokens, [ref]$errors
           ) | Out-Null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            'scripts/Completar-4-Secretos-Alumno-3C.ps1', [ref]$tokens, [ref]$errors
+          ) | Out-Null
           if ($errors.Count -gt 0) {
             $errors | Format-Table
             exit 1
@@ -101,3 +104,4 @@ jobs:
           python tests/test_sharing_access_contract.py
           python tests/test_new_workspace_secrets_contract.py
           python tests/test_existing_secrets_verifier_contract.py
+          python tests/test_four_student_secrets_contract.py
