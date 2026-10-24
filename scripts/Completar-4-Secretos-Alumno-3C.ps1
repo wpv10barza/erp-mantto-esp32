@@ -134,11 +134,23 @@ if ($missing -contains 'gemini_api_key') {
   }
 }
 if ($missing -contains 'google_service_account_json') {
-  if (-not $GoogleJsonPath) {
-    $GoogleJsonPath = Read-Host 'Ruta ABSOLUTA de JSON de cuenta de servicio nueva Google Cloud'
+  if ([string]::IsNullOrWhiteSpace($GoogleJsonPath)) {
+    $GoogleJsonPath = Read-Host 'Ruta ABSOLUTA del JSON NUEVO de Google Cloud (Enter para cancelar)'
+  }
+  if ([string]::IsNullOrWhiteSpace($GoogleJsonPath)) {
+    throw ("Falta google_service_account_json. No se realizaron cambios. " +
+      "Primero cree/descargue el JSON de una cuenta de servicio autorizada; " +
+      "luego ejecute: .\\scripts\\Completar-4-Secretos-Alumno-3C.ps1 " +
+      '-GoogleJsonPath "C:\\ruta-privada\\google-alumno.json". ' +
+      "Los otros tres secretos existentes se conservan.")
+  }
+  # Read-Host input commonly arrives surrounded by quotes after copy/paste.
+  $GoogleJsonPath = $GoogleJsonPath.Trim().Trim('"')
+  if (-not [IO.Path]::IsPathRooted($GoogleJsonPath)) {
+    throw 'La ruta del JSON debe ser absoluta (ejemplo: C:\\ruta-privada\\google-alumno.json).'
   }
   if (-not (Test-Path -LiteralPath $GoogleJsonPath -PathType Leaf)) {
-    throw 'Falta un archivo JSON de cuenta de servicio valida. No se inventara una credencial.'
+    throw "El archivo JSON indicado no existe o no es accesible. Ruta: $GoogleJsonPath"
   }
   if ($GoogleJsonPath -match '(?i)OneDrive|Google.Drive|Dropbox') {
     Write-Warning 'El archivo parece estar en una carpeta sincronizada. Guardelo en ubicacion privada fuera de nube.'
