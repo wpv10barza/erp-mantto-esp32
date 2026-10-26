@@ -49,8 +49,7 @@ foreach ($Macro in $Expected.Keys) {
     $Corrected = $MatchesFound[0].Groups["prefix"].Value +
         $Expected[$Macro] +
         $MatchesFound[0].Groups["suffix"].Value
-    $After = $After.Remove($MatchesFound[0].Index, $MatchesFound[0].Length).
-        Insert($MatchesFound[0].Index, $Corrected)
+    $After = $After.Remove($MatchesFound[0].Index, $MatchesFound[0].Length).Insert($MatchesFound[0].Index, $Corrected)
     $Changed += [string]$Macro
 }
 
@@ -77,16 +76,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "No se pudo proteger la copia de seguridad privada."
 }
 
-# Atomic-ish replace: prepare next bytes in same directory, then replace.
-$Temp = Join-Path (Split-Path $Config -Parent) ("local_config.tmp.{0}" -f $Stamp)
-try {
-    [System.IO.File]::WriteAllText(
-        $Temp, $After, [System.Text.UTF8Encoding]::new($false))
-    Move-Item -LiteralPath $Temp -Destination $Config -Force
-} finally {
-    Remove-Item -LiteralPath $Temp -Force -ErrorAction SilentlyContinue
-}
-Write-Host "[OK] Se corrigieron SOLO las dos URLs publicas en local_config.h."
+# No temporary secrets-bearing file is created inside the Git worktree.
+# If the write is interrupted, the protected backup is the recovery source.
+[System.IO.File]::WriteAllText(
+    $Config, $After, [System.Text.UTF8Encoding]::new($false))
+Write-Host "[OK] Se corrigieron SOLO los overrides de URL publicos incorrectos."
 Write-Host "[OK] Respaldo local privado protegido: $Backup"
 Write-Host "[AVISO] Verifique las credenciales OAuth y token del dispositivo del WORKSPACE ALUMNO."
 Write-Host "[AVISO] El ESP32 instalado sigue con su firmware anterior hasta grabar por USB/OTA."
