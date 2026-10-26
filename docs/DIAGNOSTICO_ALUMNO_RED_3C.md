@@ -80,3 +80,59 @@ Compruebe que el compute esté `ACTIVE`, la aplicación ejecutándose y que la v
 2. Antes de grabar, identifique el puerto real y compruebe que el panel tiene **16 MB** y la partición OTA compatible.
 3. Solo después de pruebas de CI y configuración adecuada, instale firmware mediante `./scripts/Flash-ESP32-3C.ps1 -Port COMx`. No use `erase` salvo recuperación expresamente necesaria.
 4. Los builds de GitHub Actions usan archivos sin secretos; una OTA posterior solo funcionará si el ESP32 conserva credenciales correctas en NVS y el backend de la alumna autoriza ese principal.
+
+
+## Reparacion automatizada local en Windows y CI verificada
+
+El fichero privado include/local_config.h es ignorado por Git y prevalece
+sobre los defaults del repositorio. Las dos lineas antiguas capturadas en
+PowerShell no cambian por ejecutar git pull.
+
+Tras integrar la PR a main, ejecute:
+
+~~~powershell
+cd C:\Users\ASUS\erp-mantto-esp32-deploy
+git status --short
+git pull --ff-only origin main
+
+# Solo lee las dos URLs publicas, no muestra tokens.
+.\scripts\Repair-Alumno-Cloud-Local.ps1
+
+# Corrige los overrides publicos y guarda respaldo privado.
+.\scripts\Repair-Alumno-Cloud-Local.ps1 -Apply
+
+# Rechaza cualquier URL que no apunte al workspace de la alumna.
+py .\scripts\verify_firmware_target.py
+~~~
+
+Este reparador no cambia ni fabrica OAuth Client ID, Client Secret, Wi-Fi
+SSID o password ni ESP32_API_TOKEN. Esas credenciales deben corresponder al
+workspace de la alumna y ser autorizadas expresamente. La copia de respaldo
+queda bajo %LOCALAPPDATA%\Proyecto3C-Alumno\Privado\Backups, fuera del Git.
+
+### Protecciones y preflight antes de publicar OTA
+
+- CI verifica URLs, script local y rechazo de versiones con destino viejo.
+- Firmware CD compila el panel, verifica que el firmware.bin real incluya
+  ambos destinos correctos y no contenga los hostnames originales. Incluye
+  manifest.json con version corta, source_sha de 40 y SHA-256 del binario.
+- Solo workflow_dispatch desde main permite publicar; use
+  publish_to_databricks=true y release_version=2.7.3 con entorno prod.
+- GitHub OIDC debe estar autorizado sobre el workspace de la alumna, con
+  permisos al UC Volume; la App debe tener recurso OTA de lectura vinculado.
+  Antes de modificar latest.json, el job comprueba que la App
+  asistente-cloud-erp-alumno esta ACTIVE/RUNNING y vinculada al repositorio
+  backend esperado.
+- No sobrescribir releases: estable/latest.json se actualiza al final.
+  La carpeta de version ya publicada produce error en vez de reemplazar.
+
+### Limite fisico imprescindible
+
+Si el ESP32 instalado actualmente apunta al servidor original y no puede
+autenticarse/obtener OTA desde ese servidor, un release publicado SOLO en el
+workspace de la alumna no sera visible para ese firmware. Lo mismo ocurre
+si el dispositivo no tiene tabla de particiones OTA duales de 16 MB.
+Necesita instalar una vez por USB desde Windows con su puerto COM real.
+
+GitHub Actions construye/publica firmware; no abre el puerto USB de un PC
+externo ni cambia por si solo la configuracion instalada en el ESP32.
