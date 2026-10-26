@@ -27,12 +27,16 @@
     "cloud_verify_path": "/api/device/v1/cloud/verify",
     "voice_inbox_path": "/api/device/v1/voice/inbox/panel",
     "voice_draft_ack_path": "/api/device/v1/voice/drafts/{draft_id}/ack",
-    "voice_capture_request_path": "/api/device/v1/voice/capture/request"
+    "voice_capture_request_path": "/api/device/v1/voice/capture/request",
+    "target_workspace": "alumno-3c",
+    "target_app": "https://asistente-cloud-erp-alumno-7474657268940105.aws.databricksapps.com",
+    "oauth_host": "https://dbc-77f7771e-2520.cloud.databricks.com",
+    "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "e0629337148b0ab39bd3df539d01812294f76784",
-    "src/main.cpp": "e0629337148b0ab39bd3df539d01812294f76784",
-    "include/app_config.h": "038de00706de85bb418393bfa67eef1a86783c2a",
+    "platformio/src/panel_4848s040/main.cpp": "57bcc4cff44c840022d86b6789efb4173dcba359",
+    "src/main.cpp": "57bcc4cff44c840022d86b6789efb4173dcba359",
+    "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
     "include/editor_components.h": "0f5a47a4e77e8afff3a67876af4ad2327be55959",
@@ -50,7 +54,7 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.2",
+    "version": "2.7.3",
     "role": "final_interface_short_sha_ota_picker_and_guarded_OTA_with_pc_dictation",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
