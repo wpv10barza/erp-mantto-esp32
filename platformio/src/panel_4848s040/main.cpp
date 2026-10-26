@@ -66,7 +66,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.7.2";
+constexpr char kFirmwareVersion[] = "2.7.3";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // Full source SHA stays embedded for traceability and OTA manifest validation.
 // The touch UI only displays a short SHA; the backend resolves its unique prefix.
@@ -1000,11 +1000,20 @@ String normalizedStatus(String status) {
 
 void setTransportError(const char* phase, int code, const String& detail, bool clearCommand) {
   backendAvailable = false;
-  emitCommandFlow(PanelState::Error, "Flujo: error de red", true);
+  // HTTP status is not a Wi-Fi transport error. Show actionable status
+  // without exposing response bodies or private tokens on the screen.
+  const char* visible = code == 401 ? "Flujo: HTTP 401 OAuth/token" :
+                        code == 403 ? "Flujo: HTTP 403 permisos" :
+                        code == 404 ? "Flujo: HTTP 404 ruta" :
+                        code >= 500 ? "Flujo: HTTP 5xx servidor" :
+                        code < 0 ? "Flujo: red/TLS/DNS" :
+                        "Flujo: respuesta HTTP";
+  emitCommandFlow(PanelState::Error, visible, true);
   if (clearCommand) { lastCommandId = ""; pendingCommand = false; }
   const String message = String(phase) + " HTTP " + code;
   updatePanel(PanelState::Error, message, true);
-  Serial.printf("[ERROR] transport phase=%s code=%d detail=%s\n", phase, code, detail.c_str());
+  (void)detail;  // Do not print a server response body in shared logs.
+  Serial.printf("[ERROR] transport phase=%s code=%d\n", phase, code);
 }
 
 void setProtocolError(const char* phase, const String& detail) {
@@ -2521,6 +2530,10 @@ void setup() {
   Serial.printf("GT911 I2C probe addr=0x%02X result=%u bus=400kHz\n", kTouchAddress, touchProbe);
   audioReady = initializeAudio();
   loadDeviceCredentials();
+  // Public hostnames identify the effective build target, including
+  // overrides from an ignored include/local_config.h.
+  Serial.printf("CLOUD TARGET app=%s oauth_host=%s\n",
+                backendBaseUrl().c_str(), app_config::databricksWorkspaceUrl);
   Serial.printf("FIRMWARE INSTALLED git_commit=%s fw=%s device_id=%s\n",
                 kInstalledCommit, kFirmwareVersion, app_config::deviceId);
   commandBuffer.set(app_config::commandBuffer.c_str());

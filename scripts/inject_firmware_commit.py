@@ -11,6 +11,14 @@ from pathlib import Path
 Import("env")  # SCons/PlatformIO global provided to extra_scripts
 
 project = Path(env.subst("$PROJECT_DIR"))
+# Reject stale private URL overrides *before* compiling/flashing an image.
+# The checker reads public host macros only and never logs private tokens.
+import sys
+subprocess.run(
+    [sys.executable, "scripts/verify_firmware_target.py"],
+    cwd=project,
+    check=True,
+)
 commit = os.environ.get("GITHUB_SHA", "").strip().lower()
 if not re.fullmatch(r"[0-9a-f]{40}", commit):
     commit = subprocess.check_output(

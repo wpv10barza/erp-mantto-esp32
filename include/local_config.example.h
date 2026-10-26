@@ -1,11 +1,13 @@
 #pragma once
 // Copy to include/local_config.h. This file is ignored by Git.
+// This example targets the ALUMNA workspace; don't reuse original-workspace OAuth credentials.
+// Never commit local_config.h or personal OAuth/device tokens.
 // Network credentials are only for Internet transport. The ESP32 does not
 // need to share a LAN, IP range or Wi-Fi with a PC/backend.
 #define WIFI_SSID_VALUE "YOUR_INTERNET_WIFI_2_4_GHZ"
 #define WIFI_PASSWORD_VALUE "YOUR_WIFI_PASSWORD"
-#define ASSISTANT_BASE_URL_VALUE "https://asistente-cloud-erp-7474651957738908.aws.databricksapps.com"
-#define DATABRICKS_WORKSPACE_URL_VALUE "https://dbc-a1aca8aa-28bd.cloud.databricks.com"
+#define ASSISTANT_BASE_URL_VALUE "https://asistente-cloud-erp-alumno-7474657268940105.aws.databricksapps.com"
+#define DATABRICKS_WORKSPACE_URL_VALUE "https://dbc-77f7771e-2520.cloud.databricks.com"
 #define DATABRICKS_CLIENT_ID_VALUE "YOUR_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID"
 #define DATABRICKS_CLIENT_SECRET_VALUE "YOUR_DATABRICKS_SERVICE_PRINCIPAL_OAUTH_SECRET"
 #define ESP32_API_TOKEN_VALUE "YOUR_ESP32_DEVICE_TOKEN"
