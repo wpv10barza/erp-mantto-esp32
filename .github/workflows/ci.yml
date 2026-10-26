@@ -85,6 +85,19 @@ jobs:
             exit 1
           }
 
+      - name: Validate private URL-repair PowerShell script syntax
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            'scripts/Repair-Alumno-Cloud-Local.ps1', [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-Table
+            exit 1
+          }
+
       - name: Verify student CLI JSON arguments (PowerShell mock)
         shell: pwsh
         run: ./tests/test_four_secrets_databricks_args.ps1
@@ -97,6 +110,7 @@ jobs:
           python tests/test_ota_commit_contract.py
           python tests/test_ota_short_version_contract.py
           python tests/test_alumno_cloud_target.py
+          python tests/test_ota_target_guard.py
           python tests/test_history_ui_contract.py
           python tests/test_async_white_ui_contract.py
           python tests/test_wifi_source.py
