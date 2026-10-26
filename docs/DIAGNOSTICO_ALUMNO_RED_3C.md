@@ -136,3 +136,36 @@ Necesita instalar una vez por USB desde Windows con su puerto COM real.
 
 GitHub Actions construye/publica firmware; no abre el puerto USB de un PC
 externo ni cambia por si solo la configuracion instalada en el ESP32.
+
+
+### Auditoria de repositorio backend y permisos de publicacion
+
+Existe otra discrepancia independiente: el workflow de GitHub Actions
+del repositorio wpv10barza/asistente-de-databricks--erp (archivo
+.github/workflows/deploy-databricks.yml) comprueba una App llamada
+asistente-databricks-erp, NO asistente-cloud-erp-alumno. Ese workflow
+no demuestra que la App de la alumna tenga backend desplegado; no lo
+ejecute asumiendo que apunta al workspace alumno.
+
+En el perfil correcto, si ya existe la App ACTIVE y sus recursos
+secretos/volumen estan debidamente vinculados, use la ruta explicita:
+
+~~~powershell
+databricks apps get asistente-cloud-erp-alumno --profile alumno-3c --output json
+databricks apps deploy asistente-cloud-erp-alumno --git-branch main --profile alumno-3c --timeout 20m
+databricks apps list-deployments asistente-cloud-erp-alumno --profile alumno-3c
+~~~
+
+No publique OTA mientras la App no aparezca RUNNING con la Device API
+adecuada. En GitHub, el entorno prod del repositorio firmware necesita
+las variables DATABRICKS_HOST (workspace alumna),
+DATABRICKS_CLIENT_ID (principal OIDC de GitHub Actions) y
+OTA_VOLUME_PATH (UC Volume valido); son distintas de las credenciales
+M2M que utiliza el ESP32. La ausencia de cualquiera impide
+la publicacion. No agregue secretos en texto plano a estas variables.
+
+La App FastAPI debe tener acceso de lectura al recurso
+ota_firmware_volume configurado en app.yaml y ESP32_API_TOKEN
+vinculado al mismo valor esperado por la credencial individual o
+provisionada en NVS. No utilice ALLOW_INSECURE_DEVICE_API para
+eludir el fallo de autorizacion.
