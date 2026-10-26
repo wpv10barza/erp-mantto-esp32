@@ -42,7 +42,7 @@ for needle, label in [
 
     ("checkCloudStack()", "cloud plus Sheets verifier"),
     ('endpoint("/api/device/v1/cloud/verify")', "read-only Sheets verification"),
-    ('kFirmwareVersion[] = "2.7.1-flow-status"', "final firmware identity"),
+    ('kFirmwareVersion[] = "2.7.2"', "final firmware identity"),
 ]:
     require_main(needle, label)
 
