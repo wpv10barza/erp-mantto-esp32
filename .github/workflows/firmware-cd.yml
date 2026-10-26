@@ -212,6 +212,29 @@ jobs:
       - name: Databricks CLI
         uses: databricks/setup-cli@main
 
+      - name: Verify student App exists and is RUNNING
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A green CI build is not proof that the student's App is deployed.
+          # Fail before touching latest.json when the app/identity is wrong.
+          databricks apps get asistente-cloud-erp-alumno --output json > student-app.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          app=json.loads(Path("student-app.json").read_text())
+          if app.get("name") != "asistente-cloud-erp-alumno":
+              raise SystemExit("Wrong Databricks App name")
+          if app.get("compute_status", {}).get("state") != "ACTIVE":
+              raise SystemExit("Student App compute is not ACTIVE")
+          if app.get("app_status", {}).get("state") != "RUNNING":
+              raise SystemExit("Student App is not RUNNING or code is not deployed")
+          git_url=app.get("git_repository", {}).get("url", "").removesuffix(".git").rstrip("/")
+          if git_url != "https://github.com/wpv10barza/asistente-de-databricks--erp":
+              raise SystemExit("Wrong backend repository attached to student App")
+          print("[OK] Student App RUNNING with expected backend Git repository")
+          PY
+
       - name: Publish immutable release, update latest last
         shell: bash
         run: |
