@@ -11,18 +11,18 @@ assert "board_build.partitions = partitions_ota_16mb.csv" in PIO
 for name in ("otadata", "ota_0", "ota_1"):
     assert name in PARTITIONS, f"missing OTA partition {name}"
 required = [
-    'kFirmwareVersion[] = "2.7.1-flow-status"',
+    'kFirmwareVersion[] = "2.7.2"',
     'kInstalledCommit[] = FIRMWARE_SOURCE_COMMIT',
     'void drawOtaCommitEditor()',
-    'display->print(kInstalledCommit)',
-    '"EDITAR COMMIT"',
-    '"COMMIT COMPLETO (40 caracteres hex)"',
-    'content.substring(0, 20)',
-    'content.substring(20, 40)',
-    'bool validFullCommit(String value)',
-    'if (value.length() != 40) return false',
-    'sha.equalsIgnoreCase(kInstalledCommit)',
-    'fullSha.equalsIgnoreCase(sha)',
+    'String(kInstalledCommit).substring(0, 8)',
+    '"EDITAR SHA"',
+    '"SHA CORTO (7-12 caracteres hex)"',
+    'content.substring(0, 12)',
+    'String(content.length()) + "/12   ENTER = buscar OTA"',
+    'bool validShortCommit(String value)',
+    'if (value.length() < 7 || value.length() > 12) return false',
+    'String(kInstalledCommit).startsWith(sha)',
+    'fullSha.startsWith(sha)',
     'otaCommitEditorOpen',
     'void drawOtaCommitEditor()',
     'void drawOtaCommitField()',
@@ -54,11 +54,14 @@ for forbidden in ("http.GET()", "installSelectedOta()", "checkOtaCommit("):
     assert forbidden not in loop, f"blocking network in UI loop: {forbidden}"
 assert re.search(r'otaVersionCompare\(version.c_str\(\), kFirmwareVersion\) < 0', MAIN)
 assert 'commandBuffer.set(app_config::commandBuffer.c_str());' in MAIN
-print("Commit-select OTA v2.7 contract: PASS (USB bootstrap still required)")
+print("Short SHA OTA v2.7.2 contract: PASS (USB bootstrap still required)")
 
 assert 'extra_scripts = pre:scripts/inject_firmware_commit.py' in PIO
 BUILD_SCRIPT = (ROOT / "scripts/inject_firmware_commit.py").read_text(encoding="utf-8")
 assert 'git", "rev-parse", "HEAD"' in BUILD_SCRIPT
 assert 'GITHUB_SHA' in BUILD_SCRIPT
 assert 'firmware_source_commit.generated.h' in BUILD_SCRIPT
-assert "This 40-character commit is EMBEDDED" in MAIN
+assert "Full source SHA stays embedded" in MAIN
+assert "constexpr size_t kOtaCommitCapacity = 12;" in MAIN
+assert "display->print(kInstalledCommit);" not in MAIN
+assert "COMMIT COMPLETO (40 caracteres hex)" not in MAIN

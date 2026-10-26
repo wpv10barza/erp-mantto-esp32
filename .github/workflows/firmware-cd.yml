@@ -11,6 +11,11 @@ on:
         required: true
         type: boolean
         default: false
+      release_version:
+        description: "Version OTA corta esperada (ejemplo: 2.7.2)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -44,6 +49,7 @@ jobs:
           python tests/test_final_ui_contract.py
           python tests/test_voice_cloud_contract.py
           python tests/test_ota_commit_contract.py
+          python tests/test_ota_short_version_contract.py
           python tests/test_history_ui_contract.py
           python tests/test_async_white_ui_contract.py
           python tests/test_production_firmware.py
@@ -137,6 +143,12 @@ jobs:
           printf '%s\n' '0x0000 bootloader.bin' '0x8000 partitions.bin' '0x10000 firmware.bin' > dist/flash-layout.txt
           python scripts/package_ota_metadata.py
           (cd dist && sha256sum * > SHA256SUMS.txt)
+          VERSION=$(python -c 'import json; print(json.load(open("dist/manifest.json"))["version"])')
+          echo "### Firmware OTA v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Panel: ESP32-S3-4848S040 (16 MB, particiones OTA)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Commit corto: ${GITHUB_SHA:0:8}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA completo solo para integridad y trazabilidad en manifest.json." >> "$GITHUB_STEP_SUMMARY"
+          echo "- Build en CI; no se ha flasheado fisicamente ningun dispositivo." >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -146,7 +158,7 @@ jobs:
 
   publish_ota:
     name: Publish verified OTA to Databricks
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_to_databricks }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_to_databricks }}
     needs: [firmware]
     runs-on: ubuntu-latest
     environment: prod
@@ -158,6 +170,7 @@ jobs:
       DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
       DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
       OTA_VOLUME_PATH: ${{ vars.OTA_VOLUME_PATH }}
+      REQUESTED_OTA_VERSION: ${{ inputs.release_version }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -170,6 +183,8 @@ jobs:
           set -euo pipefail
           test -n "$DATABRICKS_HOST"
           test -n "$DATABRICKS_CLIENT_ID"
+          # Never publish a student release to the original workspace.
+          test "$DATABRICKS_HOST" = "https://dbc-77f7771e-2520.cloud.databricks.com"
           [[ "$OTA_VOLUME_PATH" =~ ^/Volumes/[^/]+/[^/]+/[^/]+$ ]]
           python - <<'PY'
           import json,hashlib,os,pathlib
@@ -182,6 +197,9 @@ jobs:
           assert release["partition_table"]=="partitions_ota_16mb.csv"
           assert release["credential_mode"]=="ota3c-nvs"
           assert latest["version"]==release["version"]
+          requested=os.environ.get("REQUESTED_OTA_VERSION", "").strip().lstrip("v")
+          if requested and requested!=release["version"]:
+              raise ValueError(f"Version solicitada {requested} != compilada {release['version']}")
           data=(p/"firmware.bin").read_bytes()
           assert len(data)==release["size"]==latest["size"]
           assert hashlib.sha256(data).hexdigest()==release["sha256"]==latest["sha256"]
@@ -198,8 +216,18 @@ jobs:
           ROOT="dbfs:$OTA_VOLUME_PATH/stable"
           VERSION_DIR="$ROOT/$OTA_VERSION"
           databricks fs mkdir "$ROOT"
+          # Versioned releases are immutable: fail closed instead of replacing
+          # a different binary behind an already deployed version.
+          if databricks fs ls "$VERSION_DIR" >/dev/null 2>&1; then
+            echo "::error::OTA v$OTA_VERSION already exists. Increase kFirmwareVersion."
+            exit 1
+          fi
           databricks fs mkdir "$VERSION_DIR"
-          databricks fs cp dist/firmware.bin "$VERSION_DIR/firmware.bin" --overwrite
-          databricks fs cp dist/manifest.json "$VERSION_DIR/manifest.json" --overwrite
+          databricks fs cp dist/firmware.bin "$VERSION_DIR/firmware.bin"
+          databricks fs cp dist/manifest.json "$VERSION_DIR/manifest.json"
+          # Promote latest only after immutable binary and manifest upload.
           databricks fs cp dist/latest.json "$ROOT/latest.json" --overwrite
           databricks fs cat "$ROOT/latest.json"
+          echo "### Publicada OTA v$OTA_VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Destino: workspace de la alumna" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA corto: ${GITHUB_SHA:0:8}" >> "$GITHUB_STEP_SUMMARY"

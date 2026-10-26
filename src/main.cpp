@@ -66,10 +66,10 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.7.1-flow-status";
+constexpr char kFirmwareVersion[] = "2.7.2";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
-// This 40-character commit is EMBEDDED by PlatformIO at build time.
-// It identifies the running binary, not whatever the user typed into OTA.
+// Full source SHA stays embedded for traceability and OTA manifest validation.
+// The touch UI only displays a short SHA; the backend resolves its unique prefix.
 constexpr char kInstalledCommit[] = FIRMWARE_SOURCE_COMMIT;
 static_assert(sizeof(kInstalledCommit) == 41, "Firmware build must embed a full 40-character Git commit");
 // Credentials are provisioned once over USB and then loaded from ESP32 NVS
@@ -130,9 +130,9 @@ enum class NetworkAction : uint8_t {
   Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta, AckVoiceDraft, RequestPcVoice
 };
 
-// OTA is intentionally commit-selectable only among published Databricks builds.
-// Never fetch raw commits or write flash without validating size and SHA-256.
-constexpr size_t kOtaCommitCapacity = 64;
+// OTA accepts a short 7..12 hex SHA only after unique resolution in Databricks.
+// Never flash arbitrary GitHub sources; the backend serves published builds only.
+constexpr size_t kOtaCommitCapacity = 12;
 CommandBuffer<kOtaCommitCapacity> otaCommitBuffer;
 bool otaCommitEditorOpen = false;
 bool otaConfirmArmed = false;
@@ -142,15 +142,15 @@ struct OtaSelection {
   char version[32] = {};
   char sha256[65] = {};
   char url[110] = {};
-  char message[86] = "Ingrese commit publicado";
+  char message[86] = "Ingrese SHA corto (7 a 12)";
   size_t size = 0;
 };
 OtaSelection otaSelection{};
 portMUX_TYPE otaMux = portMUX_INITIALIZER_UNLOCKED;
 
-bool validFullCommit(String value) {
+bool validShortCommit(String value) {
   value.trim();
-  if (value.length() != 40) return false;
+  if (value.length() < 7 || value.length() > 12) return false;
   for (size_t i = 0; i < value.length(); ++i) {
     const char ch = value[i];
     if (!isxdigit(static_cast<unsigned char>(ch))) return false;
@@ -509,22 +509,22 @@ void drawOtaCommitField() {
   display->setTextColor(BLACK);
   display->setTextSize(1);
   display->setCursor(24, 61);
-  display->print("COMMIT COMPLETO (40 caracteres hex)");
+  display->print("SHA CORTO (7-12 caracteres hex)");
   const String content(otaCommitBuffer.c_str());
   display->setTextSize(2);
   display->setCursor(24, 84);
-  display->print(content.substring(0, 20));
-  display->setCursor(24, 108);
-  display->print(content.substring(20, 40));
+  display->print(content.substring(0, 12));
   display->setTextSize(1);
+  display->setCursor(24, 112);
+  display->print("Ejemplo: e38bbd3 (GitHub)");
   display->setCursor(24, 136);
-  display->print(String(content.length()) + "/40   ENTER = buscar OTA");
+  display->print(String(content.length()) + "/12   ENTER = buscar OTA");
 }
 
 void drawOtaCommitEditor() {
   if (!displayReady) return;
   display->fillScreen(WHITE);
-  drawCentered("EDITAR COMMIT OTA", 11, 2, BLACK);
+  drawCentered("EDITAR SHA CORTO", 11, 2, BLACK);
   drawOtaCommitField();
   drawEditorToolbar();
   drawEditorKeyboard();
@@ -668,10 +668,10 @@ void drawExpandedPanel() {
     display->print(kFirmwareVersion);
     display->setCursor(28, 318);
     display->print("Instalado: ");
-    display->print(kInstalledCommit);
+    display->print(String(kInstalledCommit).substring(0, 8));
     display->setCursor(28, 334);
     display->print("Solicitado: ");
-    display->print(String(otaCommitBuffer.c_str()).substring(0, 40));
+    display->print(String(otaCommitBuffer.c_str()).substring(0, 12));
     display->setCursor(28, 350);
     display->print(String(candidate.message).substring(0, 70));
     display->fillRoundRect(26, 361, 201, 43, 9, WHITE);
@@ -680,7 +680,7 @@ void drawExpandedPanel() {
     display->drawRoundRect(239, 361, 214, 43, 9, BLACK);
     display->setTextSize(2);
     display->setCursor(47, 375);
-    display->print("EDITAR COMMIT");
+    display->print("EDITAR SHA");
     display->setCursor(252, 375);
     display->print(otaConfirmArmed ? "CONFIRMAR" :
                    candidate.ready ? "INSTALAR OTA" : "BUSCAR OTA");
@@ -1496,8 +1496,8 @@ bool checkOtaCommit(const String& rawCommit) {
   String sha = rawCommit;
   sha.trim();
   sha.toLowerCase();
-  if (!validFullCommit(sha)) {
-    setOtaStatus("Commit requiere 40 caracteres hex", true);
+  if (!validShortCommit(sha)) {
+    setOtaStatus("SHA debe tener 7 a 12 hex", true);
     updatePanel(PanelState::Error, "Commit OTA invalido");
     return false;
   }
@@ -1506,7 +1506,7 @@ bool checkOtaCommit(const String& rawCommit) {
     updatePanel(PanelState::Offline, "OTA: sin conexion");
     return false;
   }
-  if (sha.equalsIgnoreCase(kInstalledCommit)) {
+  if (String(kInstalledCommit).startsWith(sha)) {
     setOtaStatus("Este commit ya esta instalado", true);
     updatePanel(PanelState::Ready, "El commit solicitado ya esta instalado");
     return false;
@@ -1526,7 +1526,7 @@ bool checkOtaCommit(const String& rawCommit) {
   http.end();
   if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
   if (code != 200) {
-    setOtaStatus(code == 404 ? "Commit sin OTA publicada" :
+    setOtaStatus(code == 404 ? "SHA sin OTA o ambiguo" :
                  String("OTA consulta HTTP ") + code, true);
     updatePanel(PanelState::Error, String("OTA HTTP ") + code);
     Serial.printf("OTA LOOKUP HTTP=%d commit=%s\n", code, sha.c_str());
@@ -1537,7 +1537,7 @@ bool checkOtaCommit(const String& rawCommit) {
   const String checksum = jsonStringValue(body, "sha256");
   const String path = jsonStringValue(body, "url");
   const size_t fileSize = jsonUnsignedLongValue(body, "size", 0UL);
-  if (fullSha.length() != 40 || !fullSha.equalsIgnoreCase(sha) ||
+  if (fullSha.length() != 40 || !fullSha.startsWith(sha) ||
       !validSha256(checksum) ||
       !path.startsWith("/api/device/v1/firmware/") || !path.endsWith(".bin") ||
       fileSize < 65536 || fileSize > 0x400000 ||
@@ -2233,8 +2233,8 @@ void handleTouch() {
             String typed = otaCommitBuffer.c_str();
             typed.trim();
             typed.toLowerCase();
-            if (!validFullCommit(typed)) {
-              setOtaStatus("Se requieren 40 caracteres hex", true);
+            if (!validShortCommit(typed)) {
+              setOtaStatus("Se requieren 7 a 12 hex", true);
               drawOtaCommitField();
               break;
             }
@@ -2401,7 +2401,7 @@ void handleTouch() {
         if (tap.x >= 26 && tap.x < 228) {
           otaCommitEditorOpen = true;
           otaConfirmArmed = false;
-          setOtaStatus("Ingrese commit completo publicado", true);
+          setOtaStatus("Ingrese SHA corto publicado", true);
           keyboardMode = virtual_keyboard::KeyboardMode::Alpha;
           drawOtaCommitEditor();
           return;
