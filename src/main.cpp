@@ -1013,7 +1013,7 @@ void setTransportError(const char* phase, int code, const String& detail, bool c
   const String message = String(phase) + " HTTP " + code;
   updatePanel(PanelState::Error, message, true);
   (void)detail;  // Do not print a server response body in shared logs.
-  Serial.printf("[ERROR] transport phase=%s code=%d\\n", phase, code);
+  Serial.printf("[ERROR] transport phase=%s code=%d\n", phase, code);
 }
 
 void setProtocolError(const char* phase, const String& detail) {
@@ -2532,7 +2532,7 @@ void setup() {
   loadDeviceCredentials();
   // Public hostnames identify the effective build target, including
   // overrides from an ignored include/local_config.h.
-  Serial.printf("CLOUD TARGET app=%s oauth_host=%s\\n",
+  Serial.printf("CLOUD TARGET app=%s oauth_host=%s\n",
                 backendBaseUrl().c_str(), app_config::databricksWorkspaceUrl);
   Serial.printf("FIRMWARE INSTALLED git_commit=%s fw=%s device_id=%s\n",
                 kInstalledCommit, kFirmwareVersion, app_config::deviceId);
