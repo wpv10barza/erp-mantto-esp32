@@ -47,6 +47,7 @@ jobs:
           python tests/test_firmware_main_sync.py
           python tests/test_backend_discovery.py
           python tests/test_alumno_cloud_target.py
+          python tests/test_ota_target_guard.py
           python tests/test_final_ui_contract.py
           python tests/test_voice_cloud_contract.py
           python tests/test_ota_commit_contract.py
@@ -78,6 +79,7 @@ jobs:
           grep -q 'firmware\\firmware-sync.json' PCU-ERP-MANTTO-ESP32.ps1
           pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("PCU-ERP-MANTTO-ESP32.ps1",[ref]$tokens,[ref]$errors) > $null; if($errors.Count){$errors | ForEach-Object { Write-Error $_.Message }; exit 1}'
           pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/Flash-ESP32-3C.ps1",[ref]$tokens,[ref]$errors) > $null; if($errors.Count){$errors | ForEach-Object { Write-Error $_.Message }; exit 1}'
+          pwsh -NoProfile -Command '$tokens=$null; $errors=$null; [System.Management.Automation.Language.Parser]::ParseFile("scripts/Repair-Alumno-Cloud-Local.ps1",[ref]$tokens,[ref]$errors) > $null; if($errors.Count){$errors | ForEach-Object { Write-Error $_.Message }; exit 1}'
 
       - name: Block 2 - tools
         env:
