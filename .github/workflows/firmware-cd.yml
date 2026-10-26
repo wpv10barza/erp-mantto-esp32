@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       release_version:
-        description: "Version OTA corta esperada (ejemplo: 2.7.2)"
+        description: "Version OTA corta esperada (ejemplo: 2.7.3)"
         required: false
         type: string
         default: ""
