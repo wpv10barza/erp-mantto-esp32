@@ -31,6 +31,9 @@ if not (65536 <= size <= 0x400000):
 # Ensure the compiled binary actually contains the full source commit
 # displayed by the HMI, not only the metadata describing the build.
 binary_bytes = binary.read_bytes()
+# A green CI build must never publish firmware pointing to the original App.
+from verify_firmware_target import verify_binary
+verify_binary(binary_bytes)
 if commit.encode("ascii") not in binary_bytes:
     raise SystemExit("Firmware binary does not embed the full source commit; refuse OTA publication")
 sha = hashlib.sha256(binary_bytes).hexdigest()
