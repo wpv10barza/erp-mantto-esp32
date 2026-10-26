@@ -11,13 +11,14 @@
 #define WIFI_PASSWORD_VALUE ""
 #endif
 
-// Production Databricks endpoints. URLs are not secrets.
+// Default Databricks endpoints: independent ALUMNA workspace.
+// URLs are not secrets. A private local_config.h may override these at build time.
 // The firmware never discovers or stores a LAN backend IP.
 #ifndef ASSISTANT_BASE_URL_VALUE
-#define ASSISTANT_BASE_URL_VALUE "https://asistente-cloud-erp-7474651957738908.aws.databricksapps.com"
+#define ASSISTANT_BASE_URL_VALUE "https://asistente-cloud-erp-alumno-7474657268940105.aws.databricksapps.com"
 #endif
 #ifndef DATABRICKS_WORKSPACE_URL_VALUE
-#define DATABRICKS_WORKSPACE_URL_VALUE "https://dbc-a1aca8aa-28bd.cloud.databricks.com"
+#define DATABRICKS_WORKSPACE_URL_VALUE "https://dbc-77f7771e-2520.cloud.databricks.com"
 #endif
 #ifndef DATABRICKS_CLIENT_ID_VALUE
 #define DATABRICKS_CLIENT_ID_VALUE ""
