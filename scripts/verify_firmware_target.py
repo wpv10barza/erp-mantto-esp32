@@ -25,13 +25,24 @@ class TargetConfigurationError(ValueError):
 
 
 def public_define(source: str, macro: str) -> str | None:
-    matches = re.findall(
-        rf'(?m)^[ \t]*#[ \t]*define[ \t]+{re.escape(macro)}[ \t]+"(https://[^"\r\n]+)"',
+    # Detect the macro even when its value is malformed (HTTP, bare host,
+    # unquoted expression). Never silently fall back to a safe default
+    # while a private override would take precedence at C++ compile time.
+    declarations = re.findall(
+        rf'(?m)^[ \t]*#[ \t]*define[ \t]+{re.escape(macro)}(?=[ \t]|$)[^\r\n]*',
         source,
     )
-    if len(matches) > 1:
+    if len(declarations) > 1:
         raise TargetConfigurationError(f"{macro}: definiciones duplicadas")
-    return matches[0] if matches else None
+    if not declarations:
+        return None
+    match = re.fullmatch(
+        rf'[ \t]*#[ \t]*define[ \t]+{re.escape(macro)}[ \t]+"([^"\r\n]*)"[ \t]*(?://[^\r\n]*)?',
+        declarations[0],
+    )
+    if not match:
+        raise TargetConfigurationError(f"{macro}: formato de URL privada invalido")
+    return match.group(1)
 
 
 def verify_configuration(root: Path = ROOT) -> None:
