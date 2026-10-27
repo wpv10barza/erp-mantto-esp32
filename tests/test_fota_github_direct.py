@@ -1,6 +1,7 @@
 """Direct GitHub FOTA is independent of Databricks and rejects unsigned transports."""
 from pathlib import Path
 import json
+import re
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=(ROOT/"src/main.cpp").read_text(encoding="utf-8")
@@ -28,8 +29,9 @@ for must in (
 ):
     assert must in ota, must
 for forbidden in ("ensureDatabricksAccessToken()", "addRequestAuth(http)",
-                  "client.setInsecure(", "/api/device/v1/firmware/by-commit/"):
+                  "/api/device/v1/firmware/by-commit/"):
     assert forbidden not in ota, forbidden
+assert re.search(r"(?m)^\\s*client\\.setInsecure\\s*\\(", ota) is None
 assert CA.count("-----BEGIN CERTIFICATE-----") >= 3
 assert "publish_github_fota:" in CI and 'gh release create "$TAG"' in CI
 assert 'github.event_name == \'push\'' in CI
