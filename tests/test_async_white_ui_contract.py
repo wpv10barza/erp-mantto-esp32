@@ -12,7 +12,7 @@ for expected in (
     'constexpr unsigned long kMissingReleaseMs = 80',
     'display->fillScreen(WHITE)',
     'display->setTextColor(BLACK)',
-    'kFirmwareVersion[] = "2.7.6"',
+    'kFirmwareVersion[] = "2.7.7"',
 ):
     assert expected in MAIN, f"missing async/white UI invariant: {expected}"
 loop = MAIN[MAIN.index("void loop() {"):]
