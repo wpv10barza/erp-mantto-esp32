@@ -11,7 +11,7 @@ assert "board_build.partitions = partitions_ota_16mb.csv" in PIO
 for name in ("otadata", "ota_0", "ota_1"):
     assert name in PARTITIONS, f"missing OTA partition {name}"
 required = [
-    'kFirmwareVersion[] = "2.7.3"',
+    'kFirmwareVersion[] = "2.7.4"',
     'kInstalledCommit[] = FIRMWARE_SOURCE_COMMIT',
     'void drawOtaCommitEditor()',
     'String(kInstalledCommit).substring(0, 8)',
@@ -54,7 +54,7 @@ for forbidden in ("http.GET()", "installSelectedOta()", "checkOtaCommit("):
     assert forbidden not in loop, f"blocking network in UI loop: {forbidden}"
 assert re.search(r'otaVersionCompare\(version.c_str\(\), kFirmwareVersion\) < 0', MAIN)
 assert 'commandBuffer.set(app_config::commandBuffer.c_str());' in MAIN
-print("Short SHA OTA v2.7.3 contract: PASS (USB bootstrap still required)")
+print("Short SHA OTA v2.7.4 contract: PASS (USB bootstrap still required)")
 
 assert 'extra_scripts = pre:scripts/inject_firmware_commit.py' in PIO
 BUILD_SCRIPT = (ROOT / "scripts/inject_firmware_commit.py").read_text(encoding="utf-8")

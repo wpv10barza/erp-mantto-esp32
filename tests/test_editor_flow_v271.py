@@ -6,7 +6,7 @@ cpp = (root / "platformio/src/panel_4848s040/main.cpp").read_text(encoding="utf-
 mirror = (root / "src/main.cpp").read_text(encoding="utf-8")
 layout = (root / "include/editor_components.h").read_text(encoding="utf-8")
 assert cpp == mirror, "source mirrors must stay identical"
-assert 'kFirmwareVersion[] = "2.7.3"' in cpp
+assert 'kFirmwareVersion[] = "2.7.4"' in cpp
 assert "static constexpr Rect textField() { return {12, 48, 468, 146}; }" in layout
 assert "static constexpr Rect statusDisplay() { return {12, 146, 468, 164}; }" in layout
 assert "static constexpr Rect toolbar() { return {12, 164, 468, 212}; }" in layout

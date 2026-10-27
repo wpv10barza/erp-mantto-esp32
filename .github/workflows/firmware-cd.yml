@@ -47,6 +47,7 @@ jobs:
           python tests/test_firmware_main_sync.py
           python tests/test_backend_discovery.py
           python tests/test_alumno_cloud_target.py
+          python tests/test_acceso_academico_ota.py
           python tests/test_ota_target_guard.py
           python tests/test_final_ui_contract.py
           python tests/test_voice_cloud_contract.py

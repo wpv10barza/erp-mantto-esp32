@@ -1,0 +1,141 @@
+name: OTA | Publicar artefacto verificado (rapido)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "ID de Firmware CD terminado SUCCESS en main (sin recompilar)"
+        required: true
+        type: string
+      release_version:
+        description: "Version compilada que se publicara (ejemplo: 2.7.4)"
+        required: true
+        type: string
+        default: "2.7.4"
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: student-ota-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publicar OTA ya compilada en workspace alumno
+    environment: prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      REQUESTED_OTA_VERSION: ${{ inputs.release_version }}
+      DATABRICKS_AUTH_TYPE: github-oidc
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ vars.DATABRICKS_CLIENT_ID }}
+      OTA_VOLUME_PATH: ${{ vars.OTA_VOLUME_PATH }}
+    steps:
+      - name: Comprobar destino alumno, OIDC y RUN exitoso de main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || { echo "::error::Solo main"; exit 1; }
+          [[ "$DATABRICKS_HOST" == "https://dbc-77f7771e-2520.cloud.databricks.com" ]] || { echo "::error::Configure DATABRICKS_HOST en prod con el workspace alumno"; exit 1; }
+          [[ -n "$DATABRICKS_CLIENT_ID" ]] || { echo "::error::Configure DATABRICKS_CLIENT_ID del principal GitHub OIDC en prod"; exit 1; }
+          [[ "$OTA_VOLUME_PATH" =~ ^/Volumes/[^/]+/[^/]+/[^/]+$ ]] || { echo "::error::Configure OTA_VOLUME_PATH con UC Volume existente"; exit 1; }
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo "::error::source_run_id debe ser numerico"; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID" > "$RUNNER_TEMP/ota-source-run.json"
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          data=json.loads((Path(os.environ["RUNNER_TEMP"])/"ota-source-run.json").read_text())
+          if data.get("conclusion")!="success" or data.get("status")!="completed":
+              raise SystemExit("El RUN fuente no termino SUCCESS")
+          if data.get("head_branch")!="main" or data.get("head_sha")!=os.environ["GITHUB_SHA"]:
+              raise SystemExit("El RUN fuente no corresponde al HEAD actual de main")
+          if data.get("name")!="Firmware CD" or not data.get("path","").startswith(".github/workflows/firmware-cd.yml"):
+              raise SystemExit("RUN fuente distinto del compilador Firmware CD")
+          print("Origen CI verificado",data["id"],"commit",data["head_sha"][:8])
+          PY
+
+      - name: Descargar SOLO el firmware compilado por GitHub Actions
+        uses: actions/download-artifact@v4
+        with:
+          name: erp-mantto-esp32-4848-databricks-production
+          path: dist
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+
+      - name: Verificar binario, manifiesto, SHA y version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,re
+          root=pathlib.Path("dist")
+          manifest=json.loads((root/"manifest.json").read_text())
+          latest=json.loads((root/"latest.json").read_text())
+          requested=os.environ["REQUESTED_OTA_VERSION"].strip().lstrip("v")
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+",requested), "Version invalida"
+          assert manifest["source_sha"]==os.environ["GITHUB_SHA"], "Commit no corresponde a main"
+          assert manifest["version"]==latest["version"]==requested, "Version distinta a binario"
+          assert manifest["hardware"]=="ESP32-S3-4848S040"
+          assert manifest["source_repository"]=="wpv10barza/erp-mantto-esp32"
+          assert manifest["partition_table"]=="partitions_ota_16mb.csv"
+          assert manifest["credential_mode"]=="ota3c-nvs"
+          assert manifest["channel"]==latest["channel"]=="stable"
+          binary=(root/"firmware.bin").read_bytes()
+          assert 65536<=len(binary)<=0x400000, "Binario OTA fuera de ranura"
+          checksum=hashlib.sha256(binary).hexdigest()
+          assert manifest["size"]==latest["size"]==len(binary)
+          assert manifest["sha256"]==latest["sha256"]==checksum
+          with open(os.environ["GITHUB_ENV"],"a") as f:
+              f.write("OTA_VERSION="+requested+"\n")
+          print("Firmware verificado", requested,os.environ["GITHUB_SHA"][:8],len(binary))
+          PY
+
+      - uses: databricks/setup-cli@main
+
+      - name: Verificar App y backend en la cuenta alumno (sin exigir START)
+        shell: bash
+        run: |
+          set -euo pipefail
+          databricks apps get asistente-cloud-erp-alumno --output json > "$RUNNER_TEMP/alumno-app.json"
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          app=json.loads((Path(os.environ["RUNNER_TEMP"])/"alumno-app.json").read_text())
+          assert app.get("name")=="asistente-cloud-erp-alumno", "Nombre App incorrecto"
+          git_url=(app.get("git_repository") or {}).get("url","").removesuffix(".git").rstrip("/")
+          assert git_url=="https://github.com/wpv10barza/asistente-de-databricks--erp", "Backend Git incorrecto"
+          print("App del alumno OK; no es necesario encender compute para publicar en Volume")
+          PY
+
+      - name: Subir release inmutable y promover latest al final
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="dbfs:$OTA_VOLUME_PATH/stable"
+          VERSION_DIR="$ROOT/$OTA_VERSION"
+          databricks fs mkdir "$ROOT"
+          if databricks fs ls "$VERSION_DIR" > /dev/null 2>&1; then
+            echo "::error::Ya existe la version OTA $OTA_VERSION. No se sobrescribe."
+            exit 1
+          fi
+          databricks fs mkdir "$VERSION_DIR"
+          databricks fs cp dist/firmware.bin "$VERSION_DIR/firmware.bin"
+          databricks fs cp dist/manifest.json "$VERSION_DIR/manifest.json"
+          databricks fs cp dist/latest.json "$ROOT/latest.json" --overwrite
+          databricks fs ls "$VERSION_DIR"
+          databricks fs cat "$ROOT/latest.json"
+          {
+            echo "### Publicada OTA $OTA_VERSION (artefacto precompilado)"
+            echo "- Firmware SHA: ${GITHUB_SHA:0:8}"
+            echo "- Cuenta: alumno-3c"
+            echo "- Compute App: no se ha encendido automaticamente"
+            echo "- Requiere que ota_firmware_volume este vinculado a la App con CAN_READ"
+          } >> "$GITHUB_STEP_SUMMARY"

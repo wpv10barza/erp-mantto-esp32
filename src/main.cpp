@@ -66,7 +66,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.7.3";
+constexpr char kFirmwareVersion[] = "2.7.4";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // Full source SHA stays embedded for traceability and OTA manifest validation.
 // The touch UI only displays a short SHA; the backend resolves its unique prefix.
@@ -609,12 +609,15 @@ void drawExpandedPanel() {
   display->setTextColor(BLACK);
 
   if (homePanel == HomePanel::Backend) {
-    display->setCursor(28, 316);
-    display->print("HTTPS hacia Databricks Apps");
-    display->setCursor(28, 336);
-    display->print("OAuth M2M + token del dispositivo");
-    display->setCursor(28, 356);
-    display->print("Usa PROBAR CLOUD para validar extremo a extremo.");
+    display->setCursor(28, 309);
+    display->print(backendAvailable ? "Cloud alumno: CONECTADO" :
+                                     "Cloud alumno: SIN VERIFICAR");
+    display->setCursor(28, 330);
+    display->print("Alumno/profesor: abrir /acceso en navegador");
+    display->setCursor(28, 351);
+    display->print("Si OFF: profesor START desde GitHub Actions");
+    display->setCursor(28, 372);
+    display->print("PROBAR CLOUD verifica; no enciende la App");
   } else if (homePanel == HomePanel::Sheets) {
     int approved = 0, rejected = 0, pending = 0;
     int attempts = 0, applied = 0, blocked = 0;
@@ -701,7 +704,7 @@ void drawExpandedPanel() {
     display->print(" dBm");
   } else if (homePanel == HomePanel::Databricks) {
     display->setCursor(28, 316);
-    display->print("Backend: asistente-cloud-erp");
+    display->print("Backend: asistente-cloud-erp-alumno");
     display->setCursor(28, 336);
     display->print("Estado: ");
     display->print(backendAvailable ? "Conectado" : "Sin verificar");
@@ -925,7 +928,7 @@ void drawPanel() {
   display->print("HISTORIAL");
 
   drawHomeRow(62, "DB", "Conexion al backend",
-              "Conectar y validar el sistema", homePanel == HomePanel::Backend);
+              "Portal alumnado + estado cloud", homePanel == HomePanel::Backend);
   drawHomeRow(111, "GS", "Google Sheets",
               "Control y revision de cambios", homePanel == HomePanel::Sheets);
   drawHomeRow(160, "CI", "GitHub Actions",
@@ -2118,12 +2121,17 @@ void networkWorker(void* parameter) {
 const char controlPage[] PROGMEM = R"HTML(
 <!doctype html><html lang="es"><meta name="viewport" content="width=device-width,initial-scale=1">
 <style>body{font-family:system-ui;max-width:680px;margin:auto;padding:24px;background:#eef3f7}section{background:white;padding:20px;border-radius:16px;box-shadow:0 5px 20px #0001}button,textarea{font:inherit}button{padding:13px 18px;border:0;border-radius:10px;background:#08784f;color:white}textarea{box-sizing:border-box;width:100%;min-height:120px;padding:12px;margin:8px 0 12px}.warn{color:#805500}</style>
-<h1>Panel ESP32-4848S040 3C</h1><section><p class="warn">La orden se envía a Databricks Apps y queda pendiente de confirmación humana. Google Sheets cambia solo después de la confirmación web.</p><textarea id="text" placeholder="Cambia la tarea J10 a mensual"></textarea><button onclick="send3c()">Enviar al asistente</button><button onclick="health()">Probar Databricks</button><pre id="result"></pre></section>
+<h1>Panel ESP32-4848S040 3C</h1><section><h2>Conexion al backend — acceso academico</h2><p>Estudiante y docente: inicien sesion con su cuenta autorizada de Databricks Apps. No se guardan claves personales en este panel.</p><p><a href="/acceso" rel="noopener noreferrer">ABRIR PORTAL ALUMNO / PROFESOR (SSO)</a></p><p>Solo el profesor autorizado puede iniciar, detener o redesplegar la App desde <a href="https://github.com/wpv10barza/asistente-de-databricks--erp/actions/workflows/alumno-cloud-control.yml" target="_blank" rel="noopener noreferrer">GitHub Actions — control cloud</a>; funciona sin PC encendido.</p><p class="warn">Si Databricks esta detenido, inicia la App antes de conectar. PROBAR CLOUD solo comprueba disponibilidad y no realiza START.</p><p class="warn">La orden se envía a Databricks Apps y queda pendiente de confirmación humana. Google Sheets cambia solo después de la confirmación web.</p><textarea id="text" placeholder="Cambia la tarea J10 a mensual"></textarea><button onclick="send3c()">Enviar al asistente</button><button onclick="health()">Probar Databricks</button><pre id="result"></pre></section>
 <script>async function send3c(){const b=new URLSearchParams({text:document.querySelector('#text').value});const r=await fetch('/api/3c',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b});result.textContent=r.status+' '+await r.text()}async function health(){const r=await fetch('/api/backend-health',{method:'POST'});result.textContent=r.status+' '+await r.text()}</script></html>
 )HTML";
 
 void configureWebServer() {
   web.on("/", HTTP_GET, [] { web.send_P(200, "text/html; charset=utf-8", controlPage); });
+  // Browser-only academic login: follow Databricks SSO, never accept credentials on ESP32.
+  web.on("/acceso", HTTP_GET, [] {
+    web.sendHeader("Location", String(app_config::assistantBaseUrl) + "/acceso", true);
+    web.send(302, "text/plain; charset=utf-8", "Redireccionando a Databricks SSO");
+  });
   web.on("/health", HTTP_GET, [] {
     bool voiceWaiting = false;
     bool ackWaiting = false;
