@@ -31,7 +31,7 @@ for must in (
 for forbidden in ("ensureDatabricksAccessToken()", "addRequestAuth(http)",
                   "/api/device/v1/firmware/by-commit/"):
     assert forbidden not in ota, forbidden
-assert re.search(r"(?m)^\\s*client\\.setInsecure\\s*\\(", ota) is None
+assert all(not line.lstrip().startswith("client.setInsecure(") for line in ota.splitlines())
 assert CA.count("-----BEGIN CERTIFICATE-----") >= 3
 assert "publish_github_fota:" in CI and 'gh release create "$TAG"' in CI
 assert 'github.event_name == \'push\'' in CI
