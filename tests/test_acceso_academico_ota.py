@@ -18,9 +18,9 @@ assert 'String(app_config::assistantBaseUrl) + "/acceso"' in FW
 assert 'web.send(302, "text/plain; charset=utf-8", "Redireccionando a Databricks SSO")' in FW
 assert 'href="/acceso" rel="noopener noreferrer"' in FW
 assert CONTROL in FW
-assert "PROBAR CLOUD verifica; no enciende la App" in FW
-assert "Si OFF: profesor START desde GitHub Actions" in FW
-assert "Cloud alumno: CONECTADO" in FW
+assert "ACTIVAR / DEPLOY CLOUD" in FW
+assert "Solo profesor: autenticacion GitHub" in FW
+assert "Databricks alumno: CONECTADO" in FW
 
 # The device should never impersonate either person or control cloud compute.
 for secret_or_identity in (
