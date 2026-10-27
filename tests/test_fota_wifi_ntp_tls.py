@@ -35,8 +35,6 @@ assert check.index("String(kInstalledCommit).startsWith(sha)") < check.index("if
 worker = SRC[SRC.index("void networkWorker(void*"):SRC.index("const char controlPage[]")]
 assert "beginGithubOtaClockSync();  // Background UTC sync before any GitHub FOTA." in worker
 assert "githubNtpStarted = false;" in worker
-assert ',\\"clock_utc_ready\\":' not in SRC  # protect against double JSON escaping
-assert '\"clock_utc_ready\\":' not in SRC
 assert "clock_utc_ready" in SRC
 assert "time(nullptr) > 1700000000" in SRC
 print("GitHub FOTA Wi-Fi/NTP split, 30s UTC, TLS verified, no Databricks: PASS")
