@@ -34,8 +34,8 @@
     "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "badd054943ec150096b3c2c5ceb5a665b60ac39f",
-    "src/main.cpp": "badd054943ec150096b3c2c5ceb5a665b60ac39f",
+    "platformio/src/panel_4848s040/main.cpp": "497c48b5b4f25a2aa1801f53bf56fdf7217fabcf",
+    "src/main.cpp": "497c48b5b4f25a2aa1801f53bf56fdf7217fabcf",
     "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -45,7 +45,8 @@
     "include/home_menu.h": "177c6d8028bc26badd888bfa8b2dd0c6bca87a3e",
     "platformio/src/panel_4848s040/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
     "platformio.ini": "7dc05857b835fef56a1e608e6b5d5028c78d843e",
-    "include/github_ota_ca.h": "a00d6d9e19b9b4ac4c11cbed7c1712c7a8988847"
+    "include/github_ota_ca.h": "a00d6d9e19b9b4ac4c11cbed7c1712c7a8988847",
+    "include/cloud_control_qr.h": "54335c9ce1999b30b47933ab450339583819dfd0"
   },
   "production": {
     "platformio_env": "panel_4848s040",
@@ -55,8 +56,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.5",
-    "role": "production_fota_github_releases_without_databricks",
+    "version": "2.7.6",
+    "role": "cloud_control_teacher_qr_with_verified_github_fota",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -176,6 +177,23 @@
       "identity": "Databricks Apps SSO; no passwords or cloud admin credentials on ESP32",
       "availability": "teacher controls START/STOP through GitHub Actions; PROBAR CLOUD only diagnoses",
       "portal": "https://asistente-cloud-erp-alumno-7474657268940105.aws.databricksapps.com/acceso"
+    },
+    "teacher_control": {
+      "method": "scan GitHub Actions QR on ESP32 then GitHub authenticated workflow_dispatch from teacher mobile",
+      "workflow": "https://github.com/wpv10barza/asistente-de-databricks--erp/actions/workflows/alumno-cloud-control.yml",
+      "app": "asistente-cloud-erp-alumno",
+      "actions": [
+        "status",
+        "start",
+        "stop",
+        "redeploy",
+        "grant_access"
+      ],
+      "direct_device_deploy": false,
+      "reason": "never embed GitHub/Databricks administrative credentials on physically shared ESP32",
+      "verification": "PROBAR CLOUD queries health via device authorization after teacher starts app",
+      "teacher_only": true,
+      "requires_provisioned_oidc": true
     }
   }
 }
