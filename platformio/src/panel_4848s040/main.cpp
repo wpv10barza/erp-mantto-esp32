@@ -1612,8 +1612,8 @@ bool checkOtaCommit(const String& rawCommit) {
   checksum.toCharArray(candidate.sha256, sizeof(candidate.sha256));
   url.toCharArray(candidate.url, sizeof(candidate.url));
   candidate.size = fileSize;
-  String("GitHub FOTA " + version + " lista; pulse INSTALAR")
-      .toCharArray(candidate.message, sizeof(candidate.message));
+  const String readyMessage = String("GitHub FOTA ") + version + " lista; pulse INSTALAR";
+  readyMessage.toCharArray(candidate.message, sizeof(candidate.message));
   portENTER_CRITICAL(&otaMux);
   otaSelection = candidate;
   portEXIT_CRITICAL(&otaMux);
