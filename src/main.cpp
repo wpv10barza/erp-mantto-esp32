@@ -709,7 +709,7 @@ void drawExpandedPanel() {
     display->print("Estado: ");
     display->print(backendAvailable ? "Conectado" : "Sin verificar");
     display->setCursor(28, 356);
-    display->print("Portal SSO: /acceso en navegador");
+    display->print("CLOUD HTTPS");
     display->setCursor(28, 376);
     display->print("OAuth 2.0 M2M");
   } else if (homePanel == HomePanel::Diagnostics) {
