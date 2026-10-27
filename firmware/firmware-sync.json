@@ -34,8 +34,8 @@
     "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "c6fce53141aa550753d7c1a41714f7d8749da863",
-    "src/main.cpp": "c6fce53141aa550753d7c1a41714f7d8749da863",
+    "platformio/src/panel_4848s040/main.cpp": "badd054943ec150096b3c2c5ceb5a665b60ac39f",
+    "src/main.cpp": "badd054943ec150096b3c2c5ceb5a665b60ac39f",
     "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
