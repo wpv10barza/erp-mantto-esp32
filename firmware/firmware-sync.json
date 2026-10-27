@@ -34,8 +34,8 @@
     "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "57bcc4cff44c840022d86b6789efb4173dcba359",
-    "src/main.cpp": "57bcc4cff44c840022d86b6789efb4173dcba359",
+    "platformio/src/panel_4848s040/main.cpp": "b779ec658cb7f7f6c557aeb77619aa3c31e94b3f",
+    "src/main.cpp": "b779ec658cb7f7f6c557aeb77619aa3c31e94b3f",
     "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -54,8 +54,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.3",
-    "role": "final_interface_short_sha_ota_picker_and_guarded_OTA_with_pc_dictation",
+    "version": "2.7.4",
+    "role": "final_interface_ota_short_sha_and_student_sso_portal",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -164,6 +164,15 @@
       "status_text_approved_unapplied": "APROBADO: SIN APLICAR",
       "pending_keeps_editor_visible": true,
       "approval_not_a_sheet_write": true
+    },
+    "portal": {
+      "path": "/acceso",
+      "type": "browser_redirect_to_student_databricks_app",
+      "student_role": "CAN_USE",
+      "teacher_role": "CAN_MANAGE",
+      "identity": "Databricks Apps SSO; no passwords or cloud admin credentials on ESP32",
+      "availability": "teacher controls START/STOP through GitHub Actions; PROBAR CLOUD only diagnoses",
+      "portal": "https://asistente-cloud-erp-alumno-7474657268940105.aws.databricksapps.com/acceso"
     }
   }
 }
