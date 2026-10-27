@@ -22,6 +22,7 @@
 
 #include "app_config.h"
 #include "github_ota_ca.h"
+#include "cloud_control_qr.h"
 #include "firmware_source_commit.generated.h"
 #include "command_buffer.h"
 #include "command_text_viewport.h"
@@ -69,7 +70,8 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.7.5";
+bool cloudControlQrOpen = false;
+constexpr char kFirmwareVersion[] = "2.7.6";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // Full source SHA stays embedded for traceability and OTA manifest validation.
 // The touch UI only displays a short SHA; the backend resolves its unique prefix.
@@ -612,15 +614,16 @@ void drawExpandedPanel() {
   display->setTextColor(BLACK);
 
   if (homePanel == HomePanel::Backend) {
-    display->setCursor(28, 309);
-    display->print(backendAvailable ? "Cloud alumno: CONECTADO" :
-                                     "Cloud alumno: SIN VERIFICAR");
-    display->setCursor(28, 330);
-    display->print("Alumno/profesor: abrir /acceso en navegador");
-    display->setCursor(28, 351);
-    display->print("Si OFF: profesor START desde GitHub Actions");
-    display->setCursor(28, 372);
-    display->print("PROBAR CLOUD verifica; no enciende la App");
+    display->setCursor(28, 312);
+    display->print(backendAvailable ? "Databricks alumno: CONECTADO" :
+                                     "Databricks alumno: SIN VERIFICAR");
+    display->setCursor(28, 332);
+    display->print("Acceso estudiantes: portal web /acceso");
+    display->drawRoundRect(26, 354, 427, 48, 9, BLACK);
+    display->setTextSize(2);
+    display->setCursor(54, 369);
+    display->print("ACTIVAR / DEPLOY CLOUD");
+    display->setTextSize(1);
   } else if (homePanel == HomePanel::Sheets) {
     int approved = 0, rejected = 0, pending = 0;
     int attempts = 0, applied = 0, blocked = 0;
@@ -891,7 +894,46 @@ void handleHistoryTap(int x, int y) {
   }
 }
 
+void drawCloudControlScreen() {
+  if (!displayReady) return;
+  display->fillScreen(WHITE);
+  display->setTextColor(BLACK);
+  drawCentered("CONTROL DATABRICKS", 13, 2, BLACK);
+  drawCentered("Solo profesor: autenticacion GitHub", 44, 1, BLACK);
+  // Embedded 41x41 QR, with >=4 modules white quiet zone around it.
+  // GitHub authenticates the user: the ESP32 never holds administrative tokens.
+  constexpr int qrX = 137;
+  constexpr int qrY = 96;
+  constexpr int modulePixels = 5;
+  for (int y = 0; y < kCloudControlQrModules; ++y) {
+    for (int x = 0; x < kCloudControlQrModules; ++x) {
+      const int bitIndex = y * kCloudControlQrModules + x;
+      const int byteIndex = bitIndex / 8;
+      if (kCloudControlQrBits[byteIndex] & (0x80 >> (bitIndex % 8))) {
+        display->fillRect(qrX + x * modulePixels,
+                          qrY + y * modulePixels,
+                          modulePixels, modulePixels, BLACK);
+      }
+    }
+  }
+  display->setTextSize(1);
+  display->setCursor(25, 327);
+  display->print("1. Escanear QR con movil del docente");
+  display->setCursor(25, 345);
+  display->print("2. GitHub > Run workflow > start/redeploy");
+  display->setCursor(25, 363);
+  display->print("3. Confirmar como usuario autorizado");
+  display->setCursor(25, 387);
+  display->print("El ESP32 NO despliega ni consume credito solo.");
+  drawButton(14, 429, 220, 40, "VOLVER", WHITE);
+  drawButton(246, 429, 220, 40, "PROBAR CLOUD", WHITE);
+}
+
 void drawPanel() {
+  if (cloudControlQrOpen) {
+    drawCloudControlScreen();
+    return;
+  }
   if (otaCommitEditorOpen) {
     drawOtaCommitEditor();
     return;
@@ -2266,6 +2308,15 @@ void handleTouch() {
   if (millis() - lastHandledTapMs < kTouchDebounceMs) return;
   lastHandledTapMs = millis();
   {
+    if (cloudControlQrOpen) {
+      if (tap.y >= 421 && tap.x >= 14 && tap.x < 466) {
+        cloudControlQrOpen = false;
+        homePanel = HomePanel::Backend;
+        drawPanel();
+        if (tap.x >= 246) queueNetworkRequest(NetworkAction::Health);
+      }
+      return;
+    }
     if (otaCommitEditorOpen) {
       virtual_keyboard::Key key{};
       if (virtual_keyboard::hitTest(keyboardMode, tap.x, tap.y, &key)) {
@@ -2539,6 +2590,13 @@ void handleTouch() {
           togglePanel(HomePanel::Device);
           break;
         case home_ui::Action::None:
+          if (homePanel == HomePanel::Backend &&
+              tap.x >= 26 && tap.x < 453 &&
+              tap.y >= 354 && tap.y < 402) {
+            cloudControlQrOpen = true;
+            drawPanel(); // Shows GitHub authentication QR; does not issue START.
+            break;
+          }
           if (homePanel != HomePanel::None &&
               tap.x >= 14 && tap.x < 466 &&
               tap.y >= 268 && tap.y < 416) {
