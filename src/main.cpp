@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <Arduino_GFX_Library.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include <time.h>
 #include <Preferences.h>
 #include <ctype.h>
 #include <Update.h>
@@ -19,6 +21,7 @@
 #include <freertos/task.h>
 
 #include "app_config.h"
+#include "github_ota_ca.h"
 #include "firmware_source_commit.generated.h"
 #include "command_buffer.h"
 #include "command_text_viewport.h"
@@ -66,7 +69,7 @@ enum class HomePanel {
 };
 
 HomePanel homePanel = HomePanel::None;
-constexpr char kFirmwareVersion[] = "2.7.4";
+constexpr char kFirmwareVersion[] = "2.7.5";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // Full source SHA stays embedded for traceability and OTA manifest validation.
 // The touch UI only displays a short SHA; the backend resolves its unique prefix.
@@ -130,8 +133,8 @@ enum class NetworkAction : uint8_t {
   Health, CloudAndSheets, Send3C, LoadHistory, CheckOtaCommit, InstallOta, AckVoiceDraft, RequestPcVoice
 };
 
-// OTA accepts a short 7..12 hex SHA only after unique resolution in Databricks.
-// Never flash arbitrary GitHub sources; the backend serves published builds only.
+// GitHub-only FOTA: short 8..12 hexadecimal SHA selects an immutable GitHub
+// Release containing a compiled, validated .bin. A Git commit is not firmware.
 constexpr size_t kOtaCommitCapacity = 12;
 CommandBuffer<kOtaCommitCapacity> otaCommitBuffer;
 bool otaCommitEditorOpen = false;
@@ -141,8 +144,8 @@ struct OtaSelection {
   char commit[41] = {};
   char version[32] = {};
   char sha256[65] = {};
-  char url[110] = {};
-  char message[86] = "Ingrese SHA corto (7 a 12)";
+  char url[180] = {};
+  char message[86] = "Ingrese SHA corto (8 a 12)";
   size_t size = 0;
 };
 OtaSelection otaSelection{};
@@ -150,7 +153,7 @@ portMUX_TYPE otaMux = portMUX_INITIALIZER_UNLOCKED;
 
 bool validShortCommit(String value) {
   value.trim();
-  if (value.length() < 7 || value.length() > 12) return false;
+  if (value.length() < 8 || value.length() > 12) return false;
   for (size_t i = 0; i < value.length(); ++i) {
     const char ch = value[i];
     if (!isxdigit(static_cast<unsigned char>(ch))) return false;
@@ -509,7 +512,7 @@ void drawOtaCommitField() {
   display->setTextColor(BLACK);
   display->setTextSize(1);
   display->setCursor(24, 61);
-  display->print("SHA CORTO (7-12 caracteres hex)");
+  display->print("SHA CORTO (8-12 caracteres hex)");
   const String content(otaCommitBuffer.c_str());
   display->setTextSize(2);
   display->setCursor(24, 84);
@@ -934,7 +937,7 @@ void drawPanel() {
   drawHomeRow(160, "CI", "GitHub Actions",
               "Probar flujo y firmware", homePanel == HomePanel::Github);
   drawHomeRow(209, "FW", "Actualizar firmware",
-              "Desplegar nueva version", homePanel == HomePanel::Firmware);
+              "GitHub FOTA sin Databricks", homePanel == HomePanel::Firmware);
 
   if (homePanel == HomePanel::None) {
     drawHomeRow(266, "WF", "Wi-Fi 2.4 GHz", "", false, 34);
@@ -1504,18 +1507,53 @@ void fetchHistory() {
 }
 
 
+// Direct public GitHub Releases transport. No Databricks OAuth, UC Volume, or
+// running Databricks App is involved in the FOTA lookup/download.
+String githubOtaAssetUrl(const String& shortCommit, const char* filename) {
+  const String releaseTag = String("ota-") + shortCommit.substring(0, 8);
+  return String("https://github.com/wpv10barza/erp-mantto-esp32/releases/download/") +
+         releaseTag + "/" + filename;
+}
+
+bool githubOtaClockReady() {
+  time_t now = time(nullptr);
+  if (now > 1700000000) return true;
+  configTime(0, 0, "pool.ntp.org", "time.google.com");
+  for (int i = 0; i < 30 && WiFi.status() == WL_CONNECTED; ++i) {
+    now = time(nullptr);
+    if (now > 1700000000) return true;
+    vTaskDelay(pdMS_TO_TICKS(300));
+  }
+  return false; // Without valid UTC the TLS peer certificate cannot be checked.
+}
+
+bool beginGithubOtaHttp(HTTPClient& http, WiFiClientSecure& client, const String& url) {
+  if (!url.startsWith("https://github.com/wpv10barza/erp-mantto-esp32/releases/download/ota-")) {
+    return false;
+  }
+  // A chain of trusted roots permits GitHub's release-asset redirects while
+  // preserving X.509 hostname checks. Never use client.setInsecure().
+  client.setCACert(kGithubOtaTrustedRoots);
+  http.setTimeout(30000);
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setRedirectLimit(5);
+  if (!http.begin(client, url)) return false;
+  http.setUserAgent("ERP-MANTTO-ESP32-FOTA/2.7.5");
+  return true;
+}
+
 bool checkOtaCommit(const String& rawCommit) {
   String sha = rawCommit;
   sha.trim();
   sha.toLowerCase();
   if (!validShortCommit(sha)) {
-    setOtaStatus("SHA debe tener 7 a 12 hex", true);
-    updatePanel(PanelState::Error, "Commit OTA invalido");
+    setOtaStatus("SHA debe tener 8 a 12 hex", true);
+    updatePanel(PanelState::Error, "Commit FOTA invalido");
     return false;
   }
-  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) {
-    setOtaStatus("Sin Wi-Fi / OAuth Databricks", true);
-    updatePanel(PanelState::Offline, "OTA: sin conexion");
+  if (WiFi.status() != WL_CONNECTED || !githubOtaClockReady()) {
+    setOtaStatus("FOTA requiere Wi-Fi y hora HTTPS", true);
+    updatePanel(PanelState::Offline, "GitHub OTA: sin red o reloj");
     return false;
   }
   if (String(kInstalledCommit).startsWith(sha)) {
@@ -1523,39 +1561,48 @@ bool checkOtaCommit(const String& rawCommit) {
     updatePanel(PanelState::Ready, "El commit solicitado ya esta instalado");
     return false;
   }
-  setOtaStatus("Consultando publicacion OTA...", true);
-  updatePanel(PanelState::Busy, "Buscando firmware OTA");
+  setOtaStatus("Consultando GitHub Releases...", true);
+  updatePanel(PanelState::Busy, "GitHub FOTA: buscando release");
+  const String manifestUrl = githubOtaAssetUrl(sha, "manifest.json");
+  WiFiClientSecure client;
   HTTPClient http;
-  http.setTimeout(app_config::httpTimeoutMs);
-  if (!http.begin(endpoint("/api/device/v1/firmware/by-commit/" + sha))) {
-    setOtaStatus("No se pudo abrir OTA", true);
-    updatePanel(PanelState::Error, "OTA URL invalida");
+  if (!beginGithubOtaHttp(http, client, manifestUrl)) {
+    setOtaStatus("GitHub HTTPS no disponible", true);
+    updatePanel(PanelState::Error, "GitHub FOTA URL invalida");
     return false;
   }
-  addRequestAuth(http);
   const int code = http.GET();
-  const String body = code == 200 ? http.getString() : "";
+  // Bound the JSON response and reject HTML login/error pages.
+  const int manifestBytes = http.getSize();
+  const String body = (code == 200 && manifestBytes > 0 && manifestBytes < 4096)
+                    ? http.getString() : "";
   http.end();
-  if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
-  if (code != 200) {
-    setOtaStatus(code == 404 ? "SHA sin OTA o ambiguo" :
-                 String("OTA consulta HTTP ") + code, true);
-    updatePanel(PanelState::Error, String("OTA HTTP ") + code);
-    Serial.printf("OTA LOOKUP HTTP=%d commit=%s\n", code, sha.c_str());
+  if (code != 200 || !body.length()) {
+    setOtaStatus(code == 404 ? "No existe release del SHA" :
+                 String("GitHub HTTP ") + code, true);
+    updatePanel(PanelState::Error, String("GitHub FOTA HTTP ") + code);
+    Serial.printf("GITHUB FOTA LOOKUP HTTP=%d commit=%s\n", code, sha.c_str());
     return false;
   }
   const String fullSha = jsonStringValue(body, "source_sha");
   const String version = jsonStringValue(body, "version");
   const String checksum = jsonStringValue(body, "sha256");
-  const String path = jsonStringValue(body, "url");
+  const String repository = jsonStringValue(body, "source_repository");
+  const String hardware = jsonStringValue(body, "hardware");
+  const String partitions = jsonStringValue(body, "partition_table");
+  const String credentialMode = jsonStringValue(body, "credential_mode");
   const size_t fileSize = jsonUnsignedLongValue(body, "size", 0UL);
+  const String url = githubOtaAssetUrl(sha, "firmware.bin");
   if (fullSha.length() != 40 || !fullSha.startsWith(sha) ||
+      repository != "wpv10barza/erp-mantto-esp32" ||
+      hardware != "ESP32-S3-4848S040" ||
+      partitions != "partitions_ota_16mb.csv" ||
+      credentialMode != "ota3c-nvs" ||
       !validSha256(checksum) ||
-      !path.startsWith("/api/device/v1/firmware/") || !path.endsWith(".bin") ||
       fileSize < 65536 || fileSize > 0x400000 ||
       otaVersionCompare(version.c_str(), kFirmwareVersion) < 0) {
-    setOtaStatus("Build no apta, antigua o invalida", true);
-    updatePanel(PanelState::Error, "OTA: version/manifest invalido");
+    setOtaStatus("GitHub release incompatible/invalido", true);
+    updatePanel(PanelState::Error, "FOTA: manifest no seguro");
     return false;
   }
   OtaSelection candidate{};
@@ -1563,16 +1610,16 @@ bool checkOtaCommit(const String& rawCommit) {
   fullSha.toCharArray(candidate.commit, sizeof(candidate.commit));
   version.toCharArray(candidate.version, sizeof(candidate.version));
   checksum.toCharArray(candidate.sha256, sizeof(candidate.sha256));
-  path.toCharArray(candidate.url, sizeof(candidate.url));
+  url.toCharArray(candidate.url, sizeof(candidate.url));
   candidate.size = fileSize;
-  const String message = String("OTA ") + version + " lista; pulse INSTALAR";
-  message.toCharArray(candidate.message, sizeof(candidate.message));
+  String("GitHub FOTA " + version + " lista; pulse INSTALAR")
+      .toCharArray(candidate.message, sizeof(candidate.message));
   portENTER_CRITICAL(&otaMux);
   otaSelection = candidate;
   portEXIT_CRITICAL(&otaMux);
-  Serial.printf("OTA VERIFIED commit=%s version=%s size=%u\n",
+  Serial.printf("GITHUB FOTA VERIFIED commit=%s version=%s size=%u\n",
                 fullSha.c_str(), version.c_str(), static_cast<unsigned>(fileSize));
-  updatePanel(PanelState::Ready, "OTA lista para instalar");
+  updatePanel(PanelState::Ready, "GitHub FOTA lista para instalar");
   return true;
 }
 
@@ -1581,53 +1628,51 @@ bool installSelectedOta() {
   portENTER_CRITICAL(&otaMux);
   selected = otaSelection;
   portEXIT_CRITICAL(&otaMux);
+  const String downloadUrl = String(selected.url);
   if (!selected.ready || !validSha256(String(selected.sha256)) ||
-      !String(selected.url).startsWith("/api/device/v1/firmware/") ||
-      !String(selected.url).endsWith(".bin") ||
+      !downloadUrl.startsWith("https://github.com/wpv10barza/erp-mantto-esp32/releases/download/ota-") ||
+      !downloadUrl.endsWith("/firmware.bin") ||
       selected.size < 65536 || selected.size > 0x400000) {
     setOtaStatus("Seleccione y verifique commit", true);
-    updatePanel(PanelState::Error, "OTA sin manifest valido");
+    updatePanel(PanelState::Error, "FOTA sin manifest valido");
     return false;
   }
   if (!esp_ota_get_next_update_partition(nullptr)) {
     setOtaStatus("Sin particion OTA; usar USB", true);
-    updatePanel(PanelState::Error, "OTA necesita instalacion USB");
+    updatePanel(PanelState::Error, "FOTA necesita instalacion USB");
     return false;
   }
-  if (WiFi.status() != WL_CONNECTED || !ensureDatabricksAccessToken()) {
-    setOtaStatus("Red no disponible", true);
-    updatePanel(PanelState::Offline, "OTA sin conexion");
+  if (WiFi.status() != WL_CONNECTED || !githubOtaClockReady()) {
+    setOtaStatus("Sin Internet o reloj TLS", true);
+    updatePanel(PanelState::Offline, "GitHub FOTA sin conexion");
     return false;
   }
-  const String url = endpoint(String(selected.url));
+  WiFiClientSecure client;
   HTTPClient http;
-  http.setTimeout(30000);
-  if (!http.begin(url)) {
-    setOtaStatus("URL de descarga invalida", true);
-    updatePanel(PanelState::Error, "OTA URL invalida");
+  if (!beginGithubOtaHttp(http, client, downloadUrl)) {
+    setOtaStatus("GitHub HTTPS fallo", true);
+    updatePanel(PanelState::Error, "FOTA URL invalida");
     return false;
   }
-  addRequestAuth(http);
   const int code = http.GET();
   if (code != 200) {
-    if (code == 401 && databricksAppEndpoint()) clearDatabricksAccessToken();
     http.end();
-    setOtaStatus(String("Descarga HTTP ") + code, true);
-    updatePanel(PanelState::Error, String("OTA descarga HTTP ") + code);
+    setOtaStatus(String("Descarga GitHub HTTP ") + code, true);
+    updatePanel(PanelState::Error, String("FOTA HTTP ") + code);
     return false;
   }
   const int contentLength = http.getSize();
   if (contentLength <= 0 || static_cast<size_t>(contentLength) != selected.size) {
     http.end();
-    setOtaStatus("Tamano OTA no coincide", true);
-    updatePanel(PanelState::Error, "OTA tamano invalido");
+    setOtaStatus("Tamano FOTA no coincide", true);
+    updatePanel(PanelState::Error, "FOTA tamano invalido");
     return false;
   }
-  updatePanel(PanelState::Busy, "OTA: descargando y verificando");
+  updatePanel(PanelState::Busy, "FOTA GitHub: descargando y verificando");
   if (!Update.begin(selected.size, U_FLASH)) {
     http.end();
     setOtaStatus("Update.begin fallo; usar USB", true);
-    updatePanel(PanelState::Error, "OTA particion insuficiente");
+    updatePanel(PanelState::Error, "FOTA particion insuficiente");
     return false;
   }
   mbedtls_sha256_context sha;
@@ -1661,31 +1706,28 @@ bool installSelectedOta() {
   mbedtls_sha256_free(&sha);
   http.end();
   char hashText[65]{};
-  for (int i = 0; i < 32; ++i) {
-    snprintf(hashText + i * 2, 3, "%02x", digest[i]);
-  }
+  for (int i = 0; i < 32; ++i) snprintf(hashText + i * 2, 3, "%02x", digest[i]);
   if (!ok || received != selected.size ||
       !String(hashText).equalsIgnoreCase(selected.sha256)) {
     Update.abort();
     setOtaStatus("Descarga incompleta o SHA-256 incorrecto", true);
-    updatePanel(PanelState::Error, "OTA abortada, firmware intacto");
+    updatePanel(PanelState::Error, "FOTA abortada, firmware intacto");
     return false;
   }
   if (!Update.end(true)) {
     Update.abort();
-    setOtaStatus("No se pudo activar particion OTA", true);
+    setOtaStatus("No se pudo activar particion FOTA", true);
     updatePanel(PanelState::Error, "Update.end fallo");
     return false;
   }
-  setOtaStatus("OTA verificada; reiniciando");
-  updatePanel(PanelState::Ready, "OTA SHA-256 OK; reiniciando");
-  Serial.printf("OTA SUCCESS version=%s source_sha=%s bytes=%u\n",
+  setOtaStatus("GitHub FOTA verificada; reiniciando");
+  updatePanel(PanelState::Ready, "FOTA SHA-256 OK; reiniciando");
+  Serial.printf("GITHUB FOTA SUCCESS version=%s source_sha=%s bytes=%u\n",
                 selected.version, selected.commit, static_cast<unsigned>(received));
   vTaskDelay(pdMS_TO_TICKS(900));
   ESP.restart();
   return true;
 }
-
 
 void requestPcVoiceCapture() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -2251,7 +2293,7 @@ void handleTouch() {
             typed.trim();
             typed.toLowerCase();
             if (!validShortCommit(typed)) {
-              setOtaStatus("Se requieren 7 a 12 hex", true);
+              setOtaStatus("Se requieren 8 a 12 hex", true);
               drawOtaCommitField();
               break;
             }
