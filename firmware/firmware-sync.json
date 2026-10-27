@@ -34,8 +34,8 @@
     "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "497c48b5b4f25a2aa1801f53bf56fdf7217fabcf",
-    "src/main.cpp": "497c48b5b4f25a2aa1801f53bf56fdf7217fabcf",
+    "platformio/src/panel_4848s040/main.cpp": "08b143f3008ff763c1fd450dd304b4b160e94bb8",
+    "src/main.cpp": "08b143f3008ff763c1fd450dd304b4b160e94bb8",
     "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -56,8 +56,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.6",
-    "role": "github_fota_safe_teacher_control_qr_esp32",
+    "version": "2.7.7",
+    "role": "github_fota_wifi_ntp_tls_verified_diag_277",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -127,7 +127,14 @@
       "selection": "Commit-specific GitHub Release; validate full source_sha prefix, version, size, target, SHA-256",
       "same_version_different_commit": true,
       "transport": "GitHub Releases X.509 TLS with Mozilla roots; follow HTTPS redirects and validate SHA-256 before Update.end()",
-      "independent_from_databricks": true
+      "independent_from_databricks": true,
+      "network_preflight": {
+        "wifi": "FOTA requires WiFi 2.4GHz, checked separately",
+        "utc": "NTP starts on connection, bounded 30-second wait",
+        "tls": "X.509 verified with trusted roots, no setInsecure",
+        "health": "clock_utc_ready available on local /health",
+        "cloud": "Databricks not needed for FOTA"
+      }
     },
     "voice": {
       "source": "PowerShell PC WAV/MP3 or Windows dictation",
