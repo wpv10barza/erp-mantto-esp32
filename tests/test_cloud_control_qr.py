@@ -8,7 +8,7 @@ mirror=(root/"platformio/src/panel_4848s040/main.cpp").read_text(encoding="utf-8
 qr=(root/"include/cloud_control_qr.h").read_text(encoding="utf-8")
 sync=json.loads((root/"firmware/firmware-sync.json").read_text(encoding="utf-8"))
 assert cpp==mirror
-assert 'kFirmwareVersion[] = "2.7.6"' in cpp
+assert 'kFirmwareVersion[] = "2.7.7"' in cpp
 assert sync["ui"]["teacher_control"]["direct_device_deploy"] is False
 assert sync["ui"]["teacher_control"]["requires_provisioned_oidc"] is True
 assert 'bool cloudControlQrOpen = false;' in cpp
@@ -32,4 +32,4 @@ assert len(re.findall(r"0x[0-9a-f]{2}", qr)) == 211
 for forbidden in ("/api/2.0/apps/asistente-cloud-erp-alumno/start",
                   "github_pat_", "GITHUB_TOKEN=", "databricks apps deploy"):
     assert forbidden not in cpp
-print("Student 2.7.6 QR touch controls and no device-admin secrets: PASS")
+print("Student 2.7.7 QR touch controls and no device-admin secrets: PASS")

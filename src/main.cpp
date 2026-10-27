@@ -71,7 +71,7 @@ enum class HomePanel {
 
 HomePanel homePanel = HomePanel::None;
 bool cloudControlQrOpen = false;
-constexpr char kFirmwareVersion[] = "2.7.6";
+constexpr char kFirmwareVersion[] = "2.7.7";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // Full source SHA stays embedded for traceability and OTA manifest validation.
 // The touch UI only displays a short SHA; the backend resolves its unique prefix.
@@ -1557,16 +1557,49 @@ String githubOtaAssetUrl(const String& shortCommit, const char* filename) {
          releaseTag + "/" + filename;
 }
 
+// Start SNTP once per Wi-Fi connection; never bypass X.509 date validation.
+bool githubNtpStarted = false;
+void beginGithubOtaClockSync() {
+  if (WiFi.status() != WL_CONNECTED || githubNtpStarted) return;
+  configTime(0, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
+  githubNtpStarted = true;
+  Serial.println("FOTA NTP: sincronizacion UTC iniciada (sin Databricks)");
+}
+
 bool githubOtaClockReady() {
-  time_t now = time(nullptr);
-  if (now > 1700000000) return true;
-  configTime(0, 0, "pool.ntp.org", "time.google.com");
-  for (int i = 0; i < 30 && WiFi.status() == WL_CONNECTED; ++i) {
-    now = time(nullptr);
-    if (now > 1700000000) return true;
-    vTaskDelay(pdMS_TO_TICKS(300));
+  if (time(nullptr) > 1700000000) return true;
+  if (WiFi.status() != WL_CONNECTED) return false;
+  beginGithubOtaClockSync();
+  // NTP can take longer than the old 9-second window; never bypass TLS checks.
+  for (int i = 0; i < 60 && WiFi.status() == WL_CONNECTED; ++i) {
+    if (time(nullptr) > 1700000000) {
+      Serial.println("FOTA NTP: UTC valida para HTTPS");
+      return true;
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
-  return false; // Without valid UTC the TLS peer certificate cannot be checked.
+  Serial.printf("FOTA NTP ERROR: reloj UTC no valido, wifi=%d; revise DNS, Internet y NTP UDP/123\n",
+                static_cast<int>(WiFi.status()));
+  return false;
+}
+
+bool githubOtaNetworkReady() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.printf("FOTA WIFI ERROR: status=%d, config_wifi=%s (sin revelar SSID ni clave)\n",
+                  static_cast<int>(WiFi.status()),
+                  runtimeWifiSsid.length() ? "OK" : "FALTA");
+    setOtaStatus(runtimeWifiSsid.length()
+                 ? "FOTA sin WiFi: revise red 2.4GHz"
+                 : "FOTA: falta WiFi (NVS/USB)", true);
+    updatePanel(PanelState::Offline, "GitHub FOTA: WiFi desconectado");
+    return false;
+  }
+  if (!githubOtaClockReady()) {
+    setOtaStatus("FOTA: sin UTC NTP; revise Internet/DNS", true);
+    updatePanel(PanelState::Offline, "GitHub FOTA: reloj HTTPS invalido");
+    return false;
+  }
+  return true;
 }
 
 bool beginGithubOtaHttp(HTTPClient& http, WiFiClientSecure& client, const String& url) {
@@ -1580,7 +1613,7 @@ bool beginGithubOtaHttp(HTTPClient& http, WiFiClientSecure& client, const String
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setRedirectLimit(5);
   if (!http.begin(client, url)) return false;
-  http.setUserAgent("ERP-MANTTO-ESP32-FOTA/2.7.5");
+  http.setUserAgent("ERP-MANTTO-ESP32-FOTA/2.7.7");
   return true;
 }
 
@@ -1593,16 +1626,13 @@ bool checkOtaCommit(const String& rawCommit) {
     updatePanel(PanelState::Error, "Commit FOTA invalido");
     return false;
   }
-  if (WiFi.status() != WL_CONNECTED || !githubOtaClockReady()) {
-    setOtaStatus("FOTA requiere Wi-Fi y hora HTTPS", true);
-    updatePanel(PanelState::Offline, "GitHub OTA: sin red o reloj");
-    return false;
-  }
+  // Local equality check must work even while offline, before network preflight.
   if (String(kInstalledCommit).startsWith(sha)) {
     setOtaStatus("Este commit ya esta instalado", true);
     updatePanel(PanelState::Ready, "El commit solicitado ya esta instalado");
     return false;
   }
+  if (!githubOtaNetworkReady()) return false;
   setOtaStatus("Consultando GitHub Releases...", true);
   updatePanel(PanelState::Busy, "GitHub FOTA: buscando release");
   const String manifestUrl = githubOtaAssetUrl(sha, "manifest.json");
@@ -1684,11 +1714,7 @@ bool installSelectedOta() {
     updatePanel(PanelState::Error, "FOTA necesita instalacion USB");
     return false;
   }
-  if (WiFi.status() != WL_CONNECTED || !githubOtaClockReady()) {
-    setOtaStatus("Sin Internet o reloj TLS", true);
-    updatePanel(PanelState::Offline, "GitHub FOTA sin conexion");
-    return false;
-  }
+  if (!githubOtaNetworkReady()) return false;
   WiFiClientSecure client;
   HTTPClient http;
   if (!beginGithubOtaHttp(http, client, downloadUrl)) {
@@ -2162,11 +2188,13 @@ void networkWorker(void* parameter) {
     }
     if (WiFi.status() != WL_CONNECTED) {
       sawWifi = false;
+      githubNtpStarted = false;
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
     if (!sawWifi) {
       sawWifi = true;
+      beginGithubOtaClockSync();  // Background UTC sync before any GitHub FOTA.
       lastHealthCheck = millis();
       checkCloudStack();
       fetchHistory();
@@ -2230,6 +2258,7 @@ void configureWebServer() {
       ",\"device_id\":\"" + String(app_config::deviceId) + "\"" +
       ",\"fw_version\":\"" + String(kFirmwareVersion) + "\"" +
       ",\"fw_commit\":\"" + String(kInstalledCommit) + "\"" +
+      ",\"clock_utc_ready\":" + (time(nullptr) > 1700000000 ? "true" : "false") +
       ",\"voice_poll_count\":" + String(voicePollAttempts.load()) +
       ",\"voice_poll_http\":" + String(voicePollHttp.load()) +
       ",\"voice_ack_http\":" + String(voiceAckHttp.load()) +

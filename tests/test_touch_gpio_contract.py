@@ -23,7 +23,7 @@ required_main = [
     "touch_input::TapTracker touchTracker",
     '"GT911 I2C probe addr=0x%02X result=%u bus=400kHz',
     '"GPIO MAP: BL=%d LCD_CS=%d',
-    'kFirmwareVersion[] = "2.7.6"',
+    'kFirmwareVersion[] = "2.7.7"',
 ]
 for needle in required_main:
     if needle not in MAIN:
