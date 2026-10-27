@@ -51,6 +51,7 @@ jobs:
           python tests/test_ota_target_guard.py
           python tests/test_final_ui_contract.py
           python tests/test_voice_cloud_contract.py
+          python tests/test_fota_github_direct.py
           python tests/test_ota_commit_contract.py
           python tests/test_ota_short_version_contract.py
           python tests/test_history_ui_contract.py
@@ -159,6 +160,64 @@ jobs:
           name: erp-mantto-esp32-4848-databricks-production
           path: dist/
           if-no-files-found: error
+
+
+  publish_github_fota:
+    name: Publicar FOTA publica en GitHub Releases (sin Databricks)
+    needs: [firmware]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: erp-mantto-esp32-4848-databricks-production
+          path: dist
+
+      - name: Verificar procedencia, checksum, hardware y version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,re
+          path=pathlib.Path("dist")
+          m=json.loads((path/"manifest.json").read_text())
+          binary=(path/"firmware.bin").read_bytes()
+          assert m["source_sha"]==os.environ["GITHUB_SHA"]
+          assert m["source_repository"]=="wpv10barza/erp-mantto-esp32"
+          assert m["hardware"]=="ESP32-S3-4848S040"
+          assert m["partition_table"]=="partitions_ota_16mb.csv"
+          assert m["credential_mode"]=="ota3c-nvs"
+          assert m["channel"]=="stable"
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+",m["version"])
+          assert 65536<=len(binary)<=0x400000
+          assert m["size"]==len(binary)
+          assert m["sha256"]==hashlib.sha256(binary).hexdigest()
+          print("GitHub OTA",m["version"],"commit",m["source_sha"][:8],"bytes",len(binary))
+          PY
+
+      - name: Publicar release por commit (inmutable, sin ejecutar Databricks)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="ota-${GITHUB_SHA:0:8}"
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Ya existe $TAG; no se reemplazan binarios FOTA."
+            exit 1
+          fi
+          gh release create "$TAG" dist/firmware.bin dist/manifest.json \
+            -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ESP32-S3 FOTA $TAG" \
+            --notes "Firmware validado por GitHub Actions. SHA=$GITHUB_SHA. ESP32-S3 4848S040 con particiones OTA 16MB. Verifique el hardware y las credenciales NVS antes de instalar." \
+            --latest=false
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
+          echo "### GitHub FOTA disponible: $TAG" >> "$GITHUB_STEP_SUMMARY"
+          echo "- No se utiliza Databricks, sus Volumes, ni la App de alumno." >> "$GITHUB_STEP_SUMMARY"
 
   publish_ota:
     name: Publish verified OTA to Databricks

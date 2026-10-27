@@ -11,16 +11,16 @@ assert "board_build.partitions = partitions_ota_16mb.csv" in PIO
 for name in ("otadata", "ota_0", "ota_1"):
     assert name in PARTITIONS, f"missing OTA partition {name}"
 required = [
-    'kFirmwareVersion[] = "2.7.4"',
+    'kFirmwareVersion[] = "2.7.5"',
     'kInstalledCommit[] = FIRMWARE_SOURCE_COMMIT',
     'void drawOtaCommitEditor()',
     'String(kInstalledCommit).substring(0, 8)',
     '"EDITAR SHA"',
-    '"SHA CORTO (7-12 caracteres hex)"',
+    '"SHA CORTO (8-12 caracteres hex)"',
     'content.substring(0, 12)',
     'String(content.length()) + "/12   ENTER = buscar OTA"',
     'bool validShortCommit(String value)',
-    'if (value.length() < 7 || value.length() > 12) return false',
+    'if (value.length() < 8 || value.length() > 12) return false',
     'String(kInstalledCommit).startsWith(sha)',
     'fullSha.startsWith(sha)',
     'otaCommitEditorOpen',
@@ -35,9 +35,10 @@ required = [
 
     'NetworkAction::CheckOtaCommit',
     'NetworkAction::InstallOta',
-    '/api/device/v1/firmware/by-commit/',
+    'githubOtaAssetUrl(sha, "manifest.json")',
+    'githubOtaAssetUrl(sha, "firmware.bin")',
     'const String fullSha = jsonStringValue(body, "source_sha");',
-    'String(selected.url).startsWith("/api/device/v1/firmware/")',
+    'downloadUrl.startsWith("https://github.com/wpv10barza/erp-mantto-esp32/releases/download/ota-")',
     'esp_ota_get_next_update_partition',
     'Update.begin(selected.size, U_FLASH)',
     'mbedtls_sha256_update_ret',
@@ -54,7 +55,7 @@ for forbidden in ("http.GET()", "installSelectedOta()", "checkOtaCommit("):
     assert forbidden not in loop, f"blocking network in UI loop: {forbidden}"
 assert re.search(r'otaVersionCompare\(version.c_str\(\), kFirmwareVersion\) < 0', MAIN)
 assert 'commandBuffer.set(app_config::commandBuffer.c_str());' in MAIN
-print("Short SHA OTA v2.7.4 contract: PASS (USB bootstrap still required)")
+print("GitHub FOTA v2.7.5 contract: PASS (USB bootstrap still required)")
 
 assert 'extra_scripts = pre:scripts/inject_firmware_commit.py' in PIO
 BUILD_SCRIPT = (ROOT / "scripts/inject_firmware_commit.py").read_text(encoding="utf-8")

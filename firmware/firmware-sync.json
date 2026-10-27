@@ -34,8 +34,8 @@
     "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "5e90e6ee64db4805f9c37d7ef29b9220d4018930",
-    "src/main.cpp": "5e90e6ee64db4805f9c37d7ef29b9220d4018930",
+    "platformio/src/panel_4848s040/main.cpp": "badd054943ec150096b3c2c5ceb5a665b60ac39f",
+    "src/main.cpp": "badd054943ec150096b3c2c5ceb5a665b60ac39f",
     "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -44,7 +44,8 @@
     "include/touch_input.h": "859e2ee6d4f3e17d34c4909ae385a69c8ebdcfc2",
     "include/home_menu.h": "177c6d8028bc26badd888bfa8b2dd0c6bca87a3e",
     "platformio/src/panel_4848s040/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
-    "platformio.ini": "7dc05857b835fef56a1e608e6b5d5028c78d843e"
+    "platformio.ini": "7dc05857b835fef56a1e608e6b5d5028c78d843e",
+    "include/github_ota_ca.h": "a00d6d9e19b9b4ac4c11cbed7c1712c7a8988847"
   },
   "production": {
     "platformio_env": "panel_4848s040",
@@ -54,8 +55,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.4",
-    "role": "final_interface_ota_short_sha_and_student_sso_portal",
+    "version": "2.7.5",
+    "role": "production_fota_github_releases_without_databricks",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -112,18 +113,20 @@
       "sheets_tab": "audited proposals and Sheet attempts, only sheet_applied means write"
     },
     "ota": {
-      "input": "7 to 12 hex digits of a Git commit; backend uniquely resolves against already published firmware",
-      "lookup": "matching published Databricks Volume artifact only",
+      "input": "8 to 12 hex Git commit prefix, Github public release tag ota-<first8>",
+      "lookup": "HTTPS verified GitHub Releases /releases/download/ota-<shortsha>/manifest.json; no Databricks",
       "dual_slots": "otadata,ota_0,ota_1",
       "verification": "commit + version + exact size + SHA-256",
       "confirmation": "two taps",
       "bootstrap": "USB first from v2.6 non-OTA partitions",
-      "note": "Git SHA is not itself a flashable binary",
+      "note": "GitHub commit alone is not binary: CI compiles and publishes .bin and manifest as immutable release assets. Hardware USB bootstrap may be required.",
       "credential_migration": "bootstrap local_config -> ota3c Preferences NVS; later OTA reads NVS",
       "credential_warning": "NVS is not flash-encrypted by default; protect physical device",
       "installed_identity": "Firmware stores full SHA for traceability, displays first 8 characters on screen",
-      "selection": "Unique 7..12-character commit prefix mapped by backend to a full published source_sha",
-      "same_version_different_commit": true
+      "selection": "Commit-specific GitHub Release; validate full source_sha prefix, version, size, target, SHA-256",
+      "same_version_different_commit": true,
+      "transport": "GitHub Releases X.509 TLS with Mozilla roots; follow HTTPS redirects and validate SHA-256 before Update.end()",
+      "independent_from_databricks": true
     },
     "voice": {
       "source": "PowerShell PC WAV/MP3 or Windows dictation",
