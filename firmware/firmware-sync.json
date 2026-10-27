@@ -57,7 +57,7 @@
   },
   "ui": {
     "version": "2.7.6",
-    "role": "cloud_control_teacher_qr_with_verified_github_fota",
+    "role": "github_fota_safe_teacher_control_qr_esp32",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -179,21 +179,14 @@
       "portal": "https://asistente-cloud-erp-alumno-7474657268940105.aws.databricksapps.com/acceso"
     },
     "teacher_control": {
-      "method": "scan GitHub Actions QR on ESP32 then GitHub authenticated workflow_dispatch from teacher mobile",
+      "method": "ESP32 touch CONTROL CLOUD QR -> professor signs in to GitHub Actions (phone) -> manual start or redeploy -> device checks status",
       "workflow": "https://github.com/wpv10barza/asistente-de-databricks--erp/actions/workflows/alumno-cloud-control.yml",
       "app": "asistente-cloud-erp-alumno",
-      "actions": [
-        "status",
-        "start",
-        "stop",
-        "redeploy",
-        "grant_access"
-      ],
       "direct_device_deploy": false,
-      "reason": "never embed GitHub/Databricks administrative credentials on physically shared ESP32",
-      "verification": "PROBAR CLOUD queries health via device authorization after teacher starts app",
       "teacher_only": true,
-      "requires_provisioned_oidc": true
+      "requires_provisioned_oidc": true,
+      "without_pc": true,
+      "budget_note": "Only authenticated manual workflow can start billable compute."
     }
   }
 }
