@@ -609,12 +609,18 @@ void drawExpandedPanel() {
   display->setTextColor(BLACK);
 
   if (homePanel == HomePanel::Backend) {
-    display->setCursor(28, 316);
-    display->print("HTTPS hacia Databricks Apps");
-    display->setCursor(28, 336);
-    display->print("OAuth M2M + token del dispositivo");
-    display->setCursor(28, 356);
-    display->print("Usa PROBAR CLOUD para validar extremo a extremo.");
+    // Portal humano en movil; ESP32 usa identidad M2M independiente.
+    // Nunca mostrar credenciales ni prometer arranque desde el panel.
+    display->setCursor(28, 312);
+    display->print("Alumno/profesor: acceso web Databricks SSO");
+    display->setCursor(28, 330);
+    display->print("https://asistente-cloud-erp-alumno-");
+    display->setCursor(28, 348);
+    display->print("7474657268940105.aws.databricksapps.com/acceso");
+    display->setCursor(28, 370);
+    display->print("Encender: GitHub Actions / Alumno Cloud");
+    display->setCursor(28, 390);
+    display->print("PROBAR CLOUD comprueba; no enciende la App.");
   } else if (homePanel == HomePanel::Sheets) {
     int approved = 0, rejected = 0, pending = 0;
     int attempts = 0, applied = 0, blocked = 0;
@@ -701,7 +707,7 @@ void drawExpandedPanel() {
     display->print(" dBm");
   } else if (homePanel == HomePanel::Databricks) {
     display->setCursor(28, 316);
-    display->print("Backend: asistente-cloud-erp");
+    display->print("Backend: cloud-erp-alumno");
     display->setCursor(28, 336);
     display->print("Estado: ");
     display->print(backendAvailable ? "Conectado" : "Sin verificar");
