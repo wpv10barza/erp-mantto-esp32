@@ -8,7 +8,7 @@ mirror=(root/"platformio/src/panel_4848s040/main.cpp").read_text(encoding="utf-8
 qr=(root/"include/cloud_control_qr.h").read_text(encoding="utf-8")
 sync=json.loads((root/"firmware/firmware-sync.json").read_text(encoding="utf-8"))
 assert cpp==mirror
-assert 'kFirmwareVersion[] = "2.7.7"' in cpp
+assert 'kFirmwareVersion[] = "2.7.8"' in cpp
 assert sync["ui"]["teacher_control"]["direct_device_deploy"] is False
 assert sync["ui"]["teacher_control"]["requires_provisioned_oidc"] is True
 assert 'bool cloudControlQrOpen = false;' in cpp
@@ -16,7 +16,19 @@ assert 'void drawCloudControlScreen()' in cpp
 assert "ACTIVAR / DEPLOY CLOUD" in cpp
 assert "Solo profesor: autenticacion GitHub" in cpp
 assert 'homePanel == HomePanel::Backend' in cpp
-assert 'tap.y >= 354 && tap.y < 402' in cpp
+assert 'tap.y >= 353 && tap.y < 380' in cpp
+assert 'tap.y >= 385 && tap.y < 412' in cpp
+assert 'bool cloudControlStopRequested = false;' in cpp
+assert "DESACTIVAR DATABRICKS" in cpp
+assert 'cloudControlStopRequested = true;' in cpp
+assert 'cloudControlStopRequested = false;' in cpp
+assert "2. GitHub > Run workflow > stop" in cpp
+assert "3. Confirmar STOPPED en GitHub Actions" in cpp
+assert "Solo detiene App ALUMNA; no workspace." in cpp
+assert "GitHub authentication QR" in cpp
+# The same authorization QR serves both choices; no privileged stop endpoint.
+assert cpp.count("cloudControlQrOpen = true;") == 2
+assert "client.setInsecure()" not in cpp
 assert "cloudControlQrOpen = true;" in cpp
 assert "drawCloudControlScreen();" in cpp
 assert "kCloudControlQrBits[byteIndex]" in cpp
@@ -32,4 +44,4 @@ assert len(re.findall(r"0x[0-9a-f]{2}", qr)) == 211
 for forbidden in ("/api/2.0/apps/asistente-cloud-erp-alumno/start",
                   "github_pat_", "GITHUB_TOKEN=", "databricks apps deploy"):
     assert forbidden not in cpp
-print("Student 2.7.7 QR touch controls and no device-admin secrets: PASS")
+print("Student 2.7.8 QR touch controls and no device-admin secrets: PASS")
