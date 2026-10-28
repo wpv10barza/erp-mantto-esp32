@@ -25,7 +25,7 @@ assert 'cloudControlStopRequested = false;' in cpp
 assert "2. GitHub > Run workflow > stop" in cpp
 assert "3. Confirmar STOPPED en GitHub Actions" in cpp
 assert "Solo detiene App ALUMNA; no workspace." in cpp
-assert "GitHub authentication QR" in cpp
+assert "GitHub authenticates the user" in cpp
 # The same authorization QR serves both choices; no privileged stop endpoint.
 assert cpp.count("cloudControlQrOpen = true;") == 2
 assert "client.setInsecure()" not in cpp
