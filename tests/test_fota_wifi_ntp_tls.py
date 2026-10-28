@@ -7,8 +7,8 @@ SRC = (ROOT / "src/main.cpp").read_text(encoding="utf-8")
 MIRROR = (ROOT / "platformio/src/panel_4848s040/main.cpp").read_text(encoding="utf-8")
 MANIFEST = json.loads((ROOT / "firmware/firmware-sync.json").read_text(encoding="utf-8"))
 assert SRC == MIRROR
-assert 'kFirmwareVersion[] = "2.7.7"' in SRC
-assert MANIFEST["ui"]["version"] == "2.7.7"
+assert 'kFirmwareVersion[] = "2.7.8"' in SRC
+assert MANIFEST["ui"]["version"] == "2.7.8"
 
 start = SRC.index("void beginGithubOtaClockSync()")
 end = SRC.index("void requestPcVoiceCapture()")
