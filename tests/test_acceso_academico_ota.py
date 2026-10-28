@@ -10,8 +10,8 @@ PORTAL = "https://asistente-cloud-erp-alumno-7474657268940105.aws.databricksapps
 CONTROL = "https://github.com/wpv10barza/asistente-de-databricks--erp/actions/workflows/alumno-cloud-control.yml"
 
 assert FW == MIRROR
-assert 'kFirmwareVersion[] = "2.7.7"' in FW
-assert SYNC["ui"]["version"] == "2.7.7"
+assert 'kFirmwareVersion[] = "2.7.8"' in FW
+assert SYNC["ui"]["version"] == "2.7.8"
 assert SYNC["ui"]["portal"]["portal"] == PORTAL
 assert 'web.on("/acceso", HTTP_GET' in FW
 assert 'String(app_config::assistantBaseUrl) + "/acceso"' in FW
@@ -29,4 +29,4 @@ for secret_or_identity in (
 ):
     assert secret_or_identity not in FW
 
-print("Student SSO portal / OTA 2.7.7 contract: PASS")
+print("Student SSO portal / OTA 2.7.8 contract: PASS")

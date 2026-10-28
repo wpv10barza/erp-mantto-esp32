@@ -71,7 +71,10 @@ enum class HomePanel {
 
 HomePanel homePanel = HomePanel::None;
 bool cloudControlQrOpen = false;
-constexpr char kFirmwareVersion[] = "2.7.7";
+// Only controls the words on an authenticated GitHub Actions QR screen.
+// The portable does not store tokens or run privileged Databricks operations.
+bool cloudControlStopRequested = false;
+constexpr char kFirmwareVersion[] = "2.7.8";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // Full source SHA stays embedded for traceability and OTA manifest validation.
 // The touch UI only displays a short SHA; the backend resolves its unique prefix.
@@ -619,10 +622,16 @@ void drawExpandedPanel() {
                                      "Databricks alumno: SIN VERIFICAR");
     display->setCursor(28, 332);
     display->print("Acceso estudiantes: portal web /acceso");
-    display->drawRoundRect(26, 354, 427, 48, 9, BLACK);
+    // Two independent authenticated actions: only the professor can
+    // execute start or stop in GitHub Actions after scanning the QR.
+    display->drawRoundRect(26, 353, 427, 27, 7, BLACK);
     display->setTextSize(2);
-    display->setCursor(54, 369);
+    display->setCursor(54, 358);
     display->print("ACTIVAR / DEPLOY CLOUD");
+    display->drawRoundRect(26, 385, 427, 27, 7, BLACK);
+    display->setTextSize(2);
+    display->setCursor(70, 390);
+    display->print("DESACTIVAR DATABRICKS");
     display->setTextSize(1);
   } else if (homePanel == HomePanel::Sheets) {
     int approved = 0, rejected = 0, pending = 0;
@@ -898,7 +907,8 @@ void drawCloudControlScreen() {
   if (!displayReady) return;
   display->fillScreen(WHITE);
   display->setTextColor(BLACK);
-  drawCentered("CONTROL DATABRICKS", 13, 2, BLACK);
+  drawCentered(cloudControlStopRequested ? "DESACTIVAR DATABRICKS" :
+               "CONTROL DATABRICKS", 13, 2, BLACK);
   drawCentered("Solo profesor: autenticacion GitHub", 44, 1, BLACK);
   // Embedded 41x41 QR, with >=4 modules white quiet zone around it.
   // GitHub authenticates the user: the ESP32 never holds administrative tokens.
@@ -920,11 +930,17 @@ void drawCloudControlScreen() {
   display->setCursor(25, 327);
   display->print("1. Escanear QR con movil del docente");
   display->setCursor(25, 345);
-  display->print("2. GitHub > Run workflow > start/redeploy");
+  display->print(cloudControlStopRequested ?
+                 "2. GitHub > Run workflow > stop" :
+                 "2. GitHub > Run workflow > start/redeploy");
   display->setCursor(25, 363);
-  display->print("3. Confirmar como usuario autorizado");
+  display->print(cloudControlStopRequested ?
+                 "3. Confirmar STOPPED en GitHub Actions" :
+                 "3. Confirmar como usuario autorizado");
   display->setCursor(25, 387);
-  display->print("El ESP32 NO despliega ni consume credito solo.");
+  display->print(cloudControlStopRequested ?
+                 "Solo detiene App ALUMNA; no workspace." :
+                 "El ESP32 NO despliega ni consume credito solo.");
   drawButton(14, 429, 220, 40, "VOLVER", WHITE);
   drawButton(246, 429, 220, 40, "PROBAR CLOUD", WHITE);
 }
@@ -2340,6 +2356,7 @@ void handleTouch() {
     if (cloudControlQrOpen) {
       if (tap.y >= 421 && tap.x >= 14 && tap.x < 466) {
         cloudControlQrOpen = false;
+        cloudControlStopRequested = false;
         homePanel = HomePanel::Backend;
         drawPanel();
         if (tap.x >= 246) queueNetworkRequest(NetworkAction::Health);
@@ -2621,9 +2638,18 @@ void handleTouch() {
         case home_ui::Action::None:
           if (homePanel == HomePanel::Backend &&
               tap.x >= 26 && tap.x < 453 &&
-              tap.y >= 354 && tap.y < 402) {
+              tap.y >= 353 && tap.y < 380) {
+            cloudControlStopRequested = false;
             cloudControlQrOpen = true;
-            drawPanel(); // Shows GitHub authentication QR; does not issue START.
+            drawPanel(); // Authenticated teacher selects START in GitHub.
+            break;
+          }
+          if (homePanel == HomePanel::Backend &&
+              tap.x >= 26 && tap.x < 453 &&
+              tap.y >= 385 && tap.y < 412) {
+            cloudControlStopRequested = true;
+            cloudControlQrOpen = true;
+            drawPanel(); // Authenticated teacher selects STOP in GitHub.
             break;
           }
           if (homePanel != HomePanel::None &&
