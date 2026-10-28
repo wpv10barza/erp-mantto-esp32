@@ -28,7 +28,8 @@ assert "Solo detiene App ALUMNA; no workspace." in cpp
 assert "GitHub authenticates the user" in cpp
 # The same authorization QR serves both choices; no privileged stop endpoint.
 assert cpp.count("cloudControlQrOpen = true;") == 2
-assert "client.setInsecure()" not in cpp
+assert "/api/2.0/apps/asistente-cloud-erp-alumno/stop" not in cpp
+assert "databricks apps stop" not in cpp
 assert "cloudControlQrOpen = true;" in cpp
 assert "drawCloudControlScreen();" in cpp
 assert "kCloudControlQrBits[byteIndex]" in cpp
