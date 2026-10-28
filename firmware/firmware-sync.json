@@ -34,8 +34,8 @@
     "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "08b143f3008ff763c1fd450dd304b4b160e94bb8",
-    "src/main.cpp": "08b143f3008ff763c1fd450dd304b4b160e94bb8",
+    "platformio/src/panel_4848s040/main.cpp": "c6ca5fdc60e353171e0f11a85378f912e802345a",
+    "src/main.cpp": "c6ca5fdc60e353171e0f11a85378f912e802345a",
     "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -56,8 +56,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.7",
-    "role": "github_fota_wifi_ntp_tls_verified_diag_277",
+    "version": "2.7.8",
+    "role": "authenticated_teacher_start_stop_github_qr_278",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -186,14 +186,25 @@
       "portal": "https://asistente-cloud-erp-alumno-7474657268940105.aws.databricksapps.com/acceso"
     },
     "teacher_control": {
-      "method": "ESP32 touch CONTROL CLOUD QR -> professor signs in to GitHub Actions (phone) -> manual start or redeploy -> device checks status",
+      "method": "ESP32 touch ACTIVAR or DESACTIVAR DATABRICKS -> same authenticated GitHub Actions QR -> teacher selects start or stop -> Github confirms App compute",
       "workflow": "https://github.com/wpv10barza/asistente-de-databricks--erp/actions/workflows/alumno-cloud-control.yml",
       "app": "asistente-cloud-erp-alumno",
       "direct_device_deploy": false,
       "teacher_only": true,
       "requires_provisioned_oidc": true,
       "without_pc": true,
-      "budget_note": "Only authenticated manual workflow can start billable compute."
+      "budget_note": "Only authenticated manual workflow can start billable compute.",
+      "actions": [
+        "status",
+        "start",
+        "stop",
+        "redeploy"
+      ],
+      "stop_button": "DESACTIVAR DATABRICKS",
+      "stop_effect": "Stops ONLY alumno Databricks App compute, not account/workspace or unrelated resources",
+      "stop_authorization": "Teacher logs into GitHub and manually selects workflow action stop; ESP32 has no admin secrets",
+      "stop_requires_confirmed_result": true,
+      "no_direct_device_stop": true
     }
   }
 }
