@@ -34,8 +34,8 @@
     "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "c6ca5fdc60e353171e0f11a85378f912e802345a",
-    "src/main.cpp": "c6ca5fdc60e353171e0f11a85378f912e802345a",
+    "platformio/src/panel_4848s040/main.cpp": "5a981bcfd1851a64d42695c05ea46b81701bc90f",
+    "src/main.cpp": "5a981bcfd1851a64d42695c05ea46b81701bc90f",
     "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -56,8 +56,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.8",
-    "role": "authenticated_teacher_start_stop_github_qr_278",
+    "version": "2.7.9",
+    "role": "github_fota_verified_tls_retry_diagnostics_279",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -133,7 +133,11 @@
         "utc": "NTP starts on connection, bounded 30-second wait",
         "tls": "X.509 verified with trusted roots, no setInsecure",
         "health": "clock_utc_ready available on local /health",
-        "cloud": "Databricks not needed for FOTA"
+        "cloud": "Databricks not needed for FOTA",
+        "http_error_minus1": "Negative HTTP -1 is transport failure: bounded retry with fresh X509-verified HTTPS session",
+        "http_diagnostics": "USB 115200: operation, DNS, HTTP, mbedTLS error, RSSI, heap; no passwords",
+        "connection_timeout": "15s TCP, 30s TLS handshake, 30s read",
+        "certificates": "PEM roots stay validated; no insecure mode or authentication secrets"
       }
     },
     "voice": {
