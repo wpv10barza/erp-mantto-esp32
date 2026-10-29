@@ -1651,7 +1651,7 @@ void githubOtaLogConnectionFailure(WiFiClientSecure& client,
   const bool dnsOk = WiFi.hostByName("github.com", address) == 1;
   otaLastTlsError.store(tlsCode);
   otaLastDnsOk.store(dnsOk ? 1 : 0);
-  Serial.printf("FOTA HTTPS %s attempt=%d http=%d tls=%d dns_github=%d wifi=%d rssi=%ld heap=%u utc=%ld detail=%s\\n",
+  Serial.printf("FOTA HTTPS %s attempt=%d http=%d tls=%d dns_github=%d wifi=%d rssi=%ld heap=%u utc=%ld detail=%s\n",
                 phase, attempt, code, tlsCode, dnsOk ? 1 : 0,
                 static_cast<int>(WiFi.status()), static_cast<long>(WiFi.RSSI()),
                 static_cast<unsigned>(ESP.getFreeHeap()),
@@ -1674,7 +1674,7 @@ int githubOtaGetWithRetry(HTTPClient& http, WiFiClientSecure& client,
     if (code == HTTPC_ERROR_CONNECTION_REFUSED) {
       githubOtaLogConnectionFailure(client, phase, attempt, code);
     } else {
-      Serial.printf("FOTA HTTPS %s attempt=%d transport=%d (%s)\\n",
+      Serial.printf("FOTA HTTPS %s attempt=%d transport=%d (%s)\n",
                     phase, attempt, code, http.errorToString(code).c_str());
     }
     if (code != HTTPC_ERROR_CONNECTION_REFUSED || attempt >= 2 ||
