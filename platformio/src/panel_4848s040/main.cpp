@@ -74,7 +74,7 @@ bool cloudControlQrOpen = false;
 // Only controls the words on an authenticated GitHub Actions QR screen.
 // The portable does not store tokens or run privileged Databricks operations.
 bool cloudControlStopRequested = false;
-constexpr char kFirmwareVersion[] = "2.7.8";
+constexpr char kFirmwareVersion[] = "2.7.9";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // Full source SHA stays embedded for traceability and OTA manifest validation.
 // The touch UI only displays a short SHA; the backend resolves its unique prefix.
@@ -155,6 +155,12 @@ struct OtaSelection {
 };
 OtaSelection otaSelection{};
 portMUX_TYPE otaMux = portMUX_INITIALIZER_UNLOCKED;
+// Exposed on local /health to diagnose ESP32 GitHub HTTPS without serial USB.
+// -1: not checked, 0: DNS failed, 1: DNS resolved. No admin credentials.
+std::atomic<int> otaLastHttpCode{0};
+std::atomic<int> otaLastTlsError{0};
+std::atomic<int> otaLastDnsOk{-1};
+std::atomic<int> otaLastAttempt{0};
 
 bool validShortCommit(String value) {
   value.trim();
@@ -1625,12 +1631,70 @@ bool beginGithubOtaHttp(HTTPClient& http, WiFiClientSecure& client, const String
   // A chain of trusted roots permits GitHub's release-asset redirects while
   // preserving X.509 hostname checks. Never use client.setInsecure().
   client.setCACert(kGithubOtaTrustedRoots);
+  client.setHandshakeTimeout(25); // Seconds, not milliseconds (Arduino ESP32).
+  http.setConnectTimeout(18000);
   http.setTimeout(30000);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setRedirectLimit(5);
   if (!http.begin(client, url)) return false;
-  http.setUserAgent("ERP-MANTTO-ESP32-FOTA/2.7.7");
+  http.setUserAgent("ERP-MANTTO-ESP32-FOTA/2.7.9");
   return true;
+}
+
+// HTTPClient -1 means transport connect failed; it is NOT an HTTP status.
+// Log Wi-Fi/DNS/TLS signals without disabling certificate validation.
+void githubOtaLogConnectionFailure(WiFiClientSecure& client,
+                                   const char* phase, int attempt, int code) {
+  char tlsDetail[128]{};
+  const int tlsCode = client.lastError(tlsDetail, sizeof(tlsDetail));
+  IPAddress address{};
+  const bool dnsOk = WiFi.hostByName("github.com", address) == 1;
+  otaLastTlsError.store(tlsCode);
+  otaLastDnsOk.store(dnsOk ? 1 : 0);
+  Serial.printf("FOTA HTTPS %s attempt=%d http=%d tls=%d dns_github=%d wifi=%d rssi=%ld heap=%u utc=%ld detail=%s\\n",
+                phase, attempt, code, tlsCode, dnsOk ? 1 : 0,
+                static_cast<int>(WiFi.status()), static_cast<long>(WiFi.RSSI()),
+                static_cast<unsigned>(ESP.getFreeHeap()),
+                static_cast<long>(time(nullptr)), tlsDetail);
+}
+
+// One bounded retry for intermittent HTTPS connection failure only.
+// A fresh HTTPS connection always verifies GitHub/asset-host certificates.
+// Never retry 404, authentication failures, manifest mismatch or bad SHA-256.
+int githubOtaGetWithRetry(HTTPClient& http, WiFiClientSecure& client,
+                          const String& url, const char* phase) {
+  int code = -1;
+  otaLastDnsOk.store(-1);
+  otaLastTlsError.store(0);
+  for (int attempt = 1; attempt <= 2; ++attempt) {
+    otaLastAttempt.store(attempt);
+    code = http.GET();
+    otaLastHttpCode.store(code);
+    if (code >= 0) return code;
+    if (code == HTTPC_ERROR_CONNECTION_REFUSED) {
+      githubOtaLogConnectionFailure(client, phase, attempt, code);
+    } else {
+      Serial.printf("FOTA HTTPS %s attempt=%d transport=%d (%s)\\n",
+                    phase, attempt, code, http.errorToString(code).c_str());
+    }
+    if (code != HTTPC_ERROR_CONNECTION_REFUSED || attempt >= 2 ||
+        WiFi.status() != WL_CONNECTED) break;
+    http.end();
+    client.stop();
+    vTaskDelay(pdMS_TO_TICKS(1200));
+    if (!beginGithubOtaHttp(http, client, url)) break;
+  }
+  return code;
+}
+
+String githubOtaErrorForDisplay(int code) {
+  if (code == HTTPC_ERROR_CONNECTION_REFUSED) {
+    if (otaLastDnsOk.load() == 0) return "FOTA: DNS github no resuelve";
+    if (otaLastTlsError.load() != 0) return "FOTA: HTTPS/TLS error; ver health";
+    return "FOTA: conexion HTTPS -1; ver health";
+  }
+  return code == 404 ? "No existe release del SHA" :
+         String("GitHub HTTP ") + code;
 }
 
 bool checkOtaCommit(const String& rawCommit) {
@@ -1659,15 +1723,14 @@ bool checkOtaCommit(const String& rawCommit) {
     updatePanel(PanelState::Error, "GitHub FOTA URL invalida");
     return false;
   }
-  const int code = http.GET();
+  const int code = githubOtaGetWithRetry(http, client, manifestUrl, "manifest");
   // Bound the JSON response and reject HTML login/error pages.
   const int manifestBytes = http.getSize();
   const String body = (code == 200 && manifestBytes > 0 && manifestBytes < 4096)
                     ? http.getString() : "";
   http.end();
   if (code != 200 || !body.length()) {
-    setOtaStatus(code == 404 ? "No existe release del SHA" :
-                 String("GitHub HTTP ") + code, true);
+    setOtaStatus(githubOtaErrorForDisplay(code), true);
     updatePanel(PanelState::Error, String("GitHub FOTA HTTP ") + code);
     Serial.printf("GITHUB FOTA LOOKUP HTTP=%d commit=%s\n", code, sha.c_str());
     return false;
@@ -1738,10 +1801,10 @@ bool installSelectedOta() {
     updatePanel(PanelState::Error, "FOTA URL invalida");
     return false;
   }
-  const int code = http.GET();
+  const int code = githubOtaGetWithRetry(http, client, downloadUrl, "firmware");
   if (code != 200) {
     http.end();
-    setOtaStatus(String("Descarga GitHub HTTP ") + code, true);
+    setOtaStatus(githubOtaErrorForDisplay(code), true);
     updatePanel(PanelState::Error, String("FOTA HTTP ") + code);
     return false;
   }
@@ -2275,6 +2338,10 @@ void configureWebServer() {
       ",\"fw_version\":\"" + String(kFirmwareVersion) + "\"" +
       ",\"fw_commit\":\"" + String(kInstalledCommit) + "\"" +
       ",\"clock_utc_ready\":" + (time(nullptr) > 1700000000 ? "true" : "false") +
+      ",\"fota_last_http\":" + String(otaLastHttpCode.load()) +
+      ",\"fota_tls_error\":" + String(otaLastTlsError.load()) +
+      ",\"fota_dns_github\":" + String(otaLastDnsOk.load()) +
+      ",\"fota_attempt\":" + String(otaLastAttempt.load()) +
       ",\"voice_poll_count\":" + String(voicePollAttempts.load()) +
       ",\"voice_poll_http\":" + String(voicePollHttp.load()) +
       ",\"voice_ack_http\":" + String(voiceAckHttp.load()) +
