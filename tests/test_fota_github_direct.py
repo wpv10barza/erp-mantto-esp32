@@ -11,7 +11,7 @@ CI=(ROOT/".github/workflows/firmware-cd.yml").read_text(encoding="utf-8")
 MANIFEST=json.loads((ROOT/"firmware/firmware-sync.json").read_text(encoding="utf-8"))
 
 assert SOURCE==MIRROR
-assert MANIFEST["ui"]["version"]=="2.7.8"
+assert MANIFEST["ui"]["version"]=="2.7.9"
 assert MANIFEST["ui"]["ota"]["independent_from_databricks"] is True
 ota=SOURCE[SOURCE.index("String githubOtaAssetUrl("):SOURCE.index("void requestPcVoiceCapture()")]
 for must in (
