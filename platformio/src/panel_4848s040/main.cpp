@@ -74,7 +74,7 @@ bool cloudControlQrOpen = false;
 // Only controls the words on an authenticated GitHub Actions QR screen.
 // The portable does not store tokens or run privileged Databricks operations.
 bool cloudControlStopRequested = false;
-constexpr char kFirmwareVersion[] = "2.7.8";
+constexpr char kFirmwareVersion[] = "2.7.9";
 constexpr char kExpectedSpreadsheetId[] = "1tLNo0_xjtmWKM9Y7PcChFut8S0w0kMKeAvFi9zg52gA";
 // Full source SHA stays embedded for traceability and OTA manifest validation.
 // The touch UI only displays a short SHA; the backend resolves its unique prefix.
@@ -1625,12 +1625,50 @@ bool beginGithubOtaHttp(HTTPClient& http, WiFiClientSecure& client, const String
   // A chain of trusted roots permits GitHub's release-asset redirects while
   // preserving X.509 hostname checks. Never use client.setInsecure().
   client.setCACert(kGithubOtaTrustedRoots);
+  // The TLS handshake and the initial TCP connect have separate timeouts.
+  client.setHandshakeTimeout(30);   // WiFiClientSecure expects seconds.
+  http.setConnectTimeout(15000);
   http.setTimeout(30000);
+  http.setReuse(false);             // Fresh TLS connection across GitHub redirects.
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
   http.setRedirectLimit(5);
   if (!http.begin(client, url)) return false;
-  http.setUserAgent("ERP-MANTTO-ESP32-FOTA/2.7.7");
+  http.setUserAgent("ERP-MANTTO-ESP32-FOTA/2.7.9");
   return true;
+}
+
+// A negative HTTPClient code is a transport error, never a GitHub HTTP 404.
+// Do not replace TLS verification with setInsecure() or retry HTTP status 4xx.
+int githubOtaGetWithRetry(HTTPClient& http, WiFiClientSecure& client,
+                          const String& url, const char* operation) {
+  int result = -1;
+  for (int attempt = 1; attempt <= 2; ++attempt) {
+    if (!beginGithubOtaHttp(http, client, url)) {
+      Serial.printf("GITHUB FOTA %s ERROR: invalid HTTPS URL\n", operation);
+      return -1;
+    }
+    Serial.printf("GITHUB FOTA %s: attempt=%d free_heap=%u wifi_rssi=%d\n",
+                  operation, attempt, static_cast<unsigned>(ESP.getFreeHeap()),
+                  static_cast<int>(WiFi.RSSI()));
+    result = http.GET();
+    if (result >= 0) return result;
+    // Log the actual transport and mbedTLS diagnostics BEFORE client.stop().
+    char tlsDetail[120] = {};
+    const int tlsCode = client.lastError(tlsDetail, sizeof(tlsDetail));
+    IPAddress githubIp;
+    const bool dnsReady = WiFi.hostByName("github.com", githubIp) == 1;
+    Serial.printf("GITHUB FOTA %s ERROR attempt=%d http=%d reason=%s tls=%d (%s) dns=%s ip=%s wifi=%d heap=%u\n",
+                  operation, attempt, result, http.errorToString(result).c_str(),
+                  tlsCode, tlsDetail, dnsReady ? "OK" : "FAIL",
+                  dnsReady ? githubIp.toString().c_str() : "N/A",
+                  static_cast<int>(WiFi.status()),
+                  static_cast<unsigned>(ESP.getFreeHeap()));
+    http.end();
+    client.stop();
+    if (attempt == 2 || WiFi.status() != WL_CONNECTED) break;
+    vTaskDelay(pdMS_TO_TICKS(1000)); // One bounded retry with a new verified TLS session.
+  }
+  return result;
 }
 
 bool checkOtaCommit(const String& rawCommit) {
@@ -1654,12 +1692,7 @@ bool checkOtaCommit(const String& rawCommit) {
   const String manifestUrl = githubOtaAssetUrl(sha, "manifest.json");
   WiFiClientSecure client;
   HTTPClient http;
-  if (!beginGithubOtaHttp(http, client, manifestUrl)) {
-    setOtaStatus("GitHub HTTPS no disponible", true);
-    updatePanel(PanelState::Error, "GitHub FOTA URL invalida");
-    return false;
-  }
-  const int code = http.GET();
+  const int code = githubOtaGetWithRetry(http, client, manifestUrl, "MANIFEST");
   // Bound the JSON response and reject HTML login/error pages.
   const int manifestBytes = http.getSize();
   const String body = (code == 200 && manifestBytes > 0 && manifestBytes < 4096)
@@ -1667,6 +1700,7 @@ bool checkOtaCommit(const String& rawCommit) {
   http.end();
   if (code != 200 || !body.length()) {
     setOtaStatus(code == 404 ? "No existe release del SHA" :
+                 code < 0 ? "GitHub DNS/TCP/TLS; ver USB" :
                  String("GitHub HTTP ") + code, true);
     updatePanel(PanelState::Error, String("GitHub FOTA HTTP ") + code);
     Serial.printf("GITHUB FOTA LOOKUP HTTP=%d commit=%s\n", code, sha.c_str());
@@ -1733,15 +1767,11 @@ bool installSelectedOta() {
   if (!githubOtaNetworkReady()) return false;
   WiFiClientSecure client;
   HTTPClient http;
-  if (!beginGithubOtaHttp(http, client, downloadUrl)) {
-    setOtaStatus("GitHub HTTPS fallo", true);
-    updatePanel(PanelState::Error, "FOTA URL invalida");
-    return false;
-  }
-  const int code = http.GET();
+  const int code = githubOtaGetWithRetry(http, client, downloadUrl, "FIRMWARE");
   if (code != 200) {
     http.end();
-    setOtaStatus(String("Descarga GitHub HTTP ") + code, true);
+    setOtaStatus(code < 0 ? "FOTA DNS/TCP/TLS; ver USB" :
+                 String("Descarga GitHub HTTP ") + code, true);
     updatePanel(PanelState::Error, String("FOTA HTTP ") + code);
     return false;
   }
