@@ -12,7 +12,7 @@ PACKAGE = (ROOT / "scripts/package_ota_metadata.py").read_text(encoding="utf-8")
 SYNC = json.loads((ROOT / "firmware/firmware-sync.json").read_text(encoding="utf-8"))
 
 assert CPP == MIRROR
-assert 'kFirmwareVersion[] = "2.7.8"' in CPP
+assert 'kFirmwareVersion[] = "2.7.9"' in CPP
 assert "kOtaCommitCapacity = 12;" in CPP
 assert "value.length() < 8 || value.length() > 12" in CPP
 assert 'display->print(String(kInstalledCommit).substring(0, 8));' in CPP
@@ -38,6 +38,6 @@ assert 'already exists. Increase kFirmwareVersion' in WORKFLOW
 assert 'databricks fs cp dist/firmware.bin "$VERSION_DIR/firmware.bin"' in WORKFLOW
 assert '--overwrite' not in WORKFLOW.split('databricks fs cp dist/firmware.bin', 1)[1].split("\n",1)[0]
 assert 'https://dbc-77f7771e-2520.cloud.databricks.com' in WORKFLOW
-assert SYNC['ui']['version'] == "2.7.8"
+assert SYNC['ui']['version'] == "2.7.9"
 
-print("GitHub FOTA v2.7.8 + GitHub Actions safety contract: PASS")
+print("GitHub FOTA v2.7.9 + GitHub Actions safety contract: PASS")
