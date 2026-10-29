@@ -17,7 +17,7 @@ for label, body in (("defaults", config), ("local example", example)):
     assert "dbc-a1aca8aa-28bd.cloud.databricks.com" not in body
     assert "asistente-cloud-erp-7474651957738908" not in body
 
-assert 'kFirmwareVersion[] = "2.7.8"' in firmware
+assert 'kFirmwareVersion[] = "2.7.9"' in firmware
 assert firmware == mirror, "production firmware mirrors diverged"
 for needle in (
     '"CLOUD TARGET app=%s oauth_host=%s',
@@ -33,7 +33,7 @@ for needle in (
 ):
     assert needle in firmware, f"missing: {needle}"
 assert "transport phase=%s code=%d detail=%s" not in firmware
-assert sync["ui"]["version"] == "2.7.8"
+assert sync["ui"]["version"] == "2.7.9"
 assert sync["backend"]["oauth_host"] == workspace
 assert sync["backend"]["target_app"] == app_url
 

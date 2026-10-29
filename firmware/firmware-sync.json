@@ -34,8 +34,8 @@
     "note": "Private include/local_config.h can override URLs; confirm runtime CLOUD TARGET serial line and credential permissions before physical flash."
   },
   "git_blob_sha1": {
-    "platformio/src/panel_4848s040/main.cpp": "c6ca5fdc60e353171e0f11a85378f912e802345a",
-    "src/main.cpp": "c6ca5fdc60e353171e0f11a85378f912e802345a",
+    "platformio/src/panel_4848s040/main.cpp": "5c2e15e23cc74ff7e4a6ce3322ed7ea56fb89ccc",
+    "src/main.cpp": "5c2e15e23cc74ff7e4a6ce3322ed7ea56fb89ccc",
     "include/app_config.h": "81c54636b9c0cfdc56e43121c9679632fd942aad",
     "contract/device-command-v1.json": "4dbeec77c44f52f86669aed7a2d9d94802e5ac2b",
     "include/virtual_keyboard.h": "dbc4593d18e1a3b5305812b95a1b9fb7cef4623b",
@@ -56,8 +56,8 @@
     "flash_target": "ESP32-S3-4848S040"
   },
   "ui": {
-    "version": "2.7.8",
-    "role": "authenticated_teacher_start_stop_github_qr_278",
+    "version": "2.7.9",
+    "role": "github_fota_https_connection_retry_tls_dns_diagnostics_279",
     "style": "white-only background and controls; black-only text and borders",
     "editor_components": [
       "text_field",
@@ -132,8 +132,11 @@
         "wifi": "FOTA requires WiFi 2.4GHz, checked separately",
         "utc": "NTP starts on connection, bounded 30-second wait",
         "tls": "X.509 verified with trusted roots, no setInsecure",
-        "health": "clock_utc_ready available on local /health",
-        "cloud": "Databricks not needed for FOTA"
+        "health": "clock_utc_ready, fota_last_http, fota_tls_error, fota_dns_github and fota_attempt via local /health",
+        "cloud": "Databricks not needed for FOTA",
+        "transport_diagnostics": "HTTP -1: DNS github check, TLS last error, WiFi RSSI, heap and UTC; local /health fields for mobile",
+        "connection_retry": "One bounded retry only on HTTPClient -1, with fresh HTTPS begin and cert verification",
+        "caveat": "A firmware already failing TLS cannot receive fix over OTA if its HTTPS connection never succeeds; use USB without erase_flash"
       }
     },
     "voice": {
